@@ -7,10 +7,13 @@
 
 set -e  # 遇到错误立即退出
 
+# 获取脚本所在目录（项目根目录）
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # 配置变量
 IMAGE_NAME="ghcr.io/austinhmh/memos"
 CONTAINER_NAME="memos"
-VOLUME_NAME="memos-data"  # 使用 Docker 命名卷
+DATA_DIR="${MEMOS_DATA_DIR:-$SCRIPT_DIR/data}"  # 默认使用项目目录下的 data 子目录
 PORT="${MEMOS_PORT:-5230}"
 
 # 获取版本标签参数
@@ -21,20 +24,28 @@ echo "开始拉取并部署 Docker 容器"
 echo "=========================================="
 echo "镜像地址: $IMAGE_NAME:$VERSION_TAG"
 echo "容器名称: $CONTAINER_NAME"
-echo "数据卷: $VOLUME_NAME (Docker 命名卷)"
+echo "数据目录: $DATA_DIR (主机目录)"
 echo "端口映射: $PORT:5230"
 echo "=========================================="
 
-# 检查 Docker 卷是否存在
+# 检查并创建数据目录
 echo ""
-echo "步骤 1/6: 检查 Docker 数据卷..."
-if ! docker volume inspect "$VOLUME_NAME" &>/dev/null; then
-    echo "创建 Docker 数据卷: $VOLUME_NAME"
-    docker volume create "$VOLUME_NAME"
-    echo "数据卷已创建"
+echo "步骤 1/6: 检查数据目录..."
+if [ ! -d "$DATA_DIR" ]; then
+    echo "创建数据目录: $DATA_DIR"
+    mkdir -p "$DATA_DIR"
+    chmod 777 "$DATA_DIR"  # 让容器内的 nonroot 用户可以写入
+    echo "目录权限已设置为 777"
 else
-    echo "数据卷已存在: $VOLUME_NAME"
-    echo "数据卷位置: $(docker volume inspect "$VOLUME_NAME" -f '{{.Mountpoint}}')"
+    echo "数据目录已存在: $DATA_DIR"
+    # 检查权限，如果不是 777 则修复
+    PERMS=$(stat -c "%a" "$DATA_DIR" 2>/dev/null || stat -f "%Lp" "$DATA_DIR" 2>/dev/null)
+    if [ "$PERMS" != "777" ]; then
+        echo "修复目录权限: $DATA_DIR (当前: $PERMS -> 777)"
+        chmod 777 "$DATA_DIR"
+    else
+        echo "目录权限正确: 777"
+    fi
 fi
 
 # 检查是否已登录 GHCR
@@ -74,7 +85,7 @@ echo "步骤 6/6: 启动新容器..."
 docker run -d \
     --name "$CONTAINER_NAME" \
     -p "$PORT:5230" \
-    -v "$VOLUME_NAME:/var/opt/memos" \
+    -v "$DATA_DIR:/var/opt/memos" \
     -e MEMOS_MODE=prod \
     -e MEMOS_PORT=5230 \
     --restart unless-stopped \
@@ -125,9 +136,8 @@ if command -v hostname &> /dev/null; then
     fi
 fi
 echo ""
-echo "数据存储: Docker 卷 '$VOLUME_NAME'"
-echo "  查看卷信息: docker volume inspect $VOLUME_NAME"
-echo "  卷实际位置: $(docker volume inspect "$VOLUME_NAME" -f '{{.Mountpoint}}' 2>/dev/null || echo '需要 root 权限查看')"
+echo "数据存储: $DATA_DIR"
+echo "  查看数据: ls -la $DATA_DIR"
 echo ""
 echo "常用命令:"
 echo "  查看日志: docker logs -f $CONTAINER_NAME"
@@ -136,9 +146,6 @@ echo "  重启容器: docker restart $CONTAINER_NAME"
 echo "  删除容器: docker rm -f $CONTAINER_NAME"
 echo ""
 echo "数据备份:"
-echo "  备份: docker run --rm -v $VOLUME_NAME:/data -v \$(pwd):/backup alpine tar czf /backup/memos-backup-\$(date +%Y%m%d).tar.gz -C /data ."
-echo "  恢复: docker run --rm -v $VOLUME_NAME:/data -v \$(pwd):/backup alpine tar xzf /backup/memos-backup-YYYYMMDD.tar.gz -C /data"
-echo ""
-echo "数据迁移（从绑定挂载到命名卷）:"
-echo "  docker run --rm -v ~/.memos:/source -v $VOLUME_NAME:/dest alpine cp -a /source/. /dest/"
+echo "  备份: tar czf memos-backup-\$(date +%Y%m%d).tar.gz -C $DATA_DIR ."
+echo "  恢复: tar xzf memos-backup-YYYYMMDD.tar.gz -C $DATA_DIR"
 echo "=========================================="

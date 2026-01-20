@@ -6,16 +6,9 @@ export function MasonryColumn({
   memoList,
   renderer,
   renderContext,
-  onHeightChange,
-  isFirstColumn,
-  prefixElement,
-  prefixElementRef,
 }: MasonryColumnProps) {
   return (
-    <div className="min-w-0 mx-auto w-full">
-      {/* Prefix element (like memo editor) goes in first column */}
-      {isFirstColumn && prefixElement && <div ref={prefixElementRef}>{prefixElement}</div>}
-
+    <div className="min-w-0 w-full">
       {/* Render all memos assigned to this column */}
       {memoIndices?.map((memoIndex) => {
         const memo = memoList[memoIndex];
@@ -25,7 +18,6 @@ export function MasonryColumn({
             memo={memo}
             renderer={renderer}
             renderContext={renderContext}
-            onHeightChange={onHeightChange}
           />
         ) : null;
       })}

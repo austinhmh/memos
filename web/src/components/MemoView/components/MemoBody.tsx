@@ -7,7 +7,7 @@ import { useMemoViewContext } from "../MemoViewContext";
 import type { MemoBodyProps } from "../types";
 import { AttachmentList, LocationDisplay, RelationList } from "./metadata";
 
-const MemoBody: React.FC<MemoBodyProps> = ({ compact, onContentClick, onContentDoubleClick, onToggleNsfwVisibility }) => {
+const MemoBody: React.FC<MemoBodyProps> = ({ compact, compactLines, onContentClick, onContentDoubleClick, onToggleNsfwVisibility }) => {
   const t = useTranslate();
 
   const { memo, parentPage, showNSFWContent, nsfw } = useMemoViewContext();
@@ -28,6 +28,7 @@ const MemoBody: React.FC<MemoBodyProps> = ({ compact, onContentClick, onContentD
           onClick={onContentClick}
           onDoubleClick={onContentDoubleClick}
           compact={memo.pinned ? false : compact} // Always show full content when pinned
+          compactLines={compactLines}
         />
         <AttachmentList attachments={memo.attachments} />
         <RelationList relations={referencedMemos} currentMemoName={memo.name} parentPage={parentPage} />

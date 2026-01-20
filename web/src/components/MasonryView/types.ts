@@ -3,6 +3,7 @@ import { Memo } from "@/types/proto/api/v1/memo_service_pb";
 export interface MemoRenderContext {
   compact: boolean;
   columns: number;
+  compactLines?: number;
 }
 
 export interface MasonryViewProps {
@@ -16,7 +17,6 @@ export interface MasonryItemProps {
   memo: Memo;
   renderer: (memo: Memo, context?: MemoRenderContext) => JSX.Element;
   renderContext: MemoRenderContext;
-  onHeightChange: (memoName: string, height: number) => void;
 }
 
 export interface MasonryColumnProps {
@@ -24,10 +24,6 @@ export interface MasonryColumnProps {
   memoList: Memo[];
   renderer: (memo: Memo, context?: MemoRenderContext) => JSX.Element;
   renderContext: MemoRenderContext;
-  onHeightChange: (memoName: string, height: number) => void;
-  isFirstColumn: boolean;
-  prefixElement?: JSX.Element;
-  prefixElementRef?: React.RefObject<HTMLDivElement>;
 }
 
 export interface DistributionResult {

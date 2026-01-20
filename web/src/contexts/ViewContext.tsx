@@ -1,12 +1,17 @@
 import { createContext, type ReactNode, useContext, useState } from "react";
 
 export type LayoutMode = "LIST" | "MASONRY";
+export type CompactMode = "auto" | "always" | "never";
 
 interface ViewContextValue {
   orderByTimeAsc: boolean;
   layout: LayoutMode;
+  compactMode: CompactMode;
+  compactLines: number;
   toggleSortOrder: () => void;
   setLayout: (layout: LayoutMode) => void;
+  setCompactMode: (mode: CompactMode) => void;
+  setCompactLines: (lines: number) => void;
 }
 
 const ViewContext = createContext<ViewContextValue | null>(null);
@@ -23,12 +28,21 @@ export function ViewProvider({ children }: { children: ReactNode }) {
         return {
           orderByTimeAsc: Boolean(data.orderByTimeAsc ?? false),
           layout: (["LIST", "MASONRY"].includes(data.layout) ? data.layout : "LIST") as LayoutMode,
+          compactMode: (["auto", "always", "never"].includes(data.compactMode) ? data.compactMode : "auto") as CompactMode,
+          compactLines: typeof data.compactLines === "number" && data.compactLines >= 3 && data.compactLines <= 10 
+            ? data.compactLines 
+            : 6,
         };
       }
     } catch (error) {
       console.warn("Failed to load view settings from localStorage:", error);
     }
-    return { orderByTimeAsc: false, layout: "LIST" as LayoutMode };
+    return { 
+      orderByTimeAsc: false, 
+      layout: "LIST" as LayoutMode,
+      compactMode: "auto" as CompactMode,
+      compactLines: 6,
+    };
   };
 
   const [viewState, setViewState] = useState(getInitialState);
@@ -57,12 +71,30 @@ export function ViewProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  const setCompactMode = (compactMode: CompactMode) => {
+    setViewState((prev) => {
+      const newState = { ...prev, compactMode };
+      persistToStorage(newState);
+      return newState;
+    });
+  };
+
+  const setCompactLines = (compactLines: number) => {
+    setViewState((prev) => {
+      const newState = { ...prev, compactLines };
+      persistToStorage(newState);
+      return newState;
+    });
+  };
+
   return (
     <ViewContext.Provider
       value={{
         ...viewState,
         toggleSortOrder,
         setLayout,
+        setCompactMode,
+        setCompactLines,
       }}
     >
       {children}

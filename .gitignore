@@ -27,3 +27,6 @@ dist
 
 # Git worktrees
 .worktrees/
+
+# Data directory (Docker volume mount)
+data/

@@ -31,7 +31,14 @@ const Explore = () => {
   return (
     <PagedMemoList
       renderer={(memo: Memo, context?: MemoRenderContext) => (
-        <MemoView key={`${memo.name}-${memo.updateTime}`} memo={memo} showCreator showVisibility compact={context?.compact} />
+        <MemoView 
+          key={`${memo.name}-${memo.updateTime}`} 
+          memo={memo} 
+          showCreator 
+          showVisibility 
+          compact={context?.compact}
+          compactLines={context?.compactLines}
+        />
       )}
       listSort={listSort}
       orderBy={orderBy}

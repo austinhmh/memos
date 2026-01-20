@@ -26,7 +26,14 @@ const Home = () => {
     <div className="w-full min-h-full bg-background text-foreground">
       <PagedMemoList
         renderer={(memo: Memo, context?: MemoRenderContext) => (
-          <MemoView key={`${memo.name}-${memo.displayTime}`} memo={memo} showVisibility showPinned compact={context?.compact} />
+          <MemoView 
+            key={`${memo.name}-${memo.displayTime}`} 
+            memo={memo} 
+            showVisibility 
+            showPinned 
+            compact={context?.compact}
+            compactLines={context?.compactLines}
+          />
         )}
         listSort={listSort}
         orderBy={orderBy}

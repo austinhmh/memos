@@ -3,6 +3,7 @@ import type { Memo } from "@/types/proto/api/v1/memo_service_pb";
 export interface MemoViewProps {
   memo: Memo;
   compact?: boolean;
+  compactLines?: number;
   showCreator?: boolean;
   showVisibility?: boolean;
   showPinned?: boolean;
@@ -23,6 +24,7 @@ export interface MemoHeaderProps {
 
 export interface MemoBodyProps {
   compact?: boolean;
+  compactLines?: number;
   onContentClick: (e: React.MouseEvent) => void;
   onContentDoubleClick: (e: React.MouseEvent) => void;
   onToggleNsfwVisibility: () => void;
