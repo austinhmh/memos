@@ -124,7 +124,9 @@
     "no-changes-detected": "未检测到更改",
     "focus-mode": "聚焦模式",
     "exit-focus-mode": "退出聚焦模式",
-    "slash-commands": "按下 `/` 输入命令"
+    "slash-commands": "按下 `/` 输入命令",
+    "preview-title": "预览",
+    "preview-empty": "暂无内容可预览..."
   },
   "filters": {
     "has-code": "有代码",

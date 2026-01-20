@@ -3,6 +3,7 @@
 export { default as AttachmentList } from "./AttachmentList";
 export * from "./EditorContent";
 export * from "./EditorMetadata";
+export * from "./EditorPreview";
 export * from "./EditorToolbar";
 export { FocusModeExitButton, FocusModeOverlay } from "./FocusModeOverlay";
 export { LinkMemoDialog } from "./LinkMemoDialog";

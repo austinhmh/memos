@@ -13,7 +13,8 @@ interface TagProps extends React.HTMLAttributes<HTMLSpanElement> {
 }
 
 export const Tag: React.FC<TagProps> = ({ "data-tag": dataTag, children, className, ...props }) => {
-  const { parentPage } = useMemoViewContext();
+  const memoViewContext = useMemoViewContext();
+  const { parentPage, readonly } = memoViewContext;
   const location = useLocation();
   const navigateTo = useNavigateTo();
   const { getFiltersByFactor, removeFilter, addFilter } = useMemoFilterContext();
@@ -21,6 +22,12 @@ export const Tag: React.FC<TagProps> = ({ "data-tag": dataTag, children, classNa
   const tag = dataTag || "";
 
   const handleTagClick = (e: React.MouseEvent) => {
+    // Don't handle clicks in readonly mode (e.g., editor preview)
+    if (readonly) {
+      e.preventDefault();
+      return;
+    }
+
     e.stopPropagation();
 
     // If the tag is clicked in a memo detail page, we should navigate to the memo list page.
@@ -48,7 +55,11 @@ export const Tag: React.FC<TagProps> = ({ "data-tag": dataTag, children, classNa
 
   return (
     <span
-      className={cn("inline-block w-auto text-primary cursor-pointer hover:opacity-80 transition-colors", className)}
+      className={cn(
+        "inline-block w-auto text-primary transition-colors",
+        readonly ? "cursor-default" : "cursor-pointer hover:opacity-80",
+        className,
+      )}
       data-tag={tag}
       {...props}
       onClick={handleTagClick}

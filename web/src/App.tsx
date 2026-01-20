@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Outlet } from "react-router-dom";
 import { useInstance } from "./contexts/InstanceContext";
 import { MemoFilterProvider } from "./contexts/MemoFilterContext";
@@ -11,6 +11,8 @@ const App = () => {
   const navigateTo = useNavigateTo();
   const { profile: instanceProfile, generalSetting: instanceGeneralSetting } = useInstance();
 
+  const redirectCount = useRef(0);
+
   // Apply user preferences reactively
   useUserLocale();
   useUserTheme();
@@ -22,7 +24,10 @@ const App = () => {
 
   // Redirect to sign up page if no instance owner
   useEffect(() => {
-    if (!instanceProfile.owner) {
+    // Check if there's actually no owner (null, undefined, or empty string)
+    const needsOwner = !instanceProfile.owner || instanceProfile.owner === "";
+    if (needsOwner && redirectCount.current === 0) {
+      redirectCount.current += 1;
       navigateTo("/auth/signup");
     }
   }, [instanceProfile.owner, navigateTo]);

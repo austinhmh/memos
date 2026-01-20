@@ -35,7 +35,13 @@ export default defineConfig({
       "@/": `${resolve(__dirname, "src")}/`,
     },
   },
+  optimizeDeps: {
+    include: ["mermaid", "d3-sankey"],
+  },
   build: {
+    commonjsOptions: {
+      include: [/node_modules/],
+    },
     rollupOptions: {
       output: {
         manualChunks: {

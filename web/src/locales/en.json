@@ -124,7 +124,9 @@
     "no-changes-detected": "No changes detected",
     "focus-mode": "Focus Mode",
     "exit-focus-mode": "Exit Focus Mode",
-    "slash-commands": "Type `/` for commands"
+    "slash-commands": "Type `/` for commands",
+    "preview-title": "Preview",
+    "preview-empty": "Nothing to preview yet..."
   },
   "filters": {
     "has-code": "hasCode",

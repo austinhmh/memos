@@ -1,0 +1,26 @@
+{
+    "name": "@types/textarea-caret",
+    "version": "3.0.4",
+    "description": "TypeScript definitions for textarea-caret",
+    "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/textarea-caret",
+    "license": "MIT",
+    "contributors": [
+        {
+            "name": "Brendan Forster",
+            "githubUsername": "shiftkey",
+            "url": "https://github.com/shiftkey"
+        }
+    ],
+    "main": "",
+    "types": "index.d.ts",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git",
+        "directory": "types/textarea-caret"
+    },
+    "scripts": {},
+    "dependencies": {},
+    "peerDependencies": {},
+    "typesPublisherContentHash": "db24e991d4cf8ed69dc4f2108b51269dbee68ac9c5b261d6691a4115aab3f302",
+    "typeScriptVersion": "5.1"
+}
