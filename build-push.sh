@@ -15,13 +15,31 @@ PROXY="http://127.0.0.1:7897"
 # 获取版本标签参数
 VERSION_TAG=${1:-latest}
 
+# 检测操作系统并设置容器内代理地址
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    # Linux: 使用 Docker 默认网关或 host.docker.internal（需要额外配置）
+    CONTAINER_PROXY="http://172.17.0.1:7897"
+    DOCKER_EXTRA_ARGS="--add-host=host.docker.internal:host-gateway"
+    echo "检测到 Linux 系统，使用网关地址: $CONTAINER_PROXY"
+elif [[ "$OSTYPE" == "darwin"* ]]; then
+    # macOS: 使用 host.docker.internal
+    CONTAINER_PROXY="http://host.docker.internal:7897"
+    DOCKER_EXTRA_ARGS=""
+    echo "检测到 macOS 系统，使用 host.docker.internal"
+else
+    # 其他系统（Windows等）
+    CONTAINER_PROXY="http://host.docker.internal:7897"
+    DOCKER_EXTRA_ARGS=""
+fi
+
 echo "=========================================="
 echo "开始构建并推送 Docker 镜像"
 echo "=========================================="
 echo "镜像名称: $IMAGE_NAME"
 echo "版本标签: $VERSION_TAG"
 echo "Dockerfile: $DOCKERFILE"
-echo "代理地址: $PROXY"
+echo "宿主机代理: $PROXY"
+echo "容器内代理: $CONTAINER_PROXY"
 echo "=========================================="
 
 # 检查 dockerfile 是否存在
@@ -47,9 +65,6 @@ export HTTP_PROXY=$PROXY
 export HTTPS_PROXY=$PROXY
 export http_proxy=$PROXY
 export https_proxy=$PROXY
-
-# 容器内需要使用 host.docker.internal 访问宿主机代理
-CONTAINER_PROXY="http://host.docker.internal:7897"
 
 echo ""
 echo "步骤 1/6: 构建前端..."
@@ -81,6 +96,7 @@ docker build \
     --build-arg TARGETARCH=amd64 \
     --build-arg HTTP_PROXY=$CONTAINER_PROXY \
     --build-arg HTTPS_PROXY=$CONTAINER_PROXY \
+    $DOCKER_EXTRA_ARGS \
     -t memos:$VERSION_TAG \
     --progress=plain \
     . 2>&1 | tee /tmp/memos-docker-build.log
