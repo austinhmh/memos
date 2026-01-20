@@ -1,6 +1,14 @@
 FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS backend
 WORKDIR /backend-build
 
+# Declare proxy arguments for build stage
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ENV HTTP_PROXY=$HTTP_PROXY \
+    HTTPS_PROXY=$HTTPS_PROXY \
+    http_proxy=$HTTP_PROXY \
+    https_proxy=$HTTPS_PROXY
+
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates
 
@@ -28,6 +36,14 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # Use minimal Alpine with security updates
 FROM alpine:3.21 AS monolithic
 WORKDIR /usr/local/memos
+
+# Declare proxy arguments for runtime stage
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ENV HTTP_PROXY=$HTTP_PROXY \
+    HTTPS_PROXY=$HTTPS_PROXY \
+    http_proxy=$HTTP_PROXY \
+    https_proxy=$HTTPS_PROXY
 
 # Install runtime dependencies and create non-root user in single layer
 RUN apk add --no-cache tzdata ca-certificates && \
