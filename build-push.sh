@@ -64,12 +64,12 @@ cd ..
 
 echo ""
 echo "步骤 2/6: 验证前端构建产物..."
-if [ ! -d "web/dist" ]; then
-    echo "错误: 前端构建失败，未找到 web/dist 目录"
+if [ ! -d "server/router/frontend/dist" ]; then
+    echo "错误: 前端构建失败，未找到 server/router/frontend/dist 目录"
     exit 1
 fi
 echo "前端构建成功！"
-echo "构建产物大小: $(du -sh web/dist | cut -f1)"
+echo "构建产物大小: $(du -sh server/router/frontend/dist | cut -f1)"
 
 echo ""
 echo "步骤 3/6: 使用 Dockerfile 构建 Docker 镜像..."
