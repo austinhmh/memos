@@ -10,26 +10,34 @@ set -e  # 遇到错误立即退出
 # 配置变量
 IMAGE_NAME="ghcr.io/austinhmh/memos"
 DOCKERFILE="scripts/Dockerfile"
-PROXY="http://127.0.0.1:7897"
+PROXY="${HTTP_PROXY:-}"  # 从环境变量读取，如果没有则为空
 
 # 获取版本标签参数
 VERSION_TAG=${1:-latest}
 
-# 检测操作系统并设置容器内代理地址
-if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    # Linux: 使用 Docker 默认网关或 host.docker.internal（需要额外配置）
-    CONTAINER_PROXY="http://172.17.0.1:7897"
-    DOCKER_EXTRA_ARGS="--add-host=host.docker.internal:host-gateway"
-    echo "检测到 Linux 系统，使用网关地址: $CONTAINER_PROXY"
-elif [[ "$OSTYPE" == "darwin"* ]]; then
-    # macOS: 使用 host.docker.internal
-    CONTAINER_PROXY="http://host.docker.internal:7897"
-    DOCKER_EXTRA_ARGS=""
-    echo "检测到 macOS 系统，使用 host.docker.internal"
+# 检测操作系统并设置容器内代理地址（仅在设置了代理时）
+CONTAINER_PROXY=""
+DOCKER_EXTRA_ARGS=""
+
+if [ -n "$PROXY" ]; then
+    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        # Linux: 使用 Docker 默认网关
+        CONTAINER_PROXY="http://172.17.0.1:7897"
+        DOCKER_EXTRA_ARGS="--add-host=host.docker.internal:host-gateway"
+        echo "检测到 Linux 系统，使用网关地址: $CONTAINER_PROXY"
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS: 使用 host.docker.internal
+        CONTAINER_PROXY="http://host.docker.internal:7897"
+        DOCKER_EXTRA_ARGS=""
+        echo "检测到 macOS 系统，使用 host.docker.internal"
+    else
+        # 其他系统（Windows等）
+        CONTAINER_PROXY="http://host.docker.internal:7897"
+        DOCKER_EXTRA_ARGS=""
+        echo "检测到其他系统，使用 host.docker.internal"
+    fi
 else
-    # 其他系统（Windows等）
-    CONTAINER_PROXY="http://host.docker.internal:7897"
-    DOCKER_EXTRA_ARGS=""
+    echo "未设置代理，将直接连接网络"
 fi
 
 echo "=========================================="
@@ -38,8 +46,12 @@ echo "=========================================="
 echo "镜像名称: $IMAGE_NAME"
 echo "版本标签: $VERSION_TAG"
 echo "Dockerfile: $DOCKERFILE"
-echo "宿主机代理: $PROXY"
-echo "容器内代理: $CONTAINER_PROXY"
+if [ -n "$PROXY" ]; then
+    echo "宿主机代理: $PROXY"
+    echo "容器内代理: $CONTAINER_PROXY"
+else
+    echo "代理: 未设置"
+fi
 echo "=========================================="
 
 # 检查 dockerfile 是否存在
@@ -60,11 +72,13 @@ if ! command -v pnpm &> /dev/null; then
     exit 1
 fi
 
-# 设置代理环境变量
-export HTTP_PROXY=$PROXY
-export HTTPS_PROXY=$PROXY
-export http_proxy=$PROXY
-export https_proxy=$PROXY
+# 设置代理环境变量（仅在设置了代理时）
+if [ -n "$PROXY" ]; then
+    export HTTP_PROXY=$PROXY
+    export HTTPS_PROXY=$PROXY
+    export http_proxy=$PROXY
+    export https_proxy=$PROXY
+fi
 
 echo ""
 echo "步骤 1/6: 构建前端..."
@@ -89,25 +103,43 @@ echo "构建产物大小: $(du -sh server/router/frontend/dist | cut -f1)"
 echo ""
 echo "步骤 3/6: 使用 Dockerfile 构建 Docker 镜像..."
 echo "这可能需要几分钟时间，请耐心等待..."
-docker build \
-    -f $DOCKERFILE \
-    --build-arg VERSION=$VERSION_TAG \
-    --build-arg TARGETOS=linux \
-    --build-arg TARGETARCH=amd64 \
-    --build-arg HTTP_PROXY=$CONTAINER_PROXY \
-    --build-arg HTTPS_PROXY=$CONTAINER_PROXY \
-    $DOCKER_EXTRA_ARGS \
-    -t memos:$VERSION_TAG \
-    --progress=plain \
-    . 2>&1 | tee /tmp/memos-docker-build.log
+
+# 构建 Docker 镜像的参数
+BUILD_ARGS=(
+    -f "$DOCKERFILE"
+    --build-arg VERSION="$VERSION_TAG"
+    --build-arg TARGETOS=linux
+    --build-arg TARGETARCH=amd64
+)
+
+# 仅在设置了代理时添加代理参数
+if [ -n "$CONTAINER_PROXY" ]; then
+    BUILD_ARGS+=(
+        --build-arg HTTP_PROXY="$CONTAINER_PROXY"
+        --build-arg HTTPS_PROXY="$CONTAINER_PROXY"
+    )
+fi
+
+# 添加额外的 Docker 参数
+if [ -n "$DOCKER_EXTRA_ARGS" ]; then
+    BUILD_ARGS+=($DOCKER_EXTRA_ARGS)
+fi
+
+BUILD_ARGS+=(
+    -t "memos:$VERSION_TAG"
+    --progress=plain
+    .
+)
+
+docker build "${BUILD_ARGS[@]}" 2>&1 | tee /tmp/memos-docker-build.log
 
 echo ""
 echo "步骤 4/6: 为镜像打标签..."
-docker tag memos:$VERSION_TAG $IMAGE_NAME:$VERSION_TAG
+docker tag "memos:$VERSION_TAG" "$IMAGE_NAME:$VERSION_TAG"
 
 if [ "$VERSION_TAG" != "latest" ]; then
     echo "同时打上 latest 标签..."
-    docker tag memos:$VERSION_TAG $IMAGE_NAME:latest
+    docker tag "memos:$VERSION_TAG" "$IMAGE_NAME:latest"
 fi
 
 echo ""
@@ -123,11 +155,11 @@ fi
 
 echo ""
 echo "步骤 6/6: 推送镜像到 GitHub Container Registry..."
-docker push $IMAGE_NAME:$VERSION_TAG
+docker push "$IMAGE_NAME:$VERSION_TAG"
 
 if [ "$VERSION_TAG" != "latest" ]; then
     echo "同时推送 latest 标签..."
-    docker push $IMAGE_NAME:latest
+    docker push "$IMAGE_NAME:latest"
 fi
 
 echo ""
