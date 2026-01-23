@@ -7,6 +7,7 @@ import { MemoDetailSidebar, MemoDetailSidebarDrawer } from "@/components/MemoDet
 import MemoEditor from "@/components/MemoEditor";
 import MemoView from "@/components/MemoView";
 import MobileHeader from "@/components/MobileHeader";
+import { TableOfContents } from "@/components/TableOfContents";
 import { Button } from "@/components/ui/button";
 import { memoNamePrefix } from "@/helpers/resource-names";
 import useCurrentUser from "@/hooks/useCurrentUser";
@@ -63,14 +64,19 @@ const MemoDetail = () => {
   };
 
   return (
-    <section className="@container w-full max-w-5xl min-h-full flex flex-col justify-start items-center sm:pt-3 md:pt-6 pb-8">
+    <section className="@container w-full max-w-full min-h-full flex flex-col justify-start items-center sm:pt-3 md:pt-6 pb-8">
       {!md && (
         <MobileHeader>
           <MemoDetailSidebarDrawer memo={memo} parentPage={locationState?.from} />
         </MobileHeader>
       )}
-      <div className={cn("w-full flex flex-row justify-start items-start px-4 sm:px-6 gap-4")}>
-        <div className={cn("w-full md:w-[calc(100%-15rem)]")}>
+      <div className={cn("w-full flex flex-row justify-start items-start px-2 sm:px-4 gap-4")}>
+        {md && (
+          <div className="sticky top-0 left-0 shrink-0 -mt-6 w-56 h-screen overflow-y-auto hide-scrollbar">
+            <TableOfContents content={memo.content} className="py-6" />
+          </div>
+        )}
+        <div className={cn("w-full md:w-[calc(100%-30rem)]")}>
           {parentMemo && (
             <div className="w-auto inline-block mb-2">
               <Link
@@ -150,7 +156,7 @@ const MemoDetail = () => {
           </div>
         </div>
         {md && (
-          <div className="sticky top-0 left-0 shrink-0 -mt-6 w-56 h-full">
+          <div className="sticky top-0 left-0 shrink-0 -mt-6 w-56 h-screen overflow-y-auto hide-scrollbar">
             <MemoDetailSidebar className="py-6" memo={memo} parentPage={locationState?.from} />
           </div>
         )}

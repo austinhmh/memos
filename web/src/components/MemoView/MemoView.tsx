@@ -71,7 +71,7 @@ const MemoView: React.FC<MemoViewProps> = (props: MemoViewProps) => {
       <article 
         className={cn(
           MEMO_CARD_BASE_CLASSES, 
-          "h-[40vh] md:h-[33.33vh] overflow-y-auto",
+          "min-h-fit",
           className
         )} 
         ref={cardRef} 
