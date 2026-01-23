@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useRef } from "react";
+import { useRef, useEffect } from "react";
 import { toast } from "react-hot-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import useCurrentUser from "@/hooks/useCurrentUser";
@@ -12,13 +12,13 @@ import { convertVisibilityFromString } from "@/utils/memo";
 import { EditorContent, EditorMetadata, EditorPreview, EditorToolbar, FocusModeExitButton, FocusModeOverlay } from "./components";
 import { FOCUS_MODE_STYLES } from "./constants";
 import type { EditorRefActions } from "./Editor";
-import { useAutoSave, useFocusMode, useKeyboard, useMemoInit, useResizable } from "./hooks";
+import { useAutoSave, useFocusMode, useIntelligentScrollSync, useKeyboard, useMemoInit, useResizable } from "./hooks";
 import { cacheService, errorService, memoService, validationService } from "./services";
 import { EditorProvider, useEditorContext } from "./state";
 import type { MemoEditorProps } from "./types";
 
 const MemoEditor = (props: MemoEditorProps) => {
-  const { className, cacheKey, memoName, parentMemoName, autoFocus, placeholder, onConfirm, onCancel } = props;
+  const { className, cacheKey, memoName, parentMemoName, autoFocus, placeholder, fullHeight, onConfirm, onCancel } = props;
 
   return (
     <EditorProvider>
@@ -29,6 +29,7 @@ const MemoEditor = (props: MemoEditorProps) => {
         parentMemoName={parentMemoName}
         autoFocus={autoFocus}
         placeholder={placeholder}
+        fullHeight={fullHeight}
         onConfirm={onConfirm}
         onCancel={onCancel}
       />
@@ -43,6 +44,7 @@ const MemoEditorImpl: React.FC<MemoEditorProps> = ({
   parentMemoName,
   autoFocus,
   placeholder,
+  fullHeight,
   onConfirm,
   onCancel,
 }) => {
@@ -50,6 +52,8 @@ const MemoEditorImpl: React.FC<MemoEditorProps> = ({
   const queryClient = useQueryClient();
   const currentUser = useCurrentUser();
   const editorRef = useRef<EditorRefActions>(null);
+  const editorTextAreaRef = useRef<HTMLTextAreaElement>(null);
+  const previewContentRef = useRef<HTMLDivElement>(null);
   const { state, actions, dispatch } = useEditorContext();
   const { userGeneralSetting } = useAuth();
 
@@ -70,6 +74,13 @@ const MemoEditorImpl: React.FC<MemoEditorProps> = ({
     minWidth: 30,
     maxWidth: 70,
     storageKey: "memo-editor-split-width",
+  });
+
+  // Intelligent scroll synchronization based on line numbers
+  useIntelligentScrollSync({
+    editorTextAreaRef,
+    previewScrollRef: previewContentRef,
+    content: state.content,
   });
 
   const handleToggleFocusMode = () => {
@@ -134,17 +145,21 @@ const MemoEditorImpl: React.FC<MemoEditorProps> = ({
 
       {/*
         Layout structure:
-        - Fixed height: 50vh (40vh on mobile for better UX)
+        - Fixed height: 50vh (40vh on mobile), or 90vh when fullHeight is true (detail page)
         - Split view: left side for editor, right side for preview
         - In focus mode: expands to full viewport height
         - Responsive: stacks vertically on mobile (< md breakpoint)
-        - Internal scrolling: content areas use overflow-y-auto
+        - Scrolling: independent scrolling with percentage-based synchronization
       */}
       <div
         className={cn(
           "group relative w-full flex flex-col bg-card px-4 pt-3 pb-1 rounded-lg border border-border gap-2",
           FOCUS_MODE_STYLES.transition,
-          state.ui.isFocusMode ? cn(FOCUS_MODE_STYLES.container.base, FOCUS_MODE_STYLES.container.spacing) : "h-[40vh] md:h-[50vh]",
+          state.ui.isFocusMode 
+            ? cn(FOCUS_MODE_STYLES.container.base, FOCUS_MODE_STYLES.container.spacing)
+            : fullHeight 
+              ? "h-[90vh]" 
+              : "h-[40vh] md:h-[50vh]",
           className,
         )}
       >
@@ -155,12 +170,12 @@ const MemoEditorImpl: React.FC<MemoEditorProps> = ({
         <div ref={containerRef} className="w-full flex flex-col md:flex-row gap-4 flex-1 min-h-0 overflow-hidden">
           {/* Left side: Editor */}
           <div
-            className="flex flex-col justify-between gap-2 min-w-0 min-h-0 overflow-hidden"
+            className="flex flex-col gap-2 min-w-0 min-h-0 overflow-hidden"
             style={state.ui.isFocusMode ? { flex: 1 } : { width: `${leftWidth}%`, flexShrink: 0 }}
           >
-            {/* Editor content with internal scrolling */}
-            <div className="flex-1 min-h-0 overflow-y-auto">
-              <EditorContent ref={editorRef} placeholder={placeholder} autoFocus={autoFocus} />
+            {/* Editor content - textarea handles its own scrolling */}
+            <div className="flex-1 min-h-0 flex flex-col">
+              <EditorContent ref={editorRef} textAreaRef={editorTextAreaRef} placeholder={placeholder} autoFocus={autoFocus} />
             </div>
 
             {/* Metadata and toolbar grouped together at bottom */}
@@ -181,10 +196,10 @@ const MemoEditorImpl: React.FC<MemoEditorProps> = ({
 
           {/* Right side: Preview (hidden on mobile, shown on md+ screens) */}
           <div
-            className="hidden md:flex min-w-0 min-h-0 overflow-y-auto"
+            className="hidden md:flex min-w-0 min-h-0"
             style={state.ui.isFocusMode ? { flex: 1 } : { width: `${rightWidth}%`, flexShrink: 0 }}
           >
-            <EditorPreview content={state.content} />
+            <EditorPreview content={state.content} scrollRef={previewContentRef} />
           </div>
         </div>
       </div>

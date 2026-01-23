@@ -76,7 +76,7 @@ const MemoDetail = () => {
             <TableOfContents content={memo.content} className="py-6" />
           </div>
         )}
-        <div className={cn("w-full md:w-[calc(100%-30rem)]")}>
+        <div className={cn("w-full", md && "md:w-[calc(100%-30rem)]")}>
           {parentMemo && (
             <div className="w-auto inline-block mb-2">
               <Link
@@ -100,6 +100,7 @@ const MemoDetail = () => {
             showVisibility
             showPinned
             showNsfwContent
+            fullHeight
           />
           <div className="pt-8 pb-16 w-full">
             <h2 id="comments" className="sr-only">

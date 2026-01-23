@@ -10,6 +10,7 @@ export interface MemoViewProps {
   showNsfwContent?: boolean;
   className?: string;
   parentPage?: string;
+  fullHeight?: boolean; // 是否显示完整高度（详情页用）
 }
 
 export interface MemoHeaderProps {

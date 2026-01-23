@@ -35,8 +35,16 @@ const Editor = forwardRef(function Editor(props: EditorProps, ref: React.Forward
     isInIME = false,
     onCompositionStart,
     onCompositionEnd,
+    textAreaRef: externalTextAreaRef,
   } = props;
   const editorRef = useRef<HTMLTextAreaElement>(null);
+
+  // Sync internal ref with external ref if provided
+  useEffect(() => {
+    if (externalTextAreaRef && editorRef.current) {
+      (externalTextAreaRef as React.MutableRefObject<HTMLTextAreaElement | null>).current = editorRef.current;
+    }
+  }, [externalTextAreaRef]);
 
   const updateEditorHeight = useCallback(() => {
     if (editorRef.current) {
@@ -185,16 +193,16 @@ const Editor = forwardRef(function Editor(props: EditorProps, ref: React.Forward
     <div
       className={cn(
         "flex flex-col justify-start items-start relative w-full bg-inherit",
-        // Focus mode: flex-1 to grow and fill space; Normal: h-auto with max-height
-        isFocusMode ? "flex-1" : `h-auto ${EDITOR_HEIGHT.normal}`,
+        // Always use flex-1 min-h-0 to fill parent container
+        "flex-1 min-h-0",
         className,
       )}
     >
       <textarea
         className={cn(
           "w-full my-1 text-base resize-none overflow-x-hidden overflow-y-auto bg-transparent outline-none placeholder:opacity-70 whitespace-pre-wrap break-words",
-          // Focus mode: flex-1 h-0 to grow within flex container; Normal: h-full to fill wrapper
-          isFocusMode ? "flex-1 h-0" : "h-full",
+          // Use flex-1 min-h-0 to fill wrapper and enable scrolling
+          "flex-1 min-h-0",
         )}
         rows={1}
         placeholder={placeholder}

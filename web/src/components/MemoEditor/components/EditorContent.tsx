@@ -5,7 +5,7 @@ import { useEditorContext } from "../state";
 import type { EditorContentProps } from "../types";
 import type { LocalFile } from "../types/attachment";
 
-export const EditorContent = forwardRef<EditorRefActions, EditorContentProps>(({ placeholder }, ref) => {
+export const EditorContent = forwardRef<EditorRefActions, EditorContentProps>(({ placeholder, textAreaRef }, ref) => {
   const { state, actions, dispatch } = useEditorContext();
   const { createBlobUrl } = useBlobUrls();
 
@@ -37,6 +37,7 @@ export const EditorContent = forwardRef<EditorRefActions, EditorContentProps>(({
     <div className="w-full flex flex-col flex-1" {...dragHandlers}>
       <Editor
         ref={ref}
+        textAreaRef={textAreaRef}
         className="memo-editor-content"
         initialContent={state.content}
         placeholder={placeholder || ""}

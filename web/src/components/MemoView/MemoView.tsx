@@ -60,6 +60,7 @@ const MemoView: React.FC<MemoViewProps> = (props: MemoViewProps) => {
         className="mb-2"
         cacheKey={`inline-memo-editor-${memoData.name}`}
         memoName={memoData.name}
+        fullHeight={props.fullHeight}
         onConfirm={handleEditorConfirm}
         onCancel={handleEditorCancel}
       />
@@ -71,7 +72,7 @@ const MemoView: React.FC<MemoViewProps> = (props: MemoViewProps) => {
       <article 
         className={cn(
           MEMO_CARD_BASE_CLASSES, 
-          "min-h-fit",
+          props.fullHeight ? "h-[90vh] overflow-y-auto" : "h-[40vh] md:h-[33.33vh] overflow-y-auto",
           className
         )} 
         ref={cardRef} 

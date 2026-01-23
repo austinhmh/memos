@@ -11,6 +11,7 @@ export interface MemoEditorProps {
   memoName?: string;
   parentMemoName?: string;
   autoFocus?: boolean;
+  fullHeight?: boolean; // 是否铺满高度（详情页编辑用）
   onConfirm?: (memoName: string) => void;
   onCancel?: () => void;
 }
@@ -18,6 +19,7 @@ export interface MemoEditorProps {
 export interface EditorContentProps {
   placeholder?: string;
   autoFocus?: boolean;
+  textAreaRef?: React.RefObject<HTMLTextAreaElement>;
 }
 
 export interface EditorToolbarProps {
@@ -92,6 +94,7 @@ export interface EditorProps {
   isInIME?: boolean;
   onCompositionStart?: () => void;
   onCompositionEnd?: () => void;
+  textAreaRef?: React.RefObject<HTMLTextAreaElement>;
 }
 
 export interface VisibilitySelectorProps {
