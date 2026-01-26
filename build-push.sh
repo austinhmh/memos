@@ -1,6 +1,12 @@
 #!/bin/bash
 
 # build-push.sh - 构建 Docker 镜像并推送到 GitHub Container Registry
+# 
+# 构建流程说明:
+#   1. 构建前端 (web/) -> 输出到 server/router/frontend/dist/
+#   2. Docker 构建时，Go 编译器会通过 //go:embed 指令将 dist/ 目录嵌入到二进制文件中
+#   3. 最终的 Docker 镜像包含嵌入了前端资源的 Go 二进制文件
+#
 # 使用方法:
 #   ./build-push.sh              # 推送 latest 标签
 #   ./build-push.sh v1.0.0      # 推送 v1.0.0 标签
@@ -81,8 +87,11 @@ if [ -n "$PROXY" ]; then
 fi
 
 echo ""
-echo "步骤 1/6: 构建前端..."
+echo "步骤 1/7: 构建前端资源..."
 echo "=========================================="
+echo "说明: 前端构建产物将输出到 server/router/frontend/dist/"
+echo "      Go 编译时会通过 //go:embed 指令将其嵌入到二进制文件中"
+echo ""
 cd web
 echo "安装前端依赖..."
 pnpm install
@@ -92,16 +101,25 @@ pnpm release
 cd ..
 
 echo ""
-echo "步骤 2/6: 验证前端构建产物..."
+echo "步骤 2/7: 验证前端构建产物..."
 if [ ! -d "server/router/frontend/dist" ]; then
     echo "错误: 前端构建失败，未找到 server/router/frontend/dist 目录"
     exit 1
 fi
-echo "前端构建成功！"
-echo "构建产物大小: $(du -sh server/router/frontend/dist | cut -f1)"
+echo "✓ 前端构建成功！"
+echo "  构建产物位置: server/router/frontend/dist/"
+echo "  构建产物大小: $(du -sh server/router/frontend/dist | cut -f1)"
+echo "  文件数量: $(find server/router/frontend/dist -type f | wc -l) 个文件"
 
 echo ""
-echo "步骤 3/6: 使用 Dockerfile 构建 Docker 镜像..."
+echo "步骤 3/7: 准备 Docker 构建..."
+echo "=========================================="
+echo "说明: Docker 构建过程中会执行以下操作:"
+echo "  1. 复制源代码（包括 server/router/frontend/dist/）到构建容器"
+echo "  2. Go 编译器读取 frontend.go 中的 //go:embed dist/* 指令"
+echo "  3. 将 dist/ 目录的所有文件嵌入到 Go 二进制文件中"
+echo "  4. 生成包含前端资源的单一可执行文件"
+echo ""
 echo "这可能需要几分钟时间，请耐心等待..."
 
 # 构建 Docker 镜像的参数
@@ -134,7 +152,21 @@ BUILD_ARGS+=(
 docker build "${BUILD_ARGS[@]}" 2>&1 | tee /tmp/memos-docker-build.log
 
 echo ""
-echo "步骤 4/6: 为镜像打标签..."
+echo "步骤 4/7: 验证 Docker 镜像构建..."
+echo "=========================================="
+if docker images "memos:$VERSION_TAG" | grep -q "memos"; then
+    IMAGE_SIZE=$(docker images "memos:$VERSION_TAG" --format "{{.Size}}")
+    echo "✓ Docker 镜像构建成功！"
+    echo "  镜像名称: memos:$VERSION_TAG"
+    echo "  镜像大小: $IMAGE_SIZE"
+    echo "  说明: 该镜像包含了嵌入前端资源的 Go 二进制文件"
+else
+    echo "错误: Docker 镜像构建失败"
+    exit 1
+fi
+
+echo ""
+echo "步骤 5/7: 为镜像打标签..."
 docker tag "memos:$VERSION_TAG" "$IMAGE_NAME:$VERSION_TAG"
 
 if [ "$VERSION_TAG" != "latest" ]; then
@@ -143,7 +175,7 @@ if [ "$VERSION_TAG" != "latest" ]; then
 fi
 
 echo ""
-echo "步骤 5/6: 检查是否已登录 GitHub Container Registry..."
+echo "步骤 6/7: 检查是否已登录 GitHub Container Registry..."
 # 检查是否已登录到 ghcr.io
 if ! docker info 2>/dev/null | grep -q "Username" && ! cat ~/.docker/config.json 2>/dev/null | grep -q "ghcr.io"; then
     echo "警告: 未检测到 Docker 登录状态"
@@ -154,7 +186,7 @@ else
 fi
 
 echo ""
-echo "步骤 6/6: 推送镜像到 GitHub Container Registry..."
+echo "步骤 7/7: 推送镜像到 GitHub Container Registry..."
 docker push "$IMAGE_NAME:$VERSION_TAG"
 
 if [ "$VERSION_TAG" != "latest" ]; then
@@ -170,6 +202,12 @@ echo "镜像地址: $IMAGE_NAME:$VERSION_TAG"
 if [ "$VERSION_TAG" != "latest" ]; then
     echo "镜像地址: $IMAGE_NAME:latest"
 fi
+echo ""
+echo "构建流程总结:"
+echo "  1. ✓ 前端构建完成 (web/ -> server/router/frontend/dist/)"
+echo "  2. ✓ Go 编译完成 (通过 //go:embed 嵌入前端资源)"
+echo "  3. ✓ Docker 镜像构建完成"
+echo "  4. ✓ 推送到 GitHub Container Registry"
 echo "=========================================="
 echo ""
 echo "使用以下命令拉取并部署:"
