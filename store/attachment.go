@@ -122,12 +122,21 @@ func (s *Store) DeleteAttachment(ctx context.Context, delete *DeleteAttachment) 
 		return errors.New("attachment not found")
 	}
 
+	slog.Debug("Deleting attachment",
+		"attachment_id", delete.ID,
+		"attachment_uid", attachment.UID,
+		"storage_type", attachment.StorageType,
+		"filename", attachment.Filename)
+
 	if attachment.StorageType == storepb.AttachmentStorageType_LOCAL {
 		if err := func() error {
 			p := filepath.FromSlash(attachment.Reference)
 			if !filepath.IsAbs(p) {
 				p = filepath.Join(s.profile.Data, p)
 			}
+			slog.Debug("Deleting local file",
+				"attachment_id", attachment.ID,
+				"path", p)
 			err := os.Remove(p)
 			if err != nil {
 				return errors.Wrap(err, "failed to delete local file")
@@ -154,6 +163,11 @@ func (s *Store) DeleteAttachment(ctx context.Context, delete *DeleteAttachment) 
 				s3Config = instanceStorageSetting.S3Config
 			}
 
+			slog.Info("Deleting S3 object",
+				"attachment_id", attachment.ID,
+				"s3_key", s3ObjectPayload.Key,
+				"bucket", s3Config.Bucket)
+
 			s3Client, err := s3.NewClient(ctx, s3Config)
 			if err != nil {
 				return errors.Wrap(err, "Failed to create s3 client")
@@ -163,9 +177,19 @@ func (s *Store) DeleteAttachment(ctx context.Context, delete *DeleteAttachment) 
 			}
 			return nil
 		}(); err != nil {
-			slog.Warn("Failed to delete s3 object", slog.Any("err", err))
+			slog.Warn("Failed to delete S3 object (continuing with DB deletion)",
+				"attachment_id", attachment.ID,
+				"error", err)
 		}
 	}
 
-	return s.driver.DeleteAttachment(ctx, delete)
+	if err := s.driver.DeleteAttachment(ctx, delete); err != nil {
+		return errors.Wrap(err, "failed to delete attachment from database")
+	}
+
+	slog.Info("Successfully deleted attachment",
+		"attachment_id", delete.ID,
+		"storage_type", attachment.StorageType)
+
+	return nil
 }

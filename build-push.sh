@@ -125,6 +125,7 @@ echo "这可能需要几分钟时间，请耐心等待..."
 # 构建 Docker 镜像的参数
 BUILD_ARGS=(
     -f "$DOCKERFILE"
+    --no-cache
     --build-arg VERSION="$VERSION_TAG"
     --build-arg TARGETOS=linux
     --build-arg TARGETARCH=amd64

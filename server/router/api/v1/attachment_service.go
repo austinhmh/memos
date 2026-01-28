@@ -46,22 +46,80 @@ var SupportedThumbnailMimeTypes = []string{
 }
 
 func (s *APIV1Service) CreateAttachment(ctx context.Context, request *v1pb.CreateAttachmentRequest) (*v1pb.Attachment, error) {
+	// #region agent log
+	logFile, _ := os.OpenFile("/home/mi/dev/memos/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if logFile != nil {
+		logData := fmt.Sprintf(`{"location":"attachment_service.go:48","message":"CreateAttachment called","data":{"hasRequest":%t,"hasAttachment":%t},"timestamp":%d,"sessionId":"debug-session","hypothesisId":"C"}`+"\n", request != nil, request != nil && request.Attachment != nil, time.Now().UnixMilli())
+		logFile.WriteString(logData)
+		logFile.Close()
+	}
+	// #endregion
+	
 	user, err := s.fetchCurrentUser(ctx)
 	if err != nil {
+		// #region agent log
+		logFile, _ := os.OpenFile("/home/mi/dev/memos/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if logFile != nil {
+			logData := fmt.Sprintf(`{"location":"attachment_service.go:51","message":"Failed to get current user","data":{"error":"%s"},"timestamp":%d,"sessionId":"debug-session","hypothesisId":"C"}`+"\n", err.Error(), time.Now().UnixMilli())
+			logFile.WriteString(logData)
+			logFile.Close()
+		}
+		// #endregion
 		return nil, status.Errorf(codes.Internal, "failed to get current user: %v", err)
 	}
 	if user == nil {
+		// #region agent log
+		logFile, _ := os.OpenFile("/home/mi/dev/memos/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if logFile != nil {
+			logData := fmt.Sprintf(`{"location":"attachment_service.go:54","message":"User not authenticated","data":{},"timestamp":%d,"sessionId":"debug-session","hypothesisId":"C"}`+"\n", time.Now().UnixMilli())
+			logFile.WriteString(logData)
+			logFile.Close()
+		}
+		// #endregion
 		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
 	}
 
+	// #region agent log
+	logFile2, _ := os.OpenFile("/home/mi/dev/memos/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if logFile2 != nil {
+		logData := fmt.Sprintf(`{"location":"attachment_service.go:57","message":"User authenticated","data":{"userId":%d},"timestamp":%d,"sessionId":"debug-session","hypothesisId":"C"}`+"\n", user.ID, time.Now().UnixMilli())
+		logFile2.WriteString(logData)
+		logFile2.Close()
+	}
+	// #endregion
+
 	// Validate required fields
 	if request.Attachment == nil {
+		// #region agent log
+		logFile, _ := os.OpenFile("/home/mi/dev/memos/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if logFile != nil {
+			logData := fmt.Sprintf(`{"location":"attachment_service.go:59","message":"Attachment is nil","data":{},"timestamp":%d,"sessionId":"debug-session","hypothesisId":"C"}`+"\n", time.Now().UnixMilli())
+			logFile.WriteString(logData)
+			logFile.Close()
+		}
+		// #endregion
 		return nil, status.Errorf(codes.InvalidArgument, "attachment is required")
 	}
 	if request.Attachment.Filename == "" {
+		// #region agent log
+		logFile, _ := os.OpenFile("/home/mi/dev/memos/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if logFile != nil {
+			logData := fmt.Sprintf(`{"location":"attachment_service.go:62","message":"Filename is empty","data":{},"timestamp":%d,"sessionId":"debug-session","hypothesisId":"C"}`+"\n", time.Now().UnixMilli())
+			logFile.WriteString(logData)
+			logFile.Close()
+		}
+		// #endregion
 		return nil, status.Errorf(codes.InvalidArgument, "filename is required")
 	}
 	if !validateFilename(request.Attachment.Filename) {
+		// #region agent log
+		logFile, _ := os.OpenFile("/home/mi/dev/memos/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if logFile != nil {
+			logData := fmt.Sprintf(`{"location":"attachment_service.go:65","message":"Invalid filename","data":{"filename":"%s"},"timestamp":%d,"sessionId":"debug-session","hypothesisId":"C"}`+"\n", request.Attachment.Filename, time.Now().UnixMilli())
+			logFile.WriteString(logData)
+			logFile.Close()
+		}
+		// #endregion
 		return nil, status.Errorf(codes.InvalidArgument, "filename contains invalid characters or format")
 	}
 	if request.Attachment.Type == "" {

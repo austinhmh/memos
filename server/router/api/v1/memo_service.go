@@ -443,6 +443,16 @@ func (s *APIV1Service) UpdateMemo(ctx context.Context, request *v1pb.UpdateMemoR
 		return nil, status.Errorf(codes.Internal, "failed to update memo")
 	}
 
+	// Cleanup unreferenced attachments if content was updated
+	if update.Content != nil || update.Payload != nil {
+		if err := s.cleanupUnreferencedAttachments(ctx, memo.ID); err != nil {
+			// Log error but don't fail the update
+			slog.Error("Failed to cleanup unreferenced attachments (non-fatal)",
+				"error", err,
+				"memo_id", memo.ID)
+		}
+	}
+
 	memo, err = s.Store.GetMemo(ctx, &store.FindMemo{
 		ID: &memo.ID,
 	})
@@ -826,4 +836,100 @@ func (*APIV1Service) parseMemoOrderBy(orderBy string, memoFind *store.FindMemo) 
 	}
 
 	return nil
+}
+
+// cleanupUnreferencedAttachments removes attachments that are no longer referenced in the memo content.
+func (s *APIV1Service) cleanupUnreferencedAttachments(ctx context.Context, memoID int32) error {
+	slog.Debug("Starting cleanup of unreferenced attachments",
+		"memo_id", memoID)
+
+	// 1. Get the memo with its payload
+	memo, err := s.Store.GetMemo(ctx, &store.FindMemo{ID: &memoID})
+	if err != nil {
+		return errors.Wrap(err, "failed to get memo")
+	}
+	if memo == nil {
+		return errors.New("memo not found")
+	}
+
+	// 2. Check if payload has image URLs
+	if memo.Payload == nil || len(memo.Payload.ImageUrls) == 0 {
+		slog.Debug("No image URLs in payload, skipping cleanup",
+			"memo_id", memoID)
+		return nil
+	}
+
+	// 3. Get all attachments for this memo
+	attachments, err := s.Store.ListAttachments(ctx, &store.FindAttachment{
+		MemoID: &memoID,
+	})
+	if err != nil {
+		return errors.Wrap(err, "failed to list attachments")
+	}
+
+	if len(attachments) == 0 {
+		slog.Debug("No attachments found for memo",
+			"memo_id", memoID)
+		return nil
+	}
+
+	slog.Debug("Found attachments for memo",
+		"memo_id", memoID,
+		"attachment_count", len(attachments))
+
+	// 4. Build a set of referenced UIDs from image URLs
+	referencedUIDs := make(map[string]bool)
+	for _, url := range memo.Payload.ImageUrls {
+		if uid := extractAttachmentUID(url); uid != "" {
+			referencedUIDs[uid] = true
+		}
+	}
+
+	slog.Debug("Extracted referenced UIDs from image URLs",
+		"memo_id", memoID,
+		"image_urls", memo.Payload.ImageUrls,
+		"referenced_uids", referencedUIDs)
+
+	// 5. Delete unreferenced attachments
+	deletedCount := 0
+	for _, att := range attachments {
+		if !referencedUIDs[att.UID] {
+			slog.Info("Deleting unreferenced attachment",
+				"memo_id", memoID,
+				"attachment_id", att.ID,
+				"attachment_uid", att.UID,
+				"filename", att.Filename)
+
+			if err := s.Store.DeleteAttachment(ctx, &store.DeleteAttachment{
+				ID: att.ID,
+			}); err != nil {
+				slog.Error("Failed to delete unreferenced attachment",
+					"error", err,
+					"memo_id", memoID,
+					"attachment_id", att.ID)
+				// Continue with other attachments
+				continue
+			}
+			deletedCount++
+		}
+	}
+
+	slog.Info("Cleanup completed",
+		"memo_id", memoID,
+		"deleted_count", deletedCount)
+
+	return nil
+}
+
+// extractAttachmentUID extracts the UID from an attachment URL.
+// Supports formats: /file/attachments/{uid}/{filename}
+func extractAttachmentUID(url string) string {
+	// Match /file/attachments/{uid}/...
+	if strings.HasPrefix(url, "/file/attachments/") {
+		parts := strings.Split(strings.TrimPrefix(url, "/file/attachments/"), "/")
+		if len(parts) > 0 && parts[0] != "" {
+			return parts[0]
+		}
+	}
+	return ""
 }

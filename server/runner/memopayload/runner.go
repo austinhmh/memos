@@ -76,13 +76,30 @@ func RebuildMemoPayload(memo *store.Memo, markdownService markdown.Service) erro
 		memo.Payload = &storepb.MemoPayload{}
 	}
 
+	slog.Debug("Rebuilding memo payload",
+		"memo_id", memo.ID,
+		"content_length", len(memo.Content))
+
 	// Use goldmark service to extract all metadata in a single pass (more efficient)
 	data, err := markdownService.ExtractAll([]byte(memo.Content))
 	if err != nil {
 		return errors.Wrap(err, "failed to extract markdown metadata")
 	}
 
+	slog.Debug("Extracted data from markdown",
+		"memo_id", memo.ID,
+		"tags", data.Tags,
+		"image_urls", data.ImageURLs,
+		"image_count", len(data.ImageURLs))
+
 	memo.Payload.Tags = data.Tags
 	memo.Payload.Property = data.Property
+	memo.Payload.ImageUrls = data.ImageURLs
+
+	slog.Info("Updated memo payload",
+		"memo_id", memo.ID,
+		"tags_count", len(data.Tags),
+		"image_urls_count", len(data.ImageURLs))
+
 	return nil
 }

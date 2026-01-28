@@ -19,8 +19,9 @@ import (
 
 // ExtractedData contains all metadata extracted from markdown in a single pass.
 type ExtractedData struct {
-	Tags     []string
-	Property *storepb.MemoPayload_Property
+	Tags      []string
+	Property  *storepb.MemoPayload_Property
+	ImageURLs []string
 }
 
 // Service handles markdown metadata extraction.
@@ -293,8 +294,9 @@ func (s *service) ExtractAll(content []byte) (*ExtractedData, error) {
 	}
 
 	data := &ExtractedData{
-		Tags:     []string{},
-		Property: &storepb.MemoPayload_Property{},
+		Tags:      []string{},
+		Property:  &storepb.MemoPayload_Property{},
+		ImageURLs: []string{},
 	}
 
 	// Single walk to collect all data
@@ -306,6 +308,14 @@ func (s *service) ExtractAll(content []byte) (*ExtractedData, error) {
 		// Extract tags
 		if tagNode, ok := n.(*mast.TagNode); ok {
 			data.Tags = append(data.Tags, string(tagNode.Tag))
+		}
+
+		// Extract image URLs
+		if img, ok := n.(*gast.Image); ok {
+			imageURL := string(img.Destination)
+			if imageURL != "" {
+				data.ImageURLs = append(data.ImageURLs, imageURL)
+			}
 		}
 
 		// Extract properties based on node kind

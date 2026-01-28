@@ -11,6 +11,9 @@ message MemoPayload {
 
   repeated string tags = 3;
 
+  // Image URLs extracted from markdown content for tracking references
+  repeated string image_urls = 4;
+
   // The calculated properties from the memo content.
   message Property {
     bool has_link = 1;

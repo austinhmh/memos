@@ -57,6 +57,16 @@ export const MermaidBlock = ({ children, className }: MermaidBlockProps) => {
           theme: mermaidTheme,
           securityLevel: "strict",
           fontFamily: "inherit",
+          flowchart: {
+            padding: 15,
+            nodeSpacing: 50,
+            rankSpacing: 50,
+            useMaxWidth: false,
+            htmlLabels: true, // 使用 HTML 标签渲染，更好支持中文
+          },
+          block: {
+            padding: 15,
+          },
         });
 
         const { svg: renderedSvg } = await mermaid.render(id, codeContent);
