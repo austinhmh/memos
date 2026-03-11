@@ -1,0 +1,587 @@
+web/src/outline-shims/app/actions/sections.ts
+  cd8aaac8d146a618 1-16
+web/src/lib/mermaid/normalizeMermaidCode.ts
+  df829b430341ea3e 1-18
+pull.sh
+  323b249783b6f23b 3,5-8,16-32,35,37-38,44,46,49,51,54,56-66,69,71-75,78,80,82,87,89,92,95-96,99,101,103-113,115,117-122,124-128
+  c954b74313c32123 41,83,114
+web/src/lib/markdown/renderers/CodeBlockRenderer.tsx
+  6310832641e8d9e8 1-18,21,23-50,54-56,58-77,79-87,89-91
+  df829b430341ea3e 19-20,22,51-53,57,78,88
+build-push.sh
+  323b249783b6f23b 3,7-8,10,16-34,36-37,41-50,56,58-62,66,70-72,75-78,82-83,86,88-92,95-98,100,102-106,108-112,114,118-120,123,125-126,128,130-131,133-136,139-140,142-143,148,150-151,153-155
+web/src/pages/Explore.tsx
+  8c024a00907ee9ee 1,24,29-30,35-37,39
+  39d667a7a17ed8c0 2,12-14,31-34,38
+  6310832641e8d9e8 3,44
+web/src/outline-shims/app/utils/Desktop.ts
+  cd8aaac8d146a618 1-7
+web/src/outline-shims/app/hooks/useWindowSize.ts
+  cd8aaac8d146a618 1-16
+web/src/outline-shims/app/components/primitives/HStack.tsx
+  cd8aaac8d146a618 1-9
+store/instance_setting.go
+  fd2058762873596c 140-141
+web/src/components/MemoEditor/types/components.ts
+  fd2058762873596c 15
+  6310832641e8d9e8 14,23,95
+web/src/components/MemoEditor/hooks/useKeyboard.ts
+  39d667a7a17ed8c0 6,9,12-16,20-25,31
+web/src/outline-shims/shared/styles/globals.ts
+  cd8aaac8d146a618 1-163
+server/router/api/v1/connect_interceptors.go
+  fd2058762873596c 59
+web/src/components/BlogEditor/lib/markdownSerializer.ts
+  39d667a7a17ed8c0 50-52,65-68
+  df829b430341ea3e 1-49,53-64,69-170
+web/src/outline-shims/app/hooks/useBoolean.ts
+  cd8aaac8d146a618 1-9
+web/src/hooks/useMediaQuery.ts
+  01549bcbcad977e8 3,9
+web/src/outline-shims/shared/utils/urls.ts
+  cd8aaac8d146a618 1-247
+web/src/components/BlogEditor/lib/checkbox.test.ts
+  39d667a7a17ed8c0 1-25
+web/src/components/BlogEditor/plugins/CodeHighlightPlugin.ts
+  df829b430341ea3e 1-12
+web/src/outline-shims/app/components/Scrollable.tsx
+  cd8aaac8d146a618 1-24
+web/src/styled-components.d.ts
+  cd8aaac8d146a618 1-161
+web/src/outline-shims/app/stores/index.ts
+  cd8aaac8d146a618 1-11,13-16,18,20-22,24-34,39-45
+  f2097850a2b7e472 12,17,19,23,35-38
+web/src/outline-shims/app/components/NudeButton.tsx
+  cd8aaac8d146a618 1-17
+web/src/components/MemoEditor/components/EditorContent.tsx
+  6310832641e8d9e8 8,37,44
+web/src/outline-shims/app/components/HoverPreview.tsx
+  cd8aaac8d146a618 1-5
+web/src/outline-shims/app/components/Avatar.tsx
+  cd8aaac8d146a618 1-21
+web/src/index.css
+  01549bcbcad977e8 373,682
+  39d667a7a17ed8c0 481-535,898-914
+  e3ca94980964f1fd 939,950-955,970-974,978-980
+  447ba15aecf0ba52 355-372,374-480,536-681,683-732,750-866
+  df829b430341ea3e 867-897,915-938,981-1017
+  cd8aaac8d146a618 940-949,956-969,975-977
+web/src/lib/markdown/rules/highlight.ts
+  6310832641e8d9e8 1-91
+web/src/outline-shims/app/hooks/useMobile.ts
+  cd8aaac8d146a618 1-14
+web/src/declarations.d.ts
+  cd8aaac8d146a618 1-3
+web/src/outline-shims/app/hooks/useRequest.ts
+  cd8aaac8d146a618 1-24
+web/src/outline-shims/app/hooks/useCurrentUser.ts
+  cd8aaac8d146a618 1-10
+web/src/components/BlogEditor/lib/normalizePastedMarkdown.ts
+  f2097850a2b7e472 1-19
+web/src/components/MemoActionMenu/hooks.ts
+  39d667a7a17ed8c0 19-20,25,33,108,111
+web/src/outline-vendor/app/editor/extensions/index.ts
+  39d667a7a17ed8c0 1-37
+web/src/components/PasswordSignInForm.tsx
+  39d667a7a17ed8c0 106
+docs/SERVICE_DESIGN.md
+  01549bcbcad977e8 1-729
+web/src/pages/MemoDetail.tsx
+  01549bcbcad977e8 3,10-11,33,111,118-122,126-147,150-151,153,155,160-161,165-199,201-207,209-210,212-214,223-229,231-234,239-248,252,267,287-317,319-320
+  df829b430341ea3e 67
+  39d667a7a17ed8c0 26,28,108
+  447ba15aecf0ba52 22
+  e3ca94980964f1fd 24,27,41,45-50,96-103,148-149
+  f2097850a2b7e472 25,79-88,91-95
+  cd8aaac8d146a618 4
+  6310832641e8d9e8 2,19,21,23,65-66,68-76,107,117,123-125,208,211,215-222,238,286
+web/src/outline-shims/app/utils/mention.ts
+  cd8aaac8d146a618 1-12
+web/src/components/CreateShortcutDialog.tsx
+  39d667a7a17ed8c0 40-45,47
+web/src/components/BlogEditor/lib/schema.ts
+  39d667a7a17ed8c0 99-112,126-149
+  df829b430341ea3e 1-98,113-125,150-212,214-218,220,222-231,233-295
+  e3ca94980964f1fd 213,219,221,232
+docs/BLOG_PERMISSION_PLAN.md
+  8f6ca506c9e7937c 1-159
+web/src/outline-shims/shared/components/PullRequestIcon.tsx
+  cd8aaac8d146a618 1-5
+web/src/components/BlogEditor/lib/inputRules.ts
+  39d667a7a17ed8c0 1,4-5,35-40,84-104,114-118
+  df829b430341ea3e 2-3,6-34,41-74,83,105-113,119-124
+  8ff9404ae638f7ec 75-82
+web/src/outline-shims/app/components/primitives/components/Menu.tsx
+  f2097850a2b7e472 17-32,39-55
+  cd8aaac8d146a618 1-16,33-38,56-68
+web/src/components/BlogEditor/plugins/PasteHandlerPlugin.ts
+  f2097850a2b7e472 1-136
+web/src/lib/markdown/renderers/NoticeRenderer.tsx
+  6310832641e8d9e8 1-28
+web/src/outline-shims/app/components/Tooltip.tsx
+  cd8aaac8d146a618 1-16
+web/src/components/BlogEditor/plugins/HeadingIdPlugin.ts
+  39d667a7a17ed8c0 1-5,7-9,11-16,18-24,27-47,49-122,125-126,128-147,149-152
+  df829b430341ea3e 6,10,17,25-26,48,123-124,127,148,153-170
+web/src/outline-shims/app/components/Header.tsx
+  cd8aaac8d146a618 1
+web/src/outline-shims/app/models/Document.ts
+  cd8aaac8d146a618 1-25
+web/src/outline-shims/app/components/Icons/CircleIcon.tsx
+  cd8aaac8d146a618 1-5
+web/src/lib/markdown/renderers/CheckboxRenderer.tsx
+  6310832641e8d9e8 1-35
+web/src/hooks/useUserQueries.ts
+  34a3d5f32de0a29a 42
+web/src/components/MemoActionMenu/types.ts
+  39d667a7a17ed8c0 8-9
+web/src/components/PagedMemoList/PagedMemoList.tsx
+  6310832641e8d9e8 137-147,152-155
+web/vite.config.mts
+  cd8aaac8d146a618 36-41
+web/vitest.config.mts
+  e3ca94980964f1fd 1-15
+web/src/hooks/useMemoQueries.ts
+  e3ca94980964f1fd 180
+  39d667a7a17ed8c0 3,6,9-132,203,205-209,211-213,250-255,257-258,260
+web/src/outline-shims/app/components/Portal.tsx
+  cd8aaac8d146a618 1-15
+web/src/outline-shims/app/hooks/useStores.ts
+  f2097850a2b7e472 1
+  cd8aaac8d146a618 2-5
+web/src/outline-shims/app/types.ts
+  cd8aaac8d146a618 1-17
+web/src/components/BlogEditor/plugins/MermaidPlugin.ts
+  39d667a7a17ed8c0 18-62,87-94,99,102-123,126-203,205,207,209,211,213,216-218,235,244,246,250-252,258-259,263-264,266,312,316,332-335,337-357,360,367,395-396,432,482,488-489,491-500,504-507,510,513,518-521,525-528,530-531,547,549-550,552-553,557,560-563
+  df829b430341ea3e 1-2,4,6-7,9,11-12,15-16,63-67,69-75,79-81,276,289-290,292-293,311,318,326-327,369,390-391,393,397,399-400,402-403,414,436,483,486-487,567-570,613-615
+  e3ca94980964f1fd 210,361,379-389,394,437-463,514-517,522-524,529,532-546,548,551,559,584-607
+  8ff9404ae638f7ec 473-481
+  34a3d5f32de0a29a 3,5,8,10,13-14,17,68,76-78,82-86,95-98,100-101,124-125,204,206,208,212,214-215,219-234,236-243,245,247-249,253-257,260-262,265,267-275,277-288,291,294-310,313-315,317,319-325,328-331,336,358-359,362-366,368,370-378,392,398,401,404-413,415-431,433-435,464-472,484-485,490,501-502,508-509,511-512,554-556,558,564-566,571-583,608-612
+web/src/outline-shims/app/components/Button.tsx
+  cd8aaac8d146a618 1-38
+web/src/outline-shims/shared/components/IssueStatusIcon.tsx
+  cd8aaac8d146a618 1-5
+web/src/outline-shims/app/components/Flex.tsx
+  cd8aaac8d146a618 1-60
+web/src/outline-shims/shared/components/Icon.tsx
+  cd8aaac8d146a618 1-136
+web/src/components/BlogExplorer.tsx
+  39d667a7a17ed8c0 2,6,8,18-19,24-28,31-32,37-48,104-107
+  8f6ca506c9e7937c 91,99
+  f2097850a2b7e472 53-54,57
+  fd2058762873596c 1,3-5,7,9-17,20-23,29-30,33-36,49-52,55-56,58-90,92-98,100-103,108-113
+web/src/lib/markdown/renderers/TagRenderer.tsx
+  6310832641e8d9e8 1-55
+web/src/router/lazyWithRetry.ts
+  39d667a7a17ed8c0 1-47
+web/src/pages/Home.tsx
+  6310832641e8d9e8 3,8,43
+  323b249783b6f23b 1,22,27-28,33-35,37
+  39d667a7a17ed8c0 2,12-14,29-32,36
+web/src/outline-shims/app/components/primitives/Popover.tsx
+  cd8aaac8d146a618 1-21
+web/src/outline-shims/app/components/Icons/DottedCircleIcon.tsx
+  cd8aaac8d146a618 1-5
+web/src/outline-shims/app/components/ResizingHeightContainer.tsx
+  cd8aaac8d146a618 1-5
+web/src/lib/markdown/rules/underlines.ts
+  6310832641e8d9e8 1-21
+web/src/components/MemoEditor/index.tsx
+  39d667a7a17ed8c0 78-79
+  fd2058762873596c 21,32,48,141-166
+  6310832641e8d9e8 31,47,124-138
+web/src/router/index.tsx
+  fd2058762873596c 79-86
+  39d667a7a17ed8c0 10-26,28
+web/src/components/BlogEditor/plugins/CodeFenceActivePlugin.ts
+  e3ca94980964f1fd 1-82
+web/src/pages/Archived.tsx
+  6310832641e8d9e8 1,24-25
+web/src/outline-shims/app/env.ts
+  cd8aaac8d146a618 1-14
+web/src/outline-shims/app/utils/Logger.ts
+  cd8aaac8d146a618 1-9
+web/src/outline-shims/app/components/Emoji.tsx
+  cd8aaac8d146a618 1-5
+web/src/outline-shims/app/components/Lightbox.tsx
+  cd8aaac8d146a618 1-15
+web/src/components/MemoEditor/Editor/index.tsx
+  6310832641e8d9e8 36,208
+  39d667a7a17ed8c0 7,179-195,223
+web/src/components/BlogEditor/lib/isMarkdown.ts
+  f2097850a2b7e472 1-49
+web/src/components/MemoView/MemoViewContext.tsx
+  6310832641e8d9e8 36
+REFACTOR_PLAN.md
+  fd2058762873596c 1-381
+web/src/components/MemoContent/MermaidBlock.tsx
+  df829b430341ea3e 4,47,63-64
+web/src/lib/markdown/renderers/MathRenderer.tsx
+  6310832641e8d9e8 1-26
+docs/outline-and-mermaid.md
+  df829b430341ea3e 1-503
+docs/TEST_CHECKLIST.md
+  34a3d5f32de0a29a 381
+  e3ca94980964f1fd 123,125-352,360-362,366,370-371,375,382-400,402,404-412,414-415
+  df829b430341ea3e 1-122,124,353-359,363-365,367-369,372-374,376-380,401,403,413
+server/router/frontend/frontend.go
+  39d667a7a17ed8c0 8-9,35-36,38,40,43-50,54,71
+web/src/components/BlogEditor/index.tsx
+  447ba15aecf0ba52 1,59,251,255,281,283-287,299,301-302,304-309,320-321,323,325-326,642,685-686,690-691,694,704-708,713-717
+  39d667a7a17ed8c0 2-5,7-12,14-18,20-22,25-47,49,56,60-95,101-246,252-254,256,258-267,269-273,288-298,300,303,310-319,322,324,327,330-331,333-491,515,522,530-554,565,567,575,621,626,640-641,646-647,649-650,654,657,668,672-673,676-679,681-683,687-689
+  34a3d5f32de0a29a 250,268,328-329,492-502,504-514,516-517,525,555-556,558,572-574,624-625,627,629,635-636,638,695-700,702-703
+  e3ca94980964f1fd 50,55,278-279,332,503,518-519,528,559,648,651-653,656,658-667
+  8c024a00907ee9ee 13,51-54,57-58,96,249,569-570,680,684,692-693,718-723
+  f2097850a2b7e472 6,576-620,622-623,630-634
+  df829b430341ea3e 19,23-24,48,97-100,247-248,257,274-277,280,282,526,529,560-564,566,568,628,637,639,643-645,655,669-671,674-675,701,709-712
+web/src/components/MemoEditor/components/EditorPreview.tsx
+  6310832641e8d9e8 20
+web/src/outline-shims/app/components/Input.tsx
+  f2097850a2b7e472 14,18,21-40,42-58
+  cd8aaac8d146a618 1-13,15-17,19-20,41,59-60
+web/src/router/routes.ts
+  fd2058762873596c 3
+web/src/pages/SignUp.tsx
+  39d667a7a17ed8c0 120
+web/src/outline-shims/app/components/Icons/ArrowIcon.tsx
+  cd8aaac8d146a618 1-17
+web/src/components/MemoPreviewCard.tsx
+  6310832641e8d9e8 1-120
+web/src/outline-shims/app/hooks/useEventListener.ts
+  cd8aaac8d146a618 1-18
+web/src/outline-shims/app/components/DocumentBreadcrumb.tsx
+  cd8aaac8d146a618 1-5
+web/src/components/Navigation.tsx
+  fd2058762873596c 1,37-42,79
+web/src/outline-shims/app/components/Menu/transformer.ts
+  cd8aaac8d146a618 1-3
+web/src/outline-shims/app/components/primitives/Menu/MenuContext.tsx
+  cd8aaac8d146a618 1-9
+web/src/outline-shims/shared/env.ts
+  cd8aaac8d146a618 1-10
+web/src/pages/BlogDetail.tsx
+  8f6ca506c9e7937c 1-2,6-8,10-11,13-14,19-27,30,34,36-41,43-46,48-56,60-69,77-78,80-85,88-122,124-126
+  39d667a7a17ed8c0 9,12,17,35,47,57,123,128
+  fd2058762873596c 3,18,28-29,31-32,42,70-76,86,136-140
+  8c024a00907ee9ee 4-5,33,58-59,79,87
+  cd8aaac8d146a618 16,127,129
+  01549bcbcad977e8 15,130-135
+web/src/components/BlogEditor/lib/docCache.ts
+  34a3d5f32de0a29a 1-4,6-52,107-108,110-113,115,118,120-121,126-130,135,137-138,144
+  e3ca94980964f1fd 53-106,109,114,116-117,119,122-125,131-134,136,139-143
+  39d667a7a17ed8c0 5
+web/src/outline-shims/app/components/primitives/Drawer.tsx
+  f2097850a2b7e472 1-21
+docs/OUTLINE_REPLICA_TEST.md
+  df829b430341ea3e 1-106,118-125,163-170
+  e3ca94980964f1fd 107-117,126-162
+web/tsconfig.json
+  cd8aaac8d146a618 5,7,10-11,13-15,24-29,32-36
+web/src/lib/markdown/rules/tag.ts
+  6310832641e8d9e8 1-53
+web/src/outline-shims/shared/components/Backticks.tsx
+  cd8aaac8d146a618 1-10
+web/src/layouts/BlogLayout.tsx
+  fd2058762873596c 1-32
+web/src/outline-shims/app/utils/ApiClient.ts
+  cd8aaac8d146a618 1-16
+scripts/Dockerfile
+  323b249783b6f23b 14,43-47
+web/src/lib/markdown/rules/checkboxes.ts
+  6310832641e8d9e8 1-72
+web/src/outline-shims/app/components/TooltipContext.tsx
+  cd8aaac8d146a618 1-5
+web/src/outline-shims/shared/utils/ProsemirrorHelper.ts
+  cd8aaac8d146a618 1-549
+web/src/lib/markdown/renderers/MermaidBlockRenderer.tsx
+  6310832641e8d9e8 1-3,5-31,33-36,39-64
+  df829b430341ea3e 4,32,37-38
+web/src/lib/markdown/MarkdownRenderer.tsx
+  fd2058762873596c 370,375-384,387
+  e3ca94980964f1fd 1,12-15,19-23,30-33,36-39,41-66,68-88,95-97,99-104,106,108-110,113-114,117,119-150,154,160
+  df829b430341ea3e 228
+  39d667a7a17ed8c0 3-4,26-29,40,89-94,98,111-112,115-116,118,155-156,169-175,190,197,205,212,219,269,420,436,468,486
+  6310832641e8d9e8 2,5-11,16-18,24-25,34-35,67,105,107,151-153,157-159,161-168,176-189,191-196,198-204,206-211,213-218,220-227,229-268,270-369,371-374,385-386,388-419,421-435,437-467,469-485,487-609
+web/src/pages/UserProfile.tsx
+  6310832641e8d9e8 5,132-133
+web/src/components/BlogEditor/lib/markdownParser.ts
+  39d667a7a17ed8c0 14,16,89-94,99-102
+  e3ca94980964f1fd 32
+  c5af8879aa4e202a 2-4,6-10,21-22,24-27,29-31,33-81,83,85,134,157-159
+  df829b430341ea3e 1,5,11-13,15,17-20,23,28,82,84,86-88,95-98,103-133,135-156,160-171
+web/src/lib/markdown/parser.test.ts
+  e3ca94980964f1fd 1-361
+web/src/outline-shims/app/theme.ts
+  cd8aaac8d146a618 1-9
+web/src/outline-vendor/shared/editor/lib/markInputRule.ts
+  8ff9404ae638f7ec 1-94
+web/src/outline-shims/app/models/Integration.ts
+  cd8aaac8d146a618 1-8
+web/src/outline-shims/shared/utils/IconLibrary.tsx
+  cd8aaac8d146a618 1-609
+web/src/outline-shims/app/hooks/useKeyDown.ts
+  cd8aaac8d146a618 1-33
+web/src/hooks/useMemoFilters.ts
+  df829b430341ea3e 64-66,70,72
+web/src/lib/markdown/rules/math.ts
+  6310832641e8d9e8 1-105
+web/src/components/MemoTableOfContents.tsx
+  01549bcbcad977e8 1-133
+web/src/components/MemoContent/index.tsx
+  6310832641e8d9e8 4,31
+web/MIGRATION_PLAN.md
+  cd8aaac8d146a618 1-508
+web/src/outline-shims/app/hooks/useDictionary.ts
+  cd8aaac8d146a618 3-5,7-14,17
+  39d667a7a17ed8c0 1-2,6,15-16
+web/src/outline-shims/app/hooks/useOnClickOutside.ts
+  cd8aaac8d146a618 1-19
+web/src/outline-shims/app/components/primitives/Menu/index.tsx
+  cd8aaac8d146a618 1-13
+web/src/pages/BlogHome.tsx
+  39d667a7a17ed8c0 2,8,15-16,22-26,29
+  fd2058762873596c 1,3-6,9-12,14,17-20,27-28,30-38,41-42,44-89,97-107
+  8f6ca506c9e7937c 7,13,21,90-96
+  f2097850a2b7e472 39-40,43
+web/src/lib/markdown/parser.ts
+  6310832641e8d9e8 1-36
+web/src/lib/markdown/markdown-it-emoji.d.ts
+  6310832641e8d9e8 1-4
+web/package.json
+  cd8aaac8d146a618 15,18,21-24,36,38,42-43,46-49,52,54,56,58-60,62,69,80-88,97,99-100,103,111-112,115-116,123-128,133-137,150
+  df829b430341ea3e 44-45,63,72-74,89-96
+  e3ca94980964f1fd 10-12,98,101,142-143,158,163-164
+.cursor/rules/outline-source-strict.mdc
+  5e400f0a37b80af8 1-58
+web/src/components/OutlineEditorWrapper.tsx
+  cd8aaac8d146a618 1-3,5-14,16-172,174-191
+  39d667a7a17ed8c0 4,15,173
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "497ab5c7d01cfa91d71cf6e80f75e9a82ae77af4",
+  "prompts": {
+    "01549bcbcad977e8": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "2fe1733d-1e7c-4c54-8664-bc34fe81c970",
+        "model": "claude-4.6-opus-high-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 1126,
+      "total_deletions": 181,
+      "accepted_lines": 1055,
+      "overriden_lines": 0
+    },
+    "323b249783b6f23b": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "41a04217-9756-4840-a9a9-1bbcf29228ad",
+        "model": "claude-4.6-opus-high-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 265,
+      "total_deletions": 294,
+      "accepted_lines": 209,
+      "overriden_lines": 0
+    },
+    "34a3d5f32de0a29a": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "dba498c0-259f-4cbf-97db-a829a1399a9f",
+        "model": "claude-4.6-opus-high-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 977,
+      "total_deletions": 821,
+      "accepted_lines": 337,
+      "overriden_lines": 1
+    },
+    "39d667a7a17ed8c0": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "0bacc56c-df63-4dd4-9e9d-547a38a4e75f",
+        "model": "claude-4.6-sonnet-medium-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 2082,
+      "total_deletions": 867,
+      "accepted_lines": 1490,
+      "overriden_lines": 0
+    },
+    "447ba15aecf0ba52": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "31631387-c4cf-48ad-aec2-5d6e2a1fb3ab",
+        "model": "claude-4.6-opus-high-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 794,
+      "total_deletions": 265,
+      "accepted_lines": 617,
+      "overriden_lines": 0
+    },
+    "5e400f0a37b80af8": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "a62dfb61-dc23-4188-ae57-980f83fe18de",
+        "model": "claude-4.6-opus-high-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 58,
+      "total_deletions": 0,
+      "accepted_lines": 58,
+      "overriden_lines": 0
+    },
+    "6310832641e8d9e8": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "9214fe76-e76f-4f5b-b46f-abfd524cdff2",
+        "model": "claude-4.6-opus-high-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 1499,
+      "total_deletions": 244,
+      "accepted_lines": 1321,
+      "overriden_lines": 0
+    },
+    "8c024a00907ee9ee": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "13faf8a4-3ac0-41ec-b12d-98b5391121ca",
+        "model": "claude-4.6-opus-high-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 318,
+      "total_deletions": 111,
+      "accepted_lines": 37,
+      "overriden_lines": 0
+    },
+    "8f6ca506c9e7937c": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "ddc61e4a-9f0e-423a-9a47-09113edd169c",
+        "model": "claude-4.6-opus-high-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 324,
+      "total_deletions": 10,
+      "accepted_lines": 266,
+      "overriden_lines": 0
+    },
+    "8ff9404ae638f7ec": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "6ee32960-ac28-46f0-9071-ccc134584cf1",
+        "model": "claude-4.6-opus-high-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 115,
+      "total_deletions": 17,
+      "accepted_lines": 111,
+      "overriden_lines": 0
+    },
+    "c5af8879aa4e202a": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "7d8d20e4-0fac-4685-b78a-2763ba969247",
+        "model": "claude-4.6-opus-high-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 77,
+      "total_deletions": 6,
+      "accepted_lines": 72,
+      "overriden_lines": 0
+    },
+    "c954b74313c32123": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "1e212066-f34a-43c3-b6b4-07d504347909",
+        "model": "claude-4.6-opus-high-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 3,
+      "total_deletions": 3,
+      "accepted_lines": 3,
+      "overriden_lines": 0
+    },
+    "cd8aaac8d146a618": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "601973b2-9628-48c2-8f8b-dadc7fc98233",
+        "model": "claude-4.6-opus-high-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 4878,
+      "total_deletions": 1443,
+      "accepted_lines": 3399,
+      "overriden_lines": 0
+    },
+    "df829b430341ea3e": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "26eff58e-813f-4d1a-ad87-558a2ee95c5d",
+        "model": "claude-4.6-opus-high-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 2622,
+      "total_deletions": 542,
+      "accepted_lines": 1809,
+      "overriden_lines": 2
+    },
+    "e3ca94980964f1fd": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "1147e5bb-a20b-47a7-b4f7-51d32caac990",
+        "model": "claude-4.6-opus-high-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 1772,
+      "total_deletions": 673,
+      "accepted_lines": 1130,
+      "overriden_lines": 0
+    },
+    "f2097850a2b7e472": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "45e656c9-5273-49ec-9be9-361fe26b7722",
+        "model": "claude-4.6-opus-high-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 535,
+      "total_deletions": 211,
+      "accepted_lines": 382,
+      "overriden_lines": 0
+    },
+    "fd2058762873596c": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "934eb61e-7ba6-4c04-8326-8a937bc9d9e9",
+        "model": "claude-4.6-opus-high-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 1099,
+      "total_deletions": 351,
+      "accepted_lines": 659,
+      "overriden_lines": 0
+    }
+  }
+}
