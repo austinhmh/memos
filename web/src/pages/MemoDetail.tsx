@@ -1,25 +1,36 @@
 import { ConnectError } from "@connectrpc/connect";
-import { ArrowUpLeftFromCircleIcon, MessageCircleIcon } from "lucide-react";
-import { useState } from "react";
+import { timestampDate } from "@bufbuild/protobuf/wkt";
+import { ArrowLeftIcon, MessageCircleIcon, XIcon } from "lucide-react";
+import { Suspense, useState, useCallback, useRef, useMemo as useReactMemo } from "react";
 import { toast } from "react-hot-toast";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { MemoDetailSidebar, MemoDetailSidebarDrawer } from "@/components/MemoDetailSidebar";
 import MemoEditor from "@/components/MemoEditor";
 import MemoView from "@/components/MemoView";
+import { AttachmentList } from "@/components/MemoView/components/metadata";
+import MemoTableOfContents from "@/components/MemoTableOfContents";
 import MobileHeader from "@/components/MobileHeader";
-import { TableOfContents } from "@/components/TableOfContents";
 import { Button } from "@/components/ui/button";
 import { memoNamePrefix } from "@/helpers/resource-names";
 import useCurrentUser from "@/hooks/useCurrentUser";
 import useMediaQuery from "@/hooks/useMediaQuery";
 import { useMemo, useMemoComments } from "@/hooks/useMemoQueries";
 import useNavigateTo from "@/hooks/useNavigateTo";
-import { cn } from "@/lib/utils";
+import i18n from "@/i18n";
 import { useTranslate } from "@/utils/i18n";
+import { isSuperUser } from "@/utils/user";
+import { useUser } from "@/hooks/useUserQueries";
+import { State } from "@/types/proto/api/v1/common_pb";
+import { MarkdownRenderer } from "@/lib/markdown/MarkdownRenderer";
+import { MemoViewContext } from "@/components/MemoView/MemoViewContext";
+import { lazyWithRetry } from "@/router/lazyWithRetry";
+
+const BlogEditor = lazyWithRetry(() => import("@/components/BlogEditor"), "BlogEditor");
 
 const MemoDetail = () => {
   const t = useTranslate();
   const md = useMediaQuery("md");
+  const lg = useMediaQuery("xl");
   const params = useParams();
   const navigateTo = useNavigateTo();
   const { state: locationState } = useLocation();
@@ -27,90 +38,218 @@ const MemoDetail = () => {
   const uid = params.uid;
   const memoName = `${memoNamePrefix}${uid}`;
   const [showCommentEditor, setShowCommentEditor] = useState(false);
+  const [editorReady, setEditorReady] = useState(false);
 
-  // Fetch main memo with React Query
   const { data: memo, error, isLoading } = useMemo(memoName, { enabled: !!memoName });
 
-  // Handle errors
+  const lockedMemoRef = useRef(memo);
+  if (memo && (!lockedMemoRef.current || lockedMemoRef.current.name !== memo.name)) {
+    lockedMemoRef.current = memo;
+  }
+  const stableMemo = lockedMemoRef.current ?? memo;
+
   if (error) {
     toast.error((error as ConnectError).message);
     navigateTo("/403");
   }
 
-  // Fetch parent memo if exists
   const { data: parentMemo } = useMemo(memo?.parent || "", {
     enabled: !!memo?.parent,
   });
 
-  // Fetch all comments for this memo in a single query
   const { data: commentsResponse } = useMemoComments(memoName, {
     enabled: !!memo,
   });
   const comments = commentsResponse?.memos || [];
 
+  const creator = useUser(memo?.creator || "").data;
+  const isArchived = memo?.state === State.ARCHIVED;
+  const canEdit = !!currentUser && (memo?.creator === currentUser?.name || isSuperUser(currentUser)) && !isArchived;
+
+  const handleBack = useCallback(() => {
+    if (locationState?.from) {
+      navigateTo(locationState.from);
+    } else {
+      navigateTo("/");
+    }
+  }, [locationState, navigateTo]);
+
   const showCreateCommentButton = currentUser && !showCommentEditor;
 
-  if (isLoading || !memo) {
+  const memoViewContextValue = useReactMemo(
+    () =>
+      memo
+        ? {
+            memo,
+            creator,
+            currentUser,
+            parentPage: locationState?.from || "/",
+            isArchived,
+            readonly: !canEdit,
+            showNSFWContent: true,
+            nsfw: false,
+          }
+        : null,
+    [memo, creator, currentUser, locationState?.from, isArchived, canEdit],
+  );
+
+  if (!memo) {
+    if (isLoading) {
+      return (
+        <section className="@container w-full max-w-3xl mx-auto min-h-full flex items-center justify-center pt-20">
+          <p className="text-muted-foreground">正在加载…</p>
+        </section>
+      );
+    }
     return null;
   }
 
-  const handleShowCommentEditor = () => {
-    setShowCommentEditor(true);
-  };
-
-  const handleCommentCreated = async (_memoCommentName: string) => {
-    // React Query will auto-refetch due to invalidation in the mutation
-    setShowCommentEditor(false);
-  };
+  const displayTime = memo.displayTime ? timestampDate(memo.displayTime) : undefined;
+  const showCache = !canEdit || !editorReady;
 
   return (
-    <section className="@container w-full max-w-full min-h-full flex flex-col justify-start items-center sm:pt-3 md:pt-6 pb-8">
+    <section className="@container w-full min-h-full flex justify-center sm:pt-3 md:pt-6 pb-8">
       {!md && (
         <MobileHeader>
           <MemoDetailSidebarDrawer memo={memo} parentPage={locationState?.from} />
         </MobileHeader>
       )}
-      <div className={cn("w-full flex flex-row justify-start items-start px-2 sm:px-4 gap-4")}>
-        {md && (
-          <div className="sticky top-0 left-0 shrink-0 -mt-6 w-56 h-screen overflow-y-auto hide-scrollbar">
-            <TableOfContents content={memo.content} className="py-6" />
+
+      <div className="w-full flex justify-center gap-0">
+        {/* Left sidebar: TOC */}
+        {lg && (
+          <div className="shrink-0 w-52 sticky top-6 self-start max-h-[calc(100vh-3rem)] overflow-y-auto hide-scrollbar pt-12 pr-4">
+            <MemoTableOfContents content={memo.content} />
           </div>
         )}
-        <div className={cn("w-full", md && "md:w-[calc(100%-30rem)]")}>
+
+        {/* Center: main content */}
+        <div className="flex-1 min-w-0 max-w-3xl px-4 sm:px-6">
+          {/* Top bar */}
+          <div className="w-full flex items-center justify-between mb-4">
+            <button
+              type="button"
+              className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              onClick={handleBack}
+            >
+              <ArrowLeftIcon className="w-4 h-4" />
+              <span>Back</span>
+            </button>
+
+            <div className="flex items-center gap-3">
+              {creator && (
+                <Link className="flex items-center gap-1.5 hover:opacity-80" to={`/u/${encodeURIComponent(creator.username)}`} viewTransition>
+                  <span className="text-sm text-muted-foreground">{creator.displayName || creator.username}</span>
+                </Link>
+              )}
+              <span className="text-xs text-muted-foreground">
+                <relative-time datetime={displayTime?.toISOString()} lang={i18n.language} format="auto"></relative-time>
+              </span>
+            </div>
+          </div>
+
+          {/* Parent memo link */}
           {parentMemo && (
-            <div className="w-auto inline-block mb-2">
+            <div className="w-full mb-3">
               <Link
-                className="px-3 py-1 border border-border rounded-lg max-w-xs w-auto text-sm flex flex-row justify-start items-center flex-nowrap text-muted-foreground hover:shadow hover:opacity-80"
+                className="inline-flex items-center px-3 py-1 border border-border rounded-lg text-sm text-muted-foreground hover:shadow hover:opacity-80"
                 to={`/${parentMemo.name}`}
                 state={locationState}
                 viewTransition
               >
-                <ArrowUpLeftFromCircleIcon className="w-4 h-auto shrink-0 opacity-60 mr-2" />
-                <span className="truncate">{parentMemo.content}</span>
+                <ArrowLeftIcon className="w-4 h-auto shrink-0 opacity-60 mr-2" />
+                <span className="truncate">{parentMemo.content.split("\n")[0]}</span>
               </Link>
             </div>
           )}
-          <MemoView
-            key={`${memo.name}-${memo.displayTime}`}
-            className="shadow hover:shadow-md transition-all"
-            memo={memo}
-            compact={false}
-            parentPage={locationState?.from}
-            showCreator
-            showVisibility
-            showPinned
-            showNsfwContent
-            fullHeight
-          />
-          <div className="pt-8 pb-16 w-full">
-            <h2 id="comments" className="sr-only">
-              {t("memo.comment.self")}
-            </h2>
-            <div className="relative mx-auto grow w-full min-h-full flex flex-col justify-start items-start gap-y-1">
+
+          {/* Editor / Content */}
+          <MemoViewContext.Provider value={memoViewContextValue}>
+            <div className="w-full">
+              {showCache && (
+                <div className="blog-editor">
+                  <div className="blog-editor-content ProseMirror">
+                    <MarkdownRenderer content={memo.content} />
+                  </div>
+                </div>
+              )}
+              {canEdit && (
+                <Suspense fallback={showCache ? null : <div style={{ padding: "2rem", color: "#888" }}><p>正在加载编辑器…</p></div>}>
+                  <div style={showCache ? { height: 0, overflow: "hidden", opacity: 0 } : undefined}>
+                    <BlogEditor
+                      memo={stableMemo ?? memo}
+                      readonly={false}
+                      onReady={() => setEditorReady(true)}
+                    />
+                  </div>
+                </Suspense>
+              )}
+            </div>
+          </MemoViewContext.Provider>
+        </div>
+
+        {/* Right sidebar: metadata + attachments + comments */}
+        {md && (
+          <div className="shrink-0 w-60 sticky top-6 self-start max-h-[calc(100vh-3rem)] overflow-y-auto hide-scrollbar pt-2 pl-4">
+            <MemoDetailSidebar className="py-4" memo={memo} parentPage={locationState?.from} />
+
+            {/* Attachments */}
+            {memo.attachments.length > 0 && (
+              <div className="mt-4">
+                <AttachmentList attachments={memo.attachments} />
+              </div>
+            )}
+
+            {/* Comments */}
+            <div className="mt-6">
+              <div className="flex items-center gap-1.5 mb-2">
+                <MessageCircleIcon className="w-4 h-4 text-muted-foreground opacity-60" />
+                <span className="text-sm text-muted-foreground select-none">
+                  {t("memo.comment.self")}
+                  {comments.length > 0 && <span className="ml-1">({comments.length})</span>}
+                </span>
+              </div>
+              {comments.length > 0 && (
+                <div className="flex flex-col gap-1">
+                  {comments.map((comment) => (
+                    <MemoView
+                      key={`${comment.name}-${comment.displayTime}`}
+                      memo={comment}
+                      parentPage={locationState?.from}
+                      showCreator
+                      compact
+                    />
+                  ))}
+                </div>
+              )}
+              {showCreateCommentButton && (
+                <Button
+                  variant="ghost"
+                  className="w-full mt-1 text-muted-foreground text-xs"
+                  onClick={() => setShowCommentEditor(true)}
+                >
+                  {t("memo.comment.write-a-comment")}
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Mobile: attachments + comments inline */}
+      {!md && (
+        <div className="w-full px-4 sm:px-6">
+          {memo.attachments.length > 0 && (
+            <div className="mt-4">
+              <AttachmentList attachments={memo.attachments} />
+            </div>
+          )}
+          <div className="pt-6 pb-16 w-full">
+            <div className="relative mx-auto grow w-full flex flex-col justify-start items-start gap-y-1">
               {comments.length === 0 ? (
                 showCreateCommentButton && (
                   <div className="w-full flex flex-row justify-center items-center py-6">
-                    <Button variant="ghost" onClick={handleShowCommentEditor}>
+                    <Button variant="ghost" onClick={() => setShowCommentEditor(true)}>
                       <span className="text-muted-foreground">{t("memo.comment.write-a-comment")}</span>
                       <MessageCircleIcon className="ml-2 w-5 h-auto text-muted-foreground" />
                     </Button>
@@ -125,7 +264,7 @@ const MemoDetail = () => {
                       <span className="text-muted-foreground text-sm ml-1">({comments.length})</span>
                     </div>
                     {showCreateCommentButton && (
-                      <Button variant="ghost" className="text-muted-foreground" onClick={handleShowCommentEditor}>
+                      <Button variant="ghost" className="text-muted-foreground text-xs" onClick={() => setShowCommentEditor(true)}>
                         {t("memo.comment.write-a-comment")}
                       </Button>
                     )}
@@ -142,26 +281,43 @@ const MemoDetail = () => {
                 </>
               )}
             </div>
-            {showCommentEditor && (
-              <div className="w-full">
-                <MemoEditor
-                  cacheKey={`${memo.name}-${memo.updateTime}-comment`}
-                  placeholder={t("editor.add-your-comment-here")}
-                  parentMemoName={memo.name}
-                  autoFocus
-                  onConfirm={handleCommentCreated}
-                  onCancel={() => setShowCommentEditor(false)}
-                />
-              </div>
-            )}
           </div>
         </div>
-        {md && (
-          <div className="sticky top-0 left-0 shrink-0 -mt-6 w-56 h-screen overflow-y-auto hide-scrollbar">
-            <MemoDetailSidebar className="py-6" memo={memo} parentPage={locationState?.from} />
+      )}
+
+      {/* Comment editor dialog */}
+      {showCommentEditor && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setShowCommentEditor(false);
+          }}
+        >
+          <div className="w-[calc(100%-2rem)] max-w-lg bg-background border border-border rounded-lg shadow-xl p-6" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2 text-lg font-semibold">
+                <MessageCircleIcon className="w-5 h-5" />
+                {t("memo.comment.write-a-comment")}
+              </div>
+              <button
+                type="button"
+                className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                onClick={() => setShowCommentEditor(false)}
+              >
+                <XIcon className="w-5 h-5" />
+              </button>
+            </div>
+            <MemoEditor
+              cacheKey={`${memo.name}-${memo.updateTime}-comment`}
+              placeholder={t("editor.add-your-comment-here")}
+              parentMemoName={memo.name}
+              autoFocus
+              onConfirm={async () => setShowCommentEditor(false)}
+              onCancel={() => setShowCommentEditor(false)}
+            />
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </section>
   );
 };

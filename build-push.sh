@@ -1,217 +1,155 @@
 #!/bin/bash
 
-# build-push.sh - 构建 Docker 镜像并推送到 GitHub Container Registry
-# 
-# 构建流程说明:
-#   1. 构建前端 (web/) -> 输出到 server/router/frontend/dist/
-#   2. Docker 构建时，Go 编译器会通过 //go:embed 指令将 dist/ 目录嵌入到二进制文件中
-#   3. 最终的 Docker 镜像包含嵌入了前端资源的 Go 二进制文件
-#
+# build-push.sh - 构建前端 + Docker 镜像并推送到 GitHub Container Registry
 # 使用方法:
-#   ./build-push.sh              # 推送 latest 标签
-#   ./build-push.sh v1.0.0      # 推送 v1.0.0 标签
+#   ./build-push.sh                    # 推送 latest 标签
+#   ./build-push.sh v1.0.0             # 推送 v1.0.0 标签
+#   ./build-push.sh --local            # 仅本地构建，不推送
+#   ./build-push.sh --local v1.0.0     # 本地构建，使用指定标签
 
-set -e  # 遇到错误立即退出
+set -eo pipefail
 
-# 配置变量
 IMAGE_NAME="ghcr.io/austinhmh/memos"
 DOCKERFILE="scripts/Dockerfile"
-PROXY="${HTTP_PROXY:-}"  # 从环境变量读取，如果没有则为空
+PROXY="http://127.0.0.1:7897"
 
-# 获取版本标签参数
-VERSION_TAG=${1:-latest}
+LOCAL_ONLY=false
+NO_PROXY=false
+VERSION_TAG="latest"
 
-# 检测操作系统并设置容器内代理地址（仅在设置了代理时）
-CONTAINER_PROXY=""
-DOCKER_EXTRA_ARGS=""
+for arg in "$@"; do
+    case "$arg" in
+        --local)    LOCAL_ONLY=true ;;
+        --no-proxy) NO_PROXY=true ;;
+        --*)        ;;
+        *)          VERSION_TAG="$arg" ;;
+    esac
+done
 
-if [ -n "$PROXY" ]; then
+HOST_ARCH=$(uname -m)
+case "$HOST_ARCH" in
+    x86_64)        TARGET_ARCH="amd64" ;;
+    aarch64|arm64) TARGET_ARCH="arm64" ;;
+    *)             TARGET_ARCH="amd64" ;;
+esac
+
+PROXY_BUILD_ARGS=""
+if [ "$NO_PROXY" = false ]; then
     if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        # Linux: 使用 Docker 默认网关
         CONTAINER_PROXY="http://172.17.0.1:7897"
         DOCKER_EXTRA_ARGS="--add-host=host.docker.internal:host-gateway"
-        echo "检测到 Linux 系统，使用网关地址: $CONTAINER_PROXY"
-    elif [[ "$OSTYPE" == "darwin"* ]]; then
-        # macOS: 使用 host.docker.internal
-        CONTAINER_PROXY="http://host.docker.internal:7897"
-        DOCKER_EXTRA_ARGS=""
-        echo "检测到 macOS 系统，使用 host.docker.internal"
     else
-        # 其他系统（Windows等）
-        CONTAINER_PROXY="http://host.docker.internal:7897"
-        DOCKER_EXTRA_ARGS=""
-        echo "检测到其他系统，使用 host.docker.internal"
+        DOCKER_EXTRA_ARGS="--add-host=host.docker.internal:host-gateway"
+        HOST_IP=$(docker run --rm --add-host=host.docker.internal:host-gateway alpine:3.21 sh -c "getent hosts host.docker.internal | awk '{print \$1}'" 2>/dev/null)
+        if [ -z "$HOST_IP" ]; then
+            HOST_IP="192.168.5.2"
+        fi
+        CONTAINER_PROXY="http://${HOST_IP}:7897"
     fi
+    PROXY_BUILD_ARGS="--build-arg HTTP_PROXY=$CONTAINER_PROXY --build-arg HTTPS_PROXY=$CONTAINER_PROXY"
+    echo "容器代理:   $CONTAINER_PROXY"
 else
-    echo "未设置代理，将直接连接网络"
+    DOCKER_EXTRA_ARGS=""
 fi
 
 echo "=========================================="
-echo "开始构建并推送 Docker 镜像"
+echo "Memos 构建$([ "$LOCAL_ONLY" = true ] && echo "" || echo "并推送")"
 echo "=========================================="
-echo "镜像名称: $IMAGE_NAME"
-echo "版本标签: $VERSION_TAG"
-echo "Dockerfile: $DOCKERFILE"
-if [ -n "$PROXY" ]; then
-    echo "宿主机代理: $PROXY"
-    echo "容器内代理: $CONTAINER_PROXY"
-else
-    echo "代理: 未设置"
-fi
+echo "镜像名称:   $IMAGE_NAME"
+echo "版本标签:   $VERSION_TAG"
+echo "目标架构:   linux/$TARGET_ARCH"
+echo "仅本地构建: $LOCAL_ONLY"
+echo "使用代理:   $([ "$NO_PROXY" = true ] && echo "否" || echo "是")"
 echo "=========================================="
 
-# 检查 dockerfile 是否存在
 if [ ! -f "$DOCKERFILE" ]; then
-    echo "错误: 找不到 $DOCKERFILE 文件"
+    echo "错误: 找不到 $DOCKERFILE，请在 memos 项目根目录执行"
     exit 1
 fi
 
-# 检查 node 和 pnpm 是否安装
-if ! command -v node &> /dev/null; then
-    echo "错误: 未找到 node，请先安装 Node.js"
-    exit 1
-fi
-
-if ! command -v pnpm &> /dev/null; then
-    echo "错误: 未找到 pnpm，请先安装 pnpm"
-    echo "安装命令: npm install -g pnpm"
-    exit 1
-fi
-
-# 设置代理环境变量（仅在设置了代理时）
-if [ -n "$PROXY" ]; then
-    export HTTP_PROXY=$PROXY
-    export HTTPS_PROXY=$PROXY
-    export http_proxy=$PROXY
-    export https_proxy=$PROXY
-fi
-
+# ── 步骤 1: 构建前端 ──────────────────────────────────
 echo ""
-echo "步骤 1/7: 构建前端资源..."
-echo "=========================================="
-echo "说明: 前端构建产物将输出到 server/router/frontend/dist/"
-echo "      Go 编译时会通过 //go:embed 指令将其嵌入到二进制文件中"
-echo ""
+echo "[ 1/5 ] 构建前端 (pnpm release → server/router/frontend/dist/) ..."
+
+if ! command -v pnpm &>/dev/null; then
+    echo "  pnpm 未安装，尝试使用 npx pnpm ..."
+    PNPM_CMD="npx pnpm"
+else
+    PNPM_CMD="pnpm"
+fi
+
 cd web
-echo "安装前端依赖..."
-pnpm install
-echo ""
-echo "构建前端生产版本..."
-pnpm release
+$PNPM_CMD install --frozen-lockfile 2>/dev/null || $PNPM_CMD install
+$PNPM_CMD release
 cd ..
 
+# ── 步骤 2: 验证前端构建产物 ──────────────────────────
 echo ""
-echo "步骤 2/7: 验证前端构建产物..."
-if [ ! -d "server/router/frontend/dist" ]; then
-    echo "错误: 前端构建失败，未找到 server/router/frontend/dist 目录"
+echo "[ 2/5 ] 验证前端构建产物 ..."
+
+FRONTEND_DIST="server/router/frontend/dist"
+if [ ! -f "$FRONTEND_DIST/index.html" ]; then
+    echo "错误: 前端构建失败，未找到 $FRONTEND_DIST/index.html"
     exit 1
 fi
-echo "✓ 前端构建成功！"
-echo "  构建产物位置: server/router/frontend/dist/"
-echo "  构建产物大小: $(du -sh server/router/frontend/dist | cut -f1)"
-echo "  文件数量: $(find server/router/frontend/dist -type f | wc -l) 个文件"
+DIST_SIZE=$(du -sh "$FRONTEND_DIST" | cut -f1)
+FILE_COUNT=$(find "$FRONTEND_DIST" -type f | wc -l | tr -d ' ')
+echo "  产物目录: $FRONTEND_DIST"
+echo "  总大小:   $DIST_SIZE ($FILE_COUNT 个文件)"
 
+# ── 步骤 3: 构建 Docker 镜像（始终 no-cache）─────────
 echo ""
-echo "步骤 3/7: 准备 Docker 构建..."
-echo "=========================================="
-echo "说明: Docker 构建过程中会执行以下操作:"
-echo "  1. 复制源代码（包括 server/router/frontend/dist/）到构建容器"
-echo "  2. Go 编译器读取 frontend.go 中的 //go:embed dist/* 指令"
-echo "  3. 将 dist/ 目录的所有文件嵌入到 Go 二进制文件中"
-echo "  4. 生成包含前端资源的单一可执行文件"
-echo ""
-echo "这可能需要几分钟时间，请耐心等待..."
+echo "[ 3/5 ] 构建 Docker 镜像 (--no-cache, linux/$TARGET_ARCH) ..."
 
-# 构建 Docker 镜像的参数
-BUILD_ARGS=(
-    -f "$DOCKERFILE"
-    --no-cache
-    --build-arg VERSION="$VERSION_TAG"
-    --build-arg TARGETOS=linux
-    --build-arg TARGETARCH=amd64
-)
+# 清除 shell 代理变量，防止 Docker daemon 自动继承导致 apk 失败
+unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy
 
-# 仅在设置了代理时添加代理参数
-if [ -n "$CONTAINER_PROXY" ]; then
-    BUILD_ARGS+=(
-        --build-arg HTTP_PROXY="$CONTAINER_PROXY"
-        --build-arg HTTPS_PROXY="$CONTAINER_PROXY"
-    )
-fi
-
-# 添加额外的 Docker 参数
-if [ -n "$DOCKER_EXTRA_ARGS" ]; then
-    BUILD_ARGS+=($DOCKER_EXTRA_ARGS)
-fi
-
-BUILD_ARGS+=(
-    -t "memos:$VERSION_TAG"
-    --progress=plain
+docker build \
+    --no-cache \
+    -f "$DOCKERFILE" \
+    --platform "linux/$TARGET_ARCH" \
+    --build-arg VERSION="$VERSION_TAG" \
+    $PROXY_BUILD_ARGS \
+    $DOCKER_EXTRA_ARGS \
+    -t "memos:$VERSION_TAG" \
+    --progress=plain \
     .
-)
 
-docker build "${BUILD_ARGS[@]}" 2>&1 | tee /tmp/memos-docker-build.log
-
-echo ""
-echo "步骤 4/7: 验证 Docker 镜像构建..."
-echo "=========================================="
-if docker images "memos:$VERSION_TAG" | grep -q "memos"; then
-    IMAGE_SIZE=$(docker images "memos:$VERSION_TAG" --format "{{.Size}}")
-    echo "✓ Docker 镜像构建成功！"
-    echo "  镜像名称: memos:$VERSION_TAG"
-    echo "  镜像大小: $IMAGE_SIZE"
-    echo "  说明: 该镜像包含了嵌入前端资源的 Go 二进制文件"
-else
+if [ $? -ne 0 ]; then
     echo "错误: Docker 镜像构建失败"
     exit 1
 fi
 
+# ── 步骤 4: 打标签 ───────────────────────────────────
 echo ""
-echo "步骤 5/7: 为镜像打标签..."
+echo "[ 4/5 ] 打标签 ..."
 docker tag "memos:$VERSION_TAG" "$IMAGE_NAME:$VERSION_TAG"
-
 if [ "$VERSION_TAG" != "latest" ]; then
-    echo "同时打上 latest 标签..."
     docker tag "memos:$VERSION_TAG" "$IMAGE_NAME:latest"
 fi
+echo "  memos:$VERSION_TAG"
+echo "  $IMAGE_NAME:$VERSION_TAG"
 
-echo ""
-echo "步骤 6/7: 检查是否已登录 GitHub Container Registry..."
-# 检查是否已登录到 ghcr.io
-if ! docker info 2>/dev/null | grep -q "Username" && ! cat ~/.docker/config.json 2>/dev/null | grep -q "ghcr.io"; then
-    echo "警告: 未检测到 Docker 登录状态"
-    echo "提示: 如果推送失败，请先执行: docker login ghcr.io"
-    echo "需要 GitHub Personal Access Token (PAT) 具有 write:packages 权限"
+# ── 步骤 5: 推送（可选）─────────────────────────────
+if [ "$LOCAL_ONLY" = true ]; then
+    echo ""
+    echo "[ 5/5 ] 跳过推送 (--local 模式)"
 else
-    echo "Docker 登录状态已确认"
-fi
-
-echo ""
-echo "步骤 7/7: 推送镜像到 GitHub Container Registry..."
-docker push "$IMAGE_NAME:$VERSION_TAG"
-
-if [ "$VERSION_TAG" != "latest" ]; then
-    echo "同时推送 latest 标签..."
-    docker push "$IMAGE_NAME:latest"
+    echo ""
+    echo "[ 5/5 ] 推送镜像到 GHCR ..."
+    docker push "$IMAGE_NAME:$VERSION_TAG"
+    if [ "$VERSION_TAG" != "latest" ]; then
+        docker push "$IMAGE_NAME:latest"
+    fi
 fi
 
 echo ""
 echo "=========================================="
-echo "构建和推送完成！"
+echo "构建完成！"
 echo "=========================================="
-echo "镜像地址: $IMAGE_NAME:$VERSION_TAG"
-if [ "$VERSION_TAG" != "latest" ]; then
-    echo "镜像地址: $IMAGE_NAME:latest"
-fi
+echo "本地镜像:  memos:$VERSION_TAG"
+echo "远程镜像:  $IMAGE_NAME:$VERSION_TAG"
 echo ""
-echo "构建流程总结:"
-echo "  1. ✓ 前端构建完成 (web/ -> server/router/frontend/dist/)"
-echo "  2. ✓ Go 编译完成 (通过 //go:embed 嵌入前端资源)"
-echo "  3. ✓ Docker 镜像构建完成"
-echo "  4. ✓ 推送到 GitHub Container Registry"
+echo "本地部署:  ./pull.sh --local"
+echo "远程部署:  ./pull.sh"
 echo "=========================================="
-echo ""
-echo "使用以下命令拉取并部署:"
-echo "  ./pull.sh              # 拉取 latest"
-echo "  ./pull.sh $VERSION_TAG   # 拉取 $VERSION_TAG"
-echo ""

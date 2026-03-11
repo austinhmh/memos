@@ -61,12 +61,15 @@ export const useMemoFilters = (options: UseMemoFiltersOptions = {}): string | un
       conditions.push(selectedShortcut.filter);
     }
 
+    // 清理可能破坏 filter 语法的字符（如误粘贴的 HTML 标签、双引号）
+    const safeFilterValue = (v: string) => v.replace(/"/g, "").replace(/<[^>]+>/g, "").trim() || v;
+
     // Add active filters from context
     for (const filter of filters) {
       if (filter.factor === "contentSearch") {
-        conditions.push(`content.contains("${filter.value}")`);
+        conditions.push(`content.contains("${safeFilterValue(filter.value).replace(/\\/g, "\\\\")}")`);
       } else if (filter.factor === "tagSearch") {
-        conditions.push(`tag in ["${filter.value}"]`);
+        conditions.push(`tag in ["${safeFilterValue(filter.value)}"]`);
       } else if (filter.factor === "pinned") {
         if (includePinned) {
           conditions.push(`pinned`);

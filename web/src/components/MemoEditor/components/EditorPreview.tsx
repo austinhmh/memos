@@ -35,7 +35,7 @@ export const EditorPreview = memo(({ content, scrollRef }: EditorPreviewProps) =
   // This prevents errors when Tag components try to access the context
   const mockMemoViewContext = useMemo(
     () => ({
-      memo: {} as any,
+      memo: { name: "", content: "", relations: [], resources: [], reactions: [], properties: {}, tags: [] } as any,
       creator: undefined,
       currentUser: undefined,
       parentPage: "",

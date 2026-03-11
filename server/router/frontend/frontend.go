@@ -5,6 +5,8 @@ import (
 	"embed"
 	"io/fs"
 	"net/http"
+	pathpkg "path"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -30,14 +32,26 @@ func NewFrontendService(profile *profile.Profile, store *store.Store) *FrontendS
 }
 
 func (*FrontendService) Serve(_ context.Context, e *echo.Echo) {
+	frontendFS := getFileSystem("dist")
+
 	skipper := func(c echo.Context) bool {
+		requestPath := c.Request().URL.Path
 		// Skip API routes.
-		if util.HasPrefixes(c.Path(), "/api", "/memos.api.v1") {
+		if util.HasPrefixes(requestPath, "/api", "/memos.api.v1") {
 			return true
+		}
+		// Missing asset requests should return 404 instead of falling back to index.html.
+		if strings.HasPrefix(requestPath, "/assets/") {
+			assetPath := strings.TrimPrefix(pathpkg.Clean(requestPath), "/")
+			file, err := frontendFS.Open(assetPath)
+			if err != nil {
+				return true
+			}
+			_ = file.Close()
 		}
 		// For index.html and root path, set no-cache headers to prevent browser caching
 		// This prevents sensitive data from being accessible via browser back button after logout
-		if c.Path() == "/" || c.Path() == "/index.html" {
+		if requestPath == "/" || requestPath == "/index.html" {
 			c.Response().Header().Set(echo.HeaderCacheControl, "no-cache, no-store, must-revalidate")
 			c.Response().Header().Set("Pragma", "no-cache")
 			c.Response().Header().Set("Expires", "0")
@@ -54,7 +68,7 @@ func (*FrontendService) Serve(_ context.Context, e *echo.Echo) {
 
 	// Route to serve the main app with HTML5 fallback for SPA behavior.
 	e.Use(middleware.StaticWithConfig(middleware.StaticConfig{
-		Filesystem: getFileSystem("dist"),
+		Filesystem: frontendFS,
 		HTML5:      true, // Enable fallback to index.html
 		Skipper:    skipper,
 	}))

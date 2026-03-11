@@ -16,11 +16,13 @@ import { removeCompletedTasks } from "@/utils/markdown-manipulation";
 interface UseMemoActionHandlersOptions {
   memo: Memo;
   onEdit?: () => void;
+  isDetailPage?: boolean;
+  deleteSuccessPath?: string;
   setDeleteDialogOpen: (open: boolean) => void;
   setRemoveTasksDialogOpen: (open: boolean) => void;
 }
 
-export const useMemoActionHandlers = ({ memo, onEdit, setDeleteDialogOpen, setRemoveTasksDialogOpen }: UseMemoActionHandlersOptions) => {
+export const useMemoActionHandlers = ({ memo, onEdit, isDetailPage, deleteSuccessPath, setDeleteDialogOpen, setRemoveTasksDialogOpen }: UseMemoActionHandlersOptions) => {
   const t = useTranslate();
   const location = useLocation();
   const navigateTo = useNavigateTo();
@@ -28,7 +30,7 @@ export const useMemoActionHandlers = ({ memo, onEdit, setDeleteDialogOpen, setRe
   const { profile } = useInstance();
   const { mutateAsync: updateMemo } = useUpdateMemo();
   const { mutateAsync: deleteMemo } = useDeleteMemo();
-  const isInMemoDetailPage = location.pathname.startsWith(`/${memo.name}`);
+  const isInMemoDetailPage = isDetailPage ?? location.pathname.startsWith(`/${memo.name}`);
 
   const memoUpdatedCallback = useCallback(() => {
     // Invalidate user stats to trigger refetch
@@ -103,10 +105,10 @@ export const useMemoActionHandlers = ({ memo, onEdit, setDeleteDialogOpen, setRe
     await deleteMemo(memo.name);
     toast.success(t("message.deleted-successfully"));
     if (isInMemoDetailPage) {
-      navigateTo("/");
+      navigateTo(deleteSuccessPath ?? "/");
     }
     memoUpdatedCallback();
-  }, [memo.name, t, isInMemoDetailPage, navigateTo, memoUpdatedCallback, deleteMemo]);
+  }, [memo.name, t, isInMemoDetailPage, navigateTo, memoUpdatedCallback, deleteMemo, deleteSuccessPath]);
 
   const handleRemoveCompletedTaskListItemsClick = useCallback(() => {
     setRemoveTasksDialogOpen(true);

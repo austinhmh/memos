@@ -1,5 +1,5 @@
 import type { ComponentType } from "react";
-import { lazy, Suspense } from "react";
+import { Suspense } from "react";
 import { createBrowserRouter } from "react-router-dom";
 import App from "@/App";
 import Spinner from "@/components/Spinner";
@@ -7,21 +7,25 @@ import MainLayout from "@/layouts/MainLayout";
 import RootLayout from "@/layouts/RootLayout";
 import Home from "@/pages/Home";
 
-const AdminSignIn = lazy(() => import("@/pages/AdminSignIn"));
-const Archived = lazy(() => import("@/pages/Archived"));
-const AuthCallback = lazy(() => import("@/pages/AuthCallback"));
-const Explore = lazy(() => import("@/pages/Explore"));
-const Inboxes = lazy(() => import("@/pages/Inboxes"));
-const MemoDetail = lazy(() => import("@/pages/MemoDetail"));
-const NotFound = lazy(() => import("@/pages/NotFound"));
-const PermissionDenied = lazy(() => import("@/pages/PermissionDenied"));
-const Attachments = lazy(() => import("@/pages/Attachments"));
-const Setting = lazy(() => import("@/pages/Setting"));
-const SignIn = lazy(() => import("@/pages/SignIn"));
-const SignUp = lazy(() => import("@/pages/SignUp"));
-const UserProfile = lazy(() => import("@/pages/UserProfile"));
-const MemoDetailRedirect = lazy(() => import("./MemoDetailRedirect"));
+const AdminSignIn = lazyWithRetry(() => import("@/pages/AdminSignIn"), "AdminSignIn");
+const Archived = lazyWithRetry(() => import("@/pages/Archived"), "Archived");
+const AuthCallback = lazyWithRetry(() => import("@/pages/AuthCallback"), "AuthCallback");
+const BlogDetail = lazyWithRetry(() => import("@/pages/BlogDetail"), "BlogDetailRoute");
+const BlogHome = lazyWithRetry(() => import("@/pages/BlogHome"), "BlogHome");
+const BlogLayout = lazyWithRetry(() => import("@/layouts/BlogLayout"), "BlogLayout");
+const Explore = lazyWithRetry(() => import("@/pages/Explore"), "Explore");
+const Inboxes = lazyWithRetry(() => import("@/pages/Inboxes"), "Inboxes");
+const MemoDetail = lazyWithRetry(() => import("@/pages/MemoDetail"), "MemoDetailRoute");
+const NotFound = lazyWithRetry(() => import("@/pages/NotFound"), "NotFound");
+const PermissionDenied = lazyWithRetry(() => import("@/pages/PermissionDenied"), "PermissionDenied");
+const Attachments = lazyWithRetry(() => import("@/pages/Attachments"), "Attachments");
+const Setting = lazyWithRetry(() => import("@/pages/Setting"), "Setting");
+const SignIn = lazyWithRetry(() => import("@/pages/SignIn"), "SignIn");
+const SignUp = lazyWithRetry(() => import("@/pages/SignUp"), "SignUp");
+const UserProfile = lazyWithRetry(() => import("@/pages/UserProfile"), "UserProfile");
+const MemoDetailRedirect = lazyWithRetry(() => import("./MemoDetailRedirect"), "MemoDetailRedirect");
 
+import { lazyWithRetry } from "./lazyWithRetry";
 import { ROUTES } from "./routes";
 
 // Backward compatibility alias
@@ -72,6 +76,14 @@ const router = createBrowserRouter([
           { path: Routes.INBOX, element: <LazyRoute component={Inboxes} /> },
           { path: Routes.SETTING, element: <LazyRoute component={Setting} /> },
           { path: "memos/:uid", element: <LazyRoute component={MemoDetail} /> },
+          {
+            path: "blog",
+            element: <LazyRoute component={BlogLayout} />,
+            children: [
+              { path: "", element: <LazyRoute component={BlogHome} /> },
+              { path: ":uid", element: <LazyRoute component={BlogDetail} /> },
+            ],
+          },
           // Redirect old path to new path
           { path: "m/:uid", element: <LazyRoute component={MemoDetailRedirect} /> },
           { path: "403", element: <LazyRoute component={PermissionDenied} /> },

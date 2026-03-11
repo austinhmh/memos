@@ -1,0 +1,58 @@
+---
+description: 严格按照 outline-source 参考实现进行开发，禁止自行添加实现或优化
+alwaysApply: true
+---
+
+# Outline-Source 严格复刻规则
+
+本项目的编辑器、Markdown 解析/序列化、Mermaid 渲染等模块**必须严格参照 `outline-source/` 的实现**，禁止自行发挥。
+
+## 核心原则
+
+1. **先读后写**：修改或新增任何编辑器相关代码前，**必须先阅读 `outline-source/` 中对应的源码**，确认其实现方式。
+2. **禁止自创**：不得自行设计架构、添加功能、引入新依赖或做"优化改进"。所有实现逻辑、数据结构、API 调用方式必须与 outline-source 保持一致。
+3. **禁止推测**：不确定 outline-source 如何实现时，**必须去读源码确认**，不允许凭经验猜测。
+
+## 必须参照的 outline-source 关键路径
+
+| 功能模块 | outline-source 参考路径 |
+|---------|----------------------|
+| 扩展管理器 | `shared/editor/lib/ExtensionManager.ts` |
+| 扩展基类 | `shared/editor/lib/Extension.ts` |
+| 节点基类 | `shared/editor/nodes/Node.ts` |
+| CodeFence 节点 | `shared/editor/nodes/CodeFence.ts` |
+| Mermaid 渲染 | `shared/editor/extensions/Mermaid.ts` |
+| Markdown 解析规则 | `shared/editor/lib/markdown/rules.ts` |
+| Markdown 序列化器 | `shared/editor/lib/markdown/serializer.ts` |
+| isMermaid 判断 | `shared/editor/lib/isCode.ts` |
+| 节点预设集合 | `shared/editor/nodes/index.ts` |
+| 自定义 markdown-it 规则 | `shared/editor/rules/` |
+
+## 开发流程（强制）
+
+1. **定位参考**：在 `outline-source/` 中找到对应功能的源文件，完整阅读。
+2. **理解实现**：弄清楚 outline-source 的类继承关系、数据流、API 调用方式。
+3. **忠实复刻**：按照 outline-source 的实现方式在 memos 中编写代码，仅做必要的适配（如导入路径、框架差异）。
+4. **对照验证**：完成后与 outline-source 源码逐项对比，确保逻辑一致。
+
+## 禁止事项
+
+- **禁止**自行添加 outline-source 中没有的功能或参数
+- **禁止**用不同的技术方案替代 outline-source 的实现（如用 React 组件替代 ProseMirror Decoration）
+- **禁止**"优化"outline-source 的逻辑（如更换算法、合并步骤、简化流程）
+- **禁止**引入 outline-source 未使用的第三方库来实现相同功能
+- **禁止**跳过 outline-source 中的边界处理、缓存机制、错误处理等"细节"
+
+## 允许的适配
+
+- 导入路径调整（适配 memos 项目结构）
+- TypeScript 类型适配（如 memos 使用不同的 props 接口）
+- 框架桥接代码（如 React 版本差异导致的 hook 用法调整）
+- 命名空间/模块导出方式的适配
+
+## 参考文档
+
+实现前务必阅读项目内的设计文档：
+- `docs/outline-and-mermaid.md` — Outline 编辑器架构分析与复用方案
+- `docs/OUTLINE_REPLICA_TEST.md` — 复刻验证测试计划
+- `REFACTOR_PLAN.md` — 双模式改造方案

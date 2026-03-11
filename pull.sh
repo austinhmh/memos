@@ -1,151 +1,128 @@
 #!/bin/bash
 
-# pull.sh - 从 GitHub Container Registry 拉取镜像并部署
+# pull.sh - 拉取（或使用本地）镜像并部署 Memos 容器
 # 使用方法:
-#   ./pull.sh              # 拉取 latest 标签
-#   ./pull.sh v1.0.0      # 拉取 v1.0.0 标签
+#   ./pull.sh                    # 从 GHCR 拉取 latest 并部署
+#   ./pull.sh v1.0.0             # 从 GHCR 拉取指定版本并部署
+#   ./pull.sh --local            # 使用本地 build-push.sh 构建的镜像部署
+#   ./pull.sh --local v1.0.0     # 使用本地指定版本部署
 
-set -e  # 遇到错误立即退出
+set -e
 
-# 获取脚本所在目录（项目根目录）
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# 配置变量
 IMAGE_NAME="ghcr.io/austinhmh/memos"
 CONTAINER_NAME="memos"
-DATA_DIR="${MEMOS_DATA_DIR:-$SCRIPT_DIR/data}"  # 默认使用项目目录下的 data 子目录
-PORT="${MEMOS_PORT:-5230}"
+DATA_DIR="${MEMOS_DATA_DIR:-$HOME/.memos}"
 
-# 获取版本标签参数
-VERSION_TAG=${1:-latest}
+LOCAL_ONLY=false
+VERSION_TAG="latest"
 
-echo "=========================================="
-echo "开始拉取并部署 Docker 容器"
-echo "=========================================="
-echo "镜像地址: $IMAGE_NAME:$VERSION_TAG"
-echo "容器名称: $CONTAINER_NAME"
-echo "数据目录: $DATA_DIR (主机目录)"
-echo "端口映射: $PORT:5230"
-echo "=========================================="
-
-# 检查并创建数据目录
-echo ""
-echo "步骤 1/6: 检查数据目录..."
-if [ ! -d "$DATA_DIR" ]; then
-    echo "创建数据目录: $DATA_DIR"
-    mkdir -p "$DATA_DIR"
-    chmod 777 "$DATA_DIR"  # 让容器内的 nonroot 用户可以写入
-    echo "目录权限已设置为 777"
-else
-    echo "数据目录已存在: $DATA_DIR"
-    # 检查权限，如果不是 777 则修复
-    PERMS=$(stat -c "%a" "$DATA_DIR" 2>/dev/null || stat -f "%Lp" "$DATA_DIR" 2>/dev/null)
-    if [ "$PERMS" != "777" ]; then
-        echo "修复目录权限: $DATA_DIR (当前: $PERMS -> 777)"
-        chmod 777 "$DATA_DIR"
-    else
-        echo "目录权限正确: 777"
+for arg in "$@"; do
+    if [ "$arg" = "--local" ]; then
+        LOCAL_ONLY=true
+    elif [[ "$arg" != --* ]]; then
+        VERSION_TAG="$arg"
     fi
+done
+
+# 决定实际使用的镜像名
+if [ "$LOCAL_ONLY" = true ]; then
+    RUN_IMAGE="memos:$VERSION_TAG"
+else
+    RUN_IMAGE="$IMAGE_NAME:$VERSION_TAG"
 fi
 
-# 检查是否已登录 GHCR
+echo "=========================================="
+echo "Memos 部署"
+echo "=========================================="
+echo "镜像来源: $([ "$LOCAL_ONLY" = true ] && echo "本地" || echo "GHCR")"
+echo "运行镜像: $RUN_IMAGE"
+echo "容器名称: $CONTAINER_NAME"
+echo "数据目录: $DATA_DIR"
+echo "端口映射: 8081:5230"
+echo "=========================================="
+
+# ── 步骤 1: 数据目录 ─────────────────────────────────
 echo ""
-echo "步骤 2/6: 检查 GHCR 登录状态..."
-if ! docker info 2>/dev/null | grep -q "Username" && ! cat ~/.docker/config.json 2>/dev/null | grep -q "ghcr.io"; then
-    echo "警告: 可能未登录 GHCR"
-    echo "如果拉取失败，请执行: docker login ghcr.io"
-    echo "需要 GitHub Personal Access Token (PAT) 具有 read:packages 权限"
+echo "[ 1/4 ] 检查数据目录 ..."
+if [ ! -d "$DATA_DIR" ]; then
+    mkdir -p "$DATA_DIR"
+    echo "  已创建: $DATA_DIR"
+else
+    echo "  已存在: $DATA_DIR"
 fi
 
-# 拉取镜像
+# ── 步骤 2: 获取镜像 ─────────────────────────────────
 echo ""
-echo "步骤 3/6: 拉取镜像 $IMAGE_NAME:$VERSION_TAG..."
-docker pull "$IMAGE_NAME:$VERSION_TAG"
+if [ "$LOCAL_ONLY" = true ]; then
+    echo "[ 2/4 ] 使用本地镜像 ..."
+    if ! docker image inspect "$RUN_IMAGE" &>/dev/null; then
+        echo "错误: 本地镜像 $RUN_IMAGE 不存在"
+        echo "请先运行: ./build-push.sh --local $VERSION_TAG"
+        exit 1
+    fi
+    echo "  本地镜像已确认: $RUN_IMAGE"
+else
+    echo "[ 2/4 ] 从 GHCR 拉取镜像 ..."
+    docker pull "$RUN_IMAGE"
+fi
 
-# 为本地使用打标签
+# ── 步骤 3: 替换容器 ─────────────────────────────────
 echo ""
-echo "步骤 4/6: 为镜像打本地标签..."
-docker tag "$IMAGE_NAME:$VERSION_TAG" memos:latest
-
-# 停止并删除旧容器
-echo ""
-echo "步骤 5/6: 停止并删除旧容器..."
-if [ "$(docker ps -aq -f name=^${CONTAINER_NAME}$)" ]; then
-    echo "发现旧容器，正在停止并删除..."
+echo "[ 3/4 ] 替换旧容器 ..."
+if docker ps -aq -f "name=^${CONTAINER_NAME}$" | grep -q .; then
+    echo "  停止并删除旧容器 ..."
     docker stop "$CONTAINER_NAME" 2>/dev/null || true
     docker rm "$CONTAINER_NAME" 2>/dev/null || true
-    echo "旧容器已删除"
-else
-    echo "未发现旧容器，跳过此步骤"
 fi
 
-# 启动新容器
+# ── 步骤 4: 启动新容器 ───────────────────────────────
 echo ""
-echo "步骤 6/6: 启动新容器..."
+echo "[ 4/4 ] 启动新容器 ..."
 docker run -d \
     --name "$CONTAINER_NAME" \
-    -p "$PORT:5230" \
+    -p 8081:5230 \
     -v "$DATA_DIR:/var/opt/memos" \
     -e MEMOS_MODE=prod \
     -e MEMOS_PORT=5230 \
-    --restart unless-stopped \
-    memos:latest
+    --user root \
+    --restart always \
+    "$RUN_IMAGE"
 
-# 等待容器启动
 echo ""
-echo "等待容器启动..."
+echo "等待容器启动 ..."
 sleep 3
 
 # 检查容器状态
-echo ""
-echo "检查容器健康状态..."
-CONTAINER_STATUS=$(docker inspect -f '{{.State.Status}}' "$CONTAINER_NAME" 2>/dev/null || echo "unknown")
+if docker ps -f "name=^${CONTAINER_NAME}$" --format "{{.Status}}" | grep -q "Up"; then
+    echo ""
+    echo "=========================================="
+    echo "部署成功！"
+    echo "=========================================="
+    docker ps -f "name=$CONTAINER_NAME" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+    echo ""
 
-if [ "$CONTAINER_STATUS" = "running" ]; then
-    echo "✓ 容器运行正常"
-    
-    # 尝试健康检查
-    if command -v curl &> /dev/null; then
-        echo "执行健康检查..."
+    # 检查是否有数据库错误
+    if docker logs "$CONTAINER_NAME" 2>&1 | grep -q "readonly database"; then
+        echo "警告: 检测到数据库只读错误，尝试修复权限 ..."
+        docker stop "$CONTAINER_NAME"
+        chmod -R 777 "$DATA_DIR" 2>/dev/null || true
+        docker start "$CONTAINER_NAME"
         sleep 2
-        if curl -sf "http://localhost:$PORT/healthz" > /dev/null 2>&1; then
-            echo "✓ 健康检查通过"
-        else
-            echo "⚠ 健康检查失败，容器可能还在启动中"
-            echo "  请稍后手动检查: curl http://localhost:$PORT/healthz"
-        fi
+        echo "权限已修复并重启"
     fi
-else
-    echo "✗ 容器状态异常: $CONTAINER_STATUS"
-    echo "查看日志: docker logs $CONTAINER_NAME"
-fi
 
-# 显示容器状态
-echo ""
-echo "=========================================="
-echo "部署完成！"
-echo "=========================================="
-docker ps -f name=^${CONTAINER_NAME}$ --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-echo ""
-echo "访问地址:"
-echo "  本地: http://localhost:$PORT"
-if command -v hostname &> /dev/null; then
-    HOSTNAME=$(hostname -I 2>/dev/null | awk '{print $1}' || hostname)
-    if [ -n "$HOSTNAME" ]; then
-        echo "  外部: http://$HOSTNAME:$PORT"
-    fi
+    echo "访问地址:  http://localhost:8081"
+    echo "数据目录:  $DATA_DIR"
+    echo ""
+    echo "常用命令:"
+    echo "  docker logs -f $CONTAINER_NAME     # 查看日志"
+    echo "  docker restart $CONTAINER_NAME      # 重启"
+    echo "  docker stop $CONTAINER_NAME         # 停止"
+    echo "=========================================="
+else
+    echo ""
+    echo "错误: 容器启动失败"
+    echo "查看日志: docker logs $CONTAINER_NAME"
+    docker logs "$CONTAINER_NAME" --tail 20 2>&1
+    exit 1
 fi
-echo ""
-echo "数据存储: $DATA_DIR"
-echo "  查看数据: ls -la $DATA_DIR"
-echo ""
-echo "常用命令:"
-echo "  查看日志: docker logs -f $CONTAINER_NAME"
-echo "  停止容器: docker stop $CONTAINER_NAME"
-echo "  重启容器: docker restart $CONTAINER_NAME"
-echo "  删除容器: docker rm -f $CONTAINER_NAME"
-echo ""
-echo "数据备份:"
-echo "  备份: tar czf memos-backup-\$(date +%Y%m%d).tar.gz -C $DATA_DIR ."
-echo "  恢复: tar xzf memos-backup-YYYYMMDD.tar.gz -C $DATA_DIR"
-echo "=========================================="

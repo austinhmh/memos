@@ -5,6 +5,8 @@ export interface MemoActionMenuProps {
   readonly?: boolean;
   className?: string;
   onEdit?: () => void;
+  isDetailPage?: boolean;
+  deleteSuccessPath?: string;
 }
 
 export interface UseMemoActionHandlersReturn {

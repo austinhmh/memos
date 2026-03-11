@@ -1,23 +1,8 @@
-import type { Element } from "hast";
 import { memo } from "react";
-import ReactMarkdown from "react-markdown";
-import rehypeKatex from "rehype-katex";
-import rehypeRaw from "rehype-raw";
-import rehypeSanitize from "rehype-sanitize";
-import remarkBreaks from "remark-breaks";
-import remarkGfm from "remark-gfm";
-import remarkMath from "remark-math";
 import { cn } from "@/lib/utils";
 import { useTranslate } from "@/utils/i18n";
-import { remarkDisableSetext } from "@/utils/remark-plugins/remark-disable-setext";
-import { remarkPreserveType } from "@/utils/remark-plugins/remark-preserve-type";
-import { remarkTag } from "@/utils/remark-plugins/remark-tag";
-import { CodeBlock } from "./CodeBlock";
-import { isTagNode, isTaskListItemNode } from "./ConditionalComponent";
-import { SANITIZE_SCHEMA } from "./constants";
+import { MarkdownRenderer } from "@/lib/markdown/MarkdownRenderer";
 import { useCompactLabel, useCompactMode } from "./hooks";
-import { Tag } from "./Tag";
-import { TaskListItem } from "./TaskListItem";
 import type { MemoContentProps } from "./types";
 
 const MemoContent = (props: MemoContentProps) => {
@@ -70,34 +55,7 @@ const MemoContent = (props: MemoContentProps) => {
         onMouseUp={onClick}
         onDoubleClick={onDoubleClick}
       >
-        <ReactMarkdown
-          remarkPlugins={[remarkDisableSetext, remarkMath, remarkGfm, remarkBreaks, remarkTag, remarkPreserveType]}
-          rehypePlugins={[rehypeRaw, rehypeKatex, [rehypeSanitize, SANITIZE_SCHEMA]]}
-          components={{
-            // Child components consume from MemoViewContext directly
-            input: ((inputProps: React.ComponentProps<"input"> & { node?: Element }) => {
-              if (inputProps.node && isTaskListItemNode(inputProps.node)) {
-                return <TaskListItem {...inputProps} />;
-              }
-              return <input {...inputProps} />;
-            }) as React.ComponentType<React.ComponentProps<"input">>,
-            span: ((spanProps: React.ComponentProps<"span"> & { node?: Element }) => {
-              const { node, ...rest } = spanProps;
-              if (node && isTagNode(node)) {
-                return <Tag {...spanProps} />;
-              }
-              return <span {...rest} />;
-            }) as React.ComponentType<React.ComponentProps<"span">>,
-            pre: CodeBlock,
-            a: ({ href, children, ...aProps }) => (
-              <a href={href} target="_blank" rel="noopener noreferrer" {...aProps}>
-                {children}
-              </a>
-            ),
-          }}
-        >
-          {content}
-        </ReactMarkdown>
+        <MarkdownRenderer content={content} />
       </div>
       {showCompactMode === "ALL" && (
         <div className="absolute bottom-0 left-0 w-full h-12 bg-linear-to-b from-transparent to-background pointer-events-none"></div>

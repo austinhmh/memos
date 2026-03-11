@@ -56,6 +56,8 @@ const MemoActionMenu = (props: MemoActionMenuProps) => {
   } = useMemoActionHandlers({
     memo,
     onEdit: props.onEdit,
+    isDetailPage: props.isDetailPage,
+    deleteSuccessPath: props.deleteSuccessPath,
     setDeleteDialogOpen,
     setRemoveTasksDialogOpen,
   });

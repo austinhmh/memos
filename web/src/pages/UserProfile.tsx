@@ -2,8 +2,7 @@ import copy from "copy-to-clipboard";
 import { ExternalLinkIcon, LayoutListIcon, type LucideIcon, MapIcon } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { useParams, useSearchParams } from "react-router-dom";
-import { MemoRenderContext } from "@/components/MasonryView";
-import MemoView from "@/components/MemoView";
+import MemoPreviewCard from "@/components/MemoPreviewCard";
 import PagedMemoList from "@/components/PagedMemoList";
 import UserAvatar from "@/components/UserAvatar";
 import UserMemoMap from "@/components/UserMemoMap";
@@ -130,15 +129,8 @@ const UserProfile = () => {
             <div className="mx-auto w-full max-w-2xl">
               {activeTab === "memos" ? (
                 <PagedMemoList
-                  renderer={(memo: Memo, context?: MemoRenderContext) => (
-                    <MemoView 
-                      key={`${memo.name}-${memo.displayTime}`} 
-                      memo={memo} 
-                      showVisibility 
-                      showPinned 
-                      compact={context?.compact}
-                      compactLines={context?.compactLines}
-                    />
+                  renderer={(memo: Memo) => (
+                    <MemoPreviewCard key={`${memo.name}-${memo.displayTime}`} memo={memo} showVisibility showPinned />
                   )}
                   listSort={listSort}
                   orderBy={orderBy}

@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { EDITOR_HEIGHT } from "../constants";
 import type { EditorProps } from "../types";
 import { editorCommands } from "./commands";
+import { handleMarkdownShortcuts } from "./shortcuts";
 import SlashCommands from "./SlashCommands";
 import TagSuggestions from "./TagSuggestions";
 import { useListCompletion } from "./useListCompletion";
@@ -32,19 +33,12 @@ const Editor = forwardRef(function Editor(props: EditorProps, ref: React.Forward
     onPaste,
     onContentChange: handleContentChangeCallback,
     isFocusMode,
+    compact,
     isInIME = false,
     onCompositionStart,
     onCompositionEnd,
-    textAreaRef: externalTextAreaRef,
   } = props;
   const editorRef = useRef<HTMLTextAreaElement>(null);
-
-  // Sync internal ref with external ref if provided
-  useEffect(() => {
-    if (externalTextAreaRef && editorRef.current) {
-      (externalTextAreaRef as React.MutableRefObject<HTMLTextAreaElement | null>).current = editorRef.current;
-    }
-  }, [externalTextAreaRef]);
 
   const updateEditorHeight = useCallback(() => {
     if (editorRef.current) {
@@ -182,6 +176,23 @@ const Editor = forwardRef(function Editor(props: EditorProps, ref: React.Forward
     }
   }, [handleContentChangeCallback, updateEditorHeight, scrollToCaret]);
 
+  const handleEditorKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey) {
+        return;
+      }
+
+      const editor = editorActions;
+      const key = event.key.toLowerCase();
+      if (!["b", "i", "k"].includes(key)) {
+        return;
+      }
+
+      handleMarkdownShortcuts(event, editor);
+    },
+    [editorActions],
+  );
+
   // Auto-complete markdown lists when pressing Enter
   useListCompletion({
     editorRef,
@@ -193,22 +204,23 @@ const Editor = forwardRef(function Editor(props: EditorProps, ref: React.Forward
     <div
       className={cn(
         "flex flex-col justify-start items-start relative w-full bg-inherit",
-        // Always use flex-1 min-h-0 to fill parent container
-        "flex-1 min-h-0",
+        // Focus mode: flex-1 to grow and fill space; Normal: h-auto with max-height
+        isFocusMode ? "flex-1" : compact ? "h-auto max-h-[30vh]" : `h-auto ${EDITOR_HEIGHT.normal}`,
         className,
       )}
     >
       <textarea
         className={cn(
           "w-full my-1 text-base resize-none overflow-x-hidden overflow-y-auto bg-transparent outline-none placeholder:opacity-70 whitespace-pre-wrap break-words",
-          // Use flex-1 min-h-0 to fill wrapper and enable scrolling
-          "flex-1 min-h-0",
+          // Focus mode: flex-1 h-0 to grow within flex container; Normal: h-full to fill wrapper
+          isFocusMode ? "flex-1 h-0" : "h-full",
         )}
         rows={1}
         placeholder={placeholder}
         ref={editorRef}
         onPaste={onPaste}
         onInput={handleEditorInput}
+        onKeyDown={handleEditorKeyDown}
         onCompositionStart={onCompositionStart}
         onCompositionEnd={onCompositionEnd}
       ></textarea>

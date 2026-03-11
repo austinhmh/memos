@@ -1,5 +1,6 @@
-import { MemoRenderContext } from "@/components/MasonryView";
-import MemoView from "@/components/MemoView";
+import { useCallback } from "react";
+import { useMemoFilterContext } from "@/contexts/MemoFilterContext";
+import MemoPreviewCard from "@/components/MemoPreviewCard";
 import PagedMemoList from "@/components/PagedMemoList";
 import { useMemoFilters, useMemoSorting } from "@/hooks";
 import useCurrentUser from "@/hooks/useCurrentUser";
@@ -8,37 +9,39 @@ import { Memo, Visibility } from "@/types/proto/api/v1/memo_service_pb";
 
 const Explore = () => {
   const currentUser = useCurrentUser();
+  const { getFiltersByFactor } = useMemoFilterContext();
+  const hasExplicitSearch =
+    getFiltersByFactor("tagSearch").length > 0 || getFiltersByFactor("contentSearch").length > 0;
 
-  // Determine visibility filter based on authentication status
-  // - Logged-in users: Can see PUBLIC and PROTECTED memos
-  // - Visitors: Can only see PUBLIC memos
-  // Note: The backend is responsible for filtering stats based on visibility permissions.
   const visibilities = currentUser ? [Visibility.PUBLIC, Visibility.PROTECTED] : [Visibility.PUBLIC];
 
-  // Build filter using unified hook (no creator scoping for Explore)
   const memoFilter = useMemoFilters({
     includeShortcuts: false,
     includePinned: false,
     visibilities,
   });
 
-  // Get sorting logic using unified hook (no pinned sorting)
-  const { listSort, orderBy } = useMemoSorting({
+  const { listSort: baseSort, orderBy } = useMemoSorting({
     pinnedFirst: false,
     state: State.NORMAL,
   });
 
+  const listSort = useCallback(
+    (list: Memo[]) => {
+      if (hasExplicitSearch) {
+        return baseSort ? baseSort(list) : list;
+      }
+
+      const filtered = list.filter((m) => !m.content.includes("#blog"));
+      return baseSort ? baseSort(filtered) : filtered;
+    },
+    [baseSort, hasExplicitSearch],
+  );
+
   return (
     <PagedMemoList
-      renderer={(memo: Memo, context?: MemoRenderContext) => (
-        <MemoView 
-          key={`${memo.name}-${memo.updateTime}`} 
-          memo={memo} 
-          showCreator 
-          showVisibility 
-          compact={context?.compact}
-          compactLines={context?.compactLines}
-        />
+      renderer={(memo: Memo) => (
+        <MemoPreviewCard key={`${memo.name}-${memo.updateTime}`} memo={memo} showCreator showVisibility />
       )}
       listSort={listSort}
       orderBy={orderBy}

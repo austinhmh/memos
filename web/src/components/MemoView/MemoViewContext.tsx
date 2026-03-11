@@ -33,7 +33,7 @@ export const useMemoViewDerived = () => {
 
   const isInMemoDetailPage = location.pathname.startsWith(`/${memo.name}`);
 
-  const commentAmount = memo.relations.filter(
+  const commentAmount = (memo.relations || []).filter(
     (relation) => relation.type === MemoRelation_Type.COMMENT && relation.relatedMemo?.name === memo.name,
   ).length;
 

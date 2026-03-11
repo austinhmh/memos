@@ -1,6 +1,7 @@
 import mermaid from "mermaid";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { normalizeMermaidCode } from "@/lib/mermaid/normalizeMermaidCode";
 import { cn } from "@/lib/utils";
 import { getThemeWithFallback, resolveTheme, setupSystemThemeListener } from "@/utils/theme";
 import { extractCodeContent } from "./utils";
@@ -43,7 +44,7 @@ export const MermaidBlock = ({ children, className }: MermaidBlockProps) => {
 
   // Render Mermaid diagram when content or theme changes
   useEffect(() => {
-    if (!codeContent || !containerRef.current) {
+    if (!codeContent?.trim()) {
       return;
     }
 
@@ -69,7 +70,8 @@ export const MermaidBlock = ({ children, className }: MermaidBlockProps) => {
           },
         });
 
-        const { svg: renderedSvg } = await mermaid.render(id, codeContent);
+        const normalizedCode = normalizeMermaidCode(codeContent);
+        const { svg: renderedSvg } = await mermaid.render(id, normalizedCode);
         setSvg(renderedSvg);
         setError("");
       } catch (err) {

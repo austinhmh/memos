@@ -39,7 +39,7 @@ export function useUser(name: string, options?: { enabled?: boolean }) {
       const user = await userServiceClient.getUser({ name });
       return user;
     },
-    enabled: options?.enabled ?? true,
+    enabled: !!name && (options?.enabled ?? true),
     staleTime: 1000 * 60 * 5, // 5 minutes - user profiles don't change often
   });
 }

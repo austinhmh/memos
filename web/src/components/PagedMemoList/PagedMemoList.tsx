@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { matchPath } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { userServiceClient } from "@/connect";
-import { useView } from "@/contexts/ViewContext";
 import { DEFAULT_LIST_MEMOS_PAGE_SIZE } from "@/helpers/consts";
 import { useInfiniteMemos } from "@/hooks/useMemoQueries";
 import { userKeys } from "@/hooks/useUserQueries";
@@ -13,14 +12,12 @@ import { State } from "@/types/proto/api/v1/common_pb";
 import type { Memo } from "@/types/proto/api/v1/memo_service_pb";
 import { useTranslate } from "@/utils/i18n";
 import Empty from "../Empty";
-import type { MemoRenderContext } from "../MasonryView";
-import MasonryView from "../MasonryView";
 import MemoEditor from "../MemoEditor";
 import MemoFilters from "../MemoFilters";
 import Skeleton from "../Skeleton";
 
 interface Props {
-  renderer: (memo: Memo, context?: MemoRenderContext) => JSX.Element;
+  renderer: (memo: Memo) => JSX.Element;
   listSort?: (list: Memo[]) => Memo[];
   state?: State;
   orderBy?: string;
@@ -82,13 +79,10 @@ function useAutoFetchWhenNotScrollable({
 
 const PagedMemoList = (props: Props) => {
   const t = useTranslate();
-  const { layout } = useView();
   const queryClient = useQueryClient();
 
-  // Show memo editor only on the root route
   const showMemoEditor = Boolean(matchPath(Routes.ROOT, window.location.pathname));
 
-  // Use React Query's infinite query for pagination
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteMemos({
     state: props.state || State.NORMAL,
     orderBy: props.orderBy || "display_time desc",
@@ -96,13 +90,10 @@ const PagedMemoList = (props: Props) => {
     pageSize: props.pageSize || DEFAULT_LIST_MEMOS_PAGE_SIZE,
   });
 
-  // Flatten pages into a single array of memos
   const memos = useMemo(() => data?.pages.flatMap((page) => page.memos) || [], [data]);
 
-  // Apply custom sorting if provided, otherwise use memos directly
   const sortedMemoList = useMemo(() => (props.listSort ? props.listSort(memos) : memos), [memos, props.listSort]);
 
-  // Prefetch creators when new data arrives to improve performance
   useEffect(() => {
     if (!data?.pages || !props.showCreator) return;
 
@@ -122,7 +113,6 @@ const PagedMemoList = (props: Props) => {
     }
   }, [data?.pages, props.showCreator, queryClient]);
 
-  // Auto-fetch hook: fetches more content when page isn't scrollable
   useAutoFetchWhenNotScrollable({
     hasNextPage,
     isFetchingNextPage,
@@ -130,7 +120,6 @@ const PagedMemoList = (props: Props) => {
     onFetchNext: fetchNextPage,
   });
 
-  // Infinite scroll: fetch more when user scrolls near bottom
   useEffect(() => {
     if (!hasNextPage) return;
 
@@ -145,31 +134,27 @@ const PagedMemoList = (props: Props) => {
     return () => window.removeEventListener("scroll", handleScroll);
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  const children = (
-    <div className="flex flex-col justify-start items-stretch w-full max-w-full">
-      {/* Show skeleton loader during initial load */}
+  return (
+    <div className="flex flex-col justify-start items-center w-full max-w-3xl mx-auto px-4 sm:px-6">
+      {showMemoEditor && (
+        <div className="w-full mb-3">
+          <MemoEditor compact className="mb-2" cacheKey="home-memo-editor" placeholder={t("editor.any-thoughts")} />
+        </div>
+      )}
+      <div className="w-full mb-2">
+        <MemoFilters />
+      </div>
+
       {isLoading ? (
         <Skeleton showCreator={props.showCreator} count={4} />
       ) : (
         <>
-          <MasonryView
-            memoList={sortedMemoList}
-            renderer={props.renderer}
-            prefixElement={
-              <>
-                {showMemoEditor ? (
-                  <MemoEditor className="mb-2" cacheKey="home-memo-editor" placeholder={t("editor.any-thoughts")} />
-                ) : undefined}
-                <MemoFilters />
-              </>
-            }
-            listMode={layout === "LIST"}
-          />
+          <div className="w-full flex flex-col gap-2">
+            {sortedMemoList.map((memo) => props.renderer(memo))}
+          </div>
 
-          {/* Loading indicator for pagination */}
           {isFetchingNextPage && <Skeleton showCreator={props.showCreator} count={2} />}
 
-          {/* Empty state or back-to-top button */}
           {!isFetchingNextPage && (
             <>
               {!hasNextPage && sortedMemoList.length === 0 ? (
@@ -188,8 +173,6 @@ const PagedMemoList = (props: Props) => {
       )}
     </div>
   );
-
-  return children;
 };
 
 const BackToTop = () => {
@@ -213,7 +196,6 @@ const BackToTop = () => {
     });
   };
 
-  // Don't render if not visible
   if (!isVisible) {
     return null;
   }

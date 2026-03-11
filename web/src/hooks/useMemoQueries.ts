@@ -1,10 +1,134 @@
 import { create } from "@bufbuild/protobuf";
 import { FieldMaskSchema } from "@bufbuild/protobuf/wkt";
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData, type QueryClient } from "@tanstack/react-query";
 import { memoServiceClient } from "@/connect";
 import { userKeys } from "@/hooks/useUserQueries";
-import type { ListMemosRequest, Memo } from "@/types/proto/api/v1/memo_service_pb";
+import type { ListMemosRequest, ListMemosResponse, Memo } from "@/types/proto/api/v1/memo_service_pb";
 import { ListMemosRequestSchema, MemoSchema } from "@/types/proto/api/v1/memo_service_pb";
+
+interface UseUpdateMemoOptions {
+  invalidateListsOnSuccess?: boolean;
+  invalidateUserStatsOnSuccess?: boolean;
+  syncListCaches?: boolean;
+}
+
+function replaceMemoInListResponse(response: ListMemosResponse | undefined, updatedMemo: Memo) {
+  if (!response?.memos?.length) {
+    return response;
+  }
+
+  let changed = false;
+  const memos = response.memos.map((memo) => {
+    if (memo.name !== updatedMemo.name) {
+      return memo;
+    }
+    changed = true;
+    return updatedMemo;
+  });
+
+  return changed ? { ...response, memos } : response;
+}
+
+function replaceMemoInInfiniteList(
+  data: InfiniteData<ListMemosResponse> | undefined,
+  updatedMemo: Memo,
+): InfiniteData<ListMemosResponse> | undefined {
+  if (!data?.pages?.length) {
+    return data;
+  }
+
+  let changed = false;
+  const pages = data.pages.map((page) => {
+    const nextPage = replaceMemoInListResponse(page, updatedMemo);
+    if (nextPage !== page) {
+      changed = true;
+    }
+    return nextPage ?? page;
+  });
+
+  return changed ? { ...data, pages } : data;
+}
+
+function extractTagFilters(filter?: string): string[] {
+  if (!filter) {
+    return [];
+  }
+
+  return Array.from(filter.matchAll(/tag in \["([^"]+)"\]/g), (match) => match[1]);
+}
+
+function matchesKnownListFilters(updatedMemo: Memo, request?: Partial<ListMemosRequest>): boolean {
+  const requiredTags = extractTagFilters(request?.filter);
+  if (requiredTags.length === 0) {
+    return true;
+  }
+
+  const memoTags = updatedMemo.tags ?? [];
+  return requiredTags.every((tag) => memoTags.includes(tag));
+}
+
+function syncMemoInListResponse(
+  response: ListMemosResponse | undefined,
+  updatedMemo: Memo,
+  request?: Partial<ListMemosRequest>,
+) {
+  if (!response?.memos?.length) {
+    return response;
+  }
+
+  const exists = response.memos.some((memo) => memo.name === updatedMemo.name);
+  if (!exists) {
+    return response;
+  }
+
+  if (!matchesKnownListFilters(updatedMemo, request)) {
+    return {
+      ...response,
+      memos: response.memos.filter((memo) => memo.name !== updatedMemo.name),
+    };
+  }
+
+  return replaceMemoInListResponse(response, updatedMemo);
+}
+
+function syncMemoInInfiniteList(
+  data: InfiniteData<ListMemosResponse> | undefined,
+  updatedMemo: Memo,
+  request?: Partial<ListMemosRequest>,
+): InfiniteData<ListMemosResponse> | undefined {
+  if (!data?.pages?.length) {
+    return data;
+  }
+
+  let changed = false;
+  const pages = data.pages.map((page) => {
+    const nextPage = syncMemoInListResponse(page, updatedMemo, request);
+    if (nextPage !== page) {
+      changed = true;
+    }
+    return nextPage ?? page;
+  });
+
+  return changed ? { ...data, pages } : data;
+}
+
+export function syncMemoToDetailCache(queryClient: QueryClient, updatedMemo: Memo) {
+  queryClient.setQueryData(memoKeys.detail(updatedMemo.name), updatedMemo);
+}
+
+export function syncMemoToListCaches(queryClient: QueryClient, updatedMemo: Memo) {
+  const listQueries = queryClient.getQueryCache().findAll({ queryKey: memoKeys.lists() });
+
+  for (const query of listQueries) {
+    const request = query.queryKey[2] as Partial<ListMemosRequest> | undefined;
+    queryClient.setQueryData(query.queryKey, (oldData: unknown) => {
+      if (oldData && typeof oldData === "object" && "pages" in oldData) {
+        return syncMemoInInfiniteList(oldData as InfiniteData<ListMemosResponse>, updatedMemo, request);
+      }
+      return syncMemoInListResponse(oldData as ListMemosResponse | undefined, updatedMemo, request);
+    });
+  }
+}
 
 // Query keys factory for consistent cache management
 export const memoKeys = {
@@ -53,7 +177,7 @@ export function useMemo(name: string, options?: { enabled?: boolean }) {
       return memo;
     },
     enabled: options?.enabled ?? true,
-    staleTime: 1000 * 10, // 10 seconds - reduced to prevent stale data in collaborative editing
+    staleTime: 1000 * 60 * 5, // 5 minutes — frequent refetch causes BlogEditor to unmount/remount, losing scroll position and editor state
   });
 }
 
@@ -76,8 +200,17 @@ export function useCreateMemo() {
   });
 }
 
-export function useUpdateMemo() {
+export function useUpdateMemo(options: UseUpdateMemoOptions = {}) {
   const queryClient = useQueryClient();
+  const {
+    invalidateListsOnSuccess = true,
+    invalidateUserStatsOnSuccess = true,
+    syncListCaches = false,
+  } = options;
+
+  const syncUpdatedMemoIntoKnownLists = (updatedMemo: Memo) => {
+    syncMemoToListCaches(queryClient, updatedMemo);
+  };
 
   return useMutation({
     mutationFn: async ({ update, updateMask }: { update: Partial<Memo>; updateMask: string[] }) => {
@@ -114,10 +247,17 @@ export function useUpdateMemo() {
     onSuccess: (updatedMemo) => {
       // Update cache with server response
       queryClient.setQueryData(memoKeys.detail(updatedMemo.name), updatedMemo);
-      // Invalidate lists to refresh
-      queryClient.invalidateQueries({ queryKey: memoKeys.lists() });
-      // Invalidate user stats
-      queryClient.invalidateQueries({ queryKey: userKeys.stats() });
+
+      if (syncListCaches) {
+        syncUpdatedMemoIntoKnownLists(updatedMemo);
+      }
+
+      if (invalidateListsOnSuccess) {
+        queryClient.invalidateQueries({ queryKey: memoKeys.lists() });
+      }
+      if (invalidateUserStatsOnSuccess) {
+        queryClient.invalidateQueries({ queryKey: userKeys.stats() });
+      }
     },
   });
 }

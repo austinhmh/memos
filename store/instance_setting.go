@@ -137,8 +137,8 @@ func (s *Store) GetInstanceGeneralSetting(ctx context.Context) (*storepb.Instanc
 	return instanceGeneralSetting, nil
 }
 
-// DefaultContentLengthLimit is the default limit of content length in bytes. 8KB.
-const DefaultContentLengthLimit = 8 * 1024
+// DefaultContentLengthLimit is the default limit of content length in bytes. 256KB.
+const DefaultContentLengthLimit = 256 * 1024
 
 // DefaultReactions is the default reactions for memo related setting.
 var DefaultReactions = []string{"👍", "👎", "❤️", "🎉", "😄", "😕", "😢", "😡"}
