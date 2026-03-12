@@ -1,0 +1,23 @@
+web/src/pages/BlogDetail.tsx
+  3cf758169dcff883 1-2,5,7,11-15,17,21-22,28,37-52,56,61-62,64,66-67,70-71,73,77,79-88,119,134-179,181-191,193-229,234,236-237,240-256,258-272,274-349,351-357,359-384
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "da74f7d54f5f895db88c73d349f7d806772093ca",
+  "prompts": {
+    "3cf758169dcff883": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "e679c8e6-21e1-41b9-b0e7-b2faf5e841fa",
+        "model": "claude-4.6-opus-high-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 418,
+      "total_deletions": 167,
+      "accepted_lines": 295,
+      "overriden_lines": 1
+    }
+  }
+}
