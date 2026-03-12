@@ -1,0 +1,23 @@
+web/src/index.css
+  3cf758169dcff883 363
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "6261973227bbb168c7db39071b50ef854388b5c6",
+  "prompts": {
+    "3cf758169dcff883": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "e679c8e6-21e1-41b9-b0e7-b2faf5e841fa",
+        "model": "claude-4.6-opus-high-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 1,
+      "total_deletions": 1,
+      "accepted_lines": 1,
+      "overriden_lines": 0
+    }
+  }
+}
