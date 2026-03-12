@@ -7,6 +7,7 @@ import i18n from "@/i18n";
 import { cn } from "@/lib/utils";
 import type { Memo } from "@/types/proto/api/v1/memo_service_pb";
 import { MemoRelation_Type, Visibility } from "@/types/proto/api/v1/memo_service_pb";
+import MemoActionMenu from "./MemoActionMenu";
 import VisibilityIcon from "./VisibilityIcon";
 import UserAvatar from "./UserAvatar";
 
@@ -87,6 +88,9 @@ const MemoPreviewCard: React.FC<MemoPreviewCardProps> = ({ memo: memoData, showC
             <span className="text-xs">{commentAmount}</span>
           </div>
         )}
+        <div className="opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+          <MemoActionMenu memo={memoData} />
+        </div>
       </div>
 
       {title && (
