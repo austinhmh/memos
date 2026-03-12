@@ -360,8 +360,6 @@
   .blog-editor {
     position: relative;
     width: 100%;
-    max-width: 52em;
-    margin: 0 auto;
     padding: 2rem 0;
   }
 
