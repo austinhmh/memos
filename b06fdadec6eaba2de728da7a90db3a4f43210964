@@ -1,0 +1,21 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "b06fdadec6eaba2de728da7a90db3a4f43210964",
+  "prompts": {
+    "3cf758169dcff883": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "e679c8e6-21e1-41b9-b0e7-b2faf5e841fa",
+        "model": "claude-4.6-opus-high-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 2,
+      "accepted_lines": 0,
+      "overriden_lines": 0
+    }
+  }
+}
