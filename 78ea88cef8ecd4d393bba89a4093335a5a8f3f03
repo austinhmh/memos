@@ -1,0 +1,25 @@
+web/src/components/BlogEditor/lib/inputRules.ts
+  44cd60d2b5de9a2f 3-4,13-46
+web/src/components/BlogEditor/index.tsx
+  44cd60d2b5de9a2f 21,226
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.12",
+  "base_commit_sha": "78ea88cef8ecd4d393bba89a4093335a5a8f3f03",
+  "prompts": {
+    "44cd60d2b5de9a2f": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "c36375dd-a335-4583-9562-0473439132bb",
+        "model": "claude-4.6-opus-high-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 57,
+      "total_deletions": 17,
+      "accepted_lines": 46,
+      "overriden_lines": 0
+    }
+  }
+}
