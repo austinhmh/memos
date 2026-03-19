@@ -18,7 +18,7 @@ import type { Memo } from "@/types/proto/api/v1/memo_service_pb";
 import { MemoSchema } from "@/types/proto/api/v1/memo_service_pb";
 import { getThemeWithFallback, resolveTheme } from "@/utils/theme";
 import { loadDoc, parseInWorker } from "./lib/docCache";
-import { buildMarkdownInputRules } from "./lib/inputRules";
+import { buildMarkdownInputRules, codeBlockOnEnter } from "./lib/inputRules";
 import isMarkdown from "./lib/isMarkdown";
 import { createMdParser } from "./lib/markdownParser";
 import { createMdSerializer } from "./lib/markdownSerializer";
@@ -223,6 +223,7 @@ const buildBlogEditorKeymap = (manualSave: Command, promptLink: Command): Record
   "Shift-Ctrl-\\": toggleBlockType(schema.nodes.code_block, schema.nodes.paragraph, { language: "" }),
   "Ctrl->": toggleWrap(schema.nodes.blockquote),
   Enter: chainCommands(
+    codeBlockOnEnter(schema),
     enterInCode,
     splitListItem(schema.nodes.checkbox_item),
     splitListItem(schema.nodes.list_item),

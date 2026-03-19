@@ -1,6 +1,7 @@
 import { InputRule, ellipsis, inputRules, smartQuotes, textblockTypeInputRule, wrappingInputRule } from "prosemirror-inputrules";
 import type { Schema } from "prosemirror-model";
-import type { Plugin } from "prosemirror-state";
+import { TextSelection } from "prosemirror-state";
+import type { Command, Plugin } from "prosemirror-state";
 import { listWrappingInputRule } from "@/outline-vendor/shared/editor/lib/listInputRule";
 import { markInputRuleForPattern } from "@/outline-vendor/shared/editor/lib/markInputRule";
 
@@ -8,6 +9,40 @@ import { markInputRuleForPattern } from "@/outline-vendor/shared/editor/lib/mark
  * Markdown 风格输入规则：在行首输入 #、>、-、*、1.、```、--- 等时，
  * 立即将当前块转换为标题、引用、列表、代码块、分割线，实现所见即所得（WYSIWYG）。
  */
+
+const CODE_FENCE_RE = /^```(\w*)$/;
+
+/**
+ * Enter 键触发的代码块转换命令。
+ * 当段落内容为 ```lang 时，将其转换为代码块（无需额外空格）。
+ */
+export function codeBlockOnEnter(schema: Schema): Command {
+  const type = schema.nodes.code_block;
+  if (!type) return () => false;
+
+  return (state, dispatch) => {
+    const { $from } = state.selection;
+    if (!$from.parent.isTextblock || $from.parent.type !== schema.nodes.paragraph) return false;
+
+    const text = $from.parent.textContent;
+    const match = text.match(CODE_FENCE_RE);
+    if (!match) return false;
+
+    const $pos = state.doc.resolve($from.before());
+    if (!$pos.node().canReplaceWith($pos.index(), $pos.indexAfter(), type)) return false;
+
+    if (dispatch) {
+      const start = $from.before();
+      const end = $from.after();
+      const tr = state.tr
+        .delete(start, end)
+        .insert(start, type.createAndFill({ language: (match[1] || "").trim() })!);
+      tr.setSelection(TextSelection.near(tr.doc.resolve(start + 1)));
+      dispatch(tr);
+    }
+    return true;
+  };
+}
 
 function blockQuoteRule(schema: Schema): InputRule | null {
   const type = schema.nodes.blockquote;
