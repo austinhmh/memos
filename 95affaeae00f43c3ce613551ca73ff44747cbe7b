@@ -1,0 +1,74 @@
+server/router/fileserver/fileserver.go
+  33d931c60abd368e 120-121,138-139
+server/router/api/v1/rate_limiter.go
+  33d931c60abd368e 1-58
+store/db/sqlite/activity.go
+  33d931c60abd368e 47-49
+server/router/api/v1/auth_service.go
+  33d931c60abd368e 69-72
+server/router/api/v1/acl_config.go
+  33d931c60abd368e 43-83
+store/db/postgres/activity.go
+  33d931c60abd368e 45-47
+server/router/api/v1/attachment_service.go
+  33d931c60abd368e 85-87,213-221,229-231,233,245-253,259-260,549-572
+store/db/mysql/activity.go
+  33d931c60abd368e 57-59
+server/router/api/v1/v1.go
+  33d931c60abd368e 6,38-39,52,145-147,149-156,159
+server/router/api/v1/memo_attachment_service.go
+  33d931c60abd368e 101-106
+server/router/api/v1/user_service.go
+  33d931c60abd368e 8,10,166-168,272,275-277,323-329,746-750,755,1462-1486
+SECURITY_FIXES.md
+  33d931c60abd368e 1-275
+server/router/api/v1/common.go
+  33d931c60abd368e 4,8-9,72-89
+server/server.go
+  33d931c60abd368e 54
+server/router/api/v1/reaction_service.go
+  33d931c60abd368e 18-32
+BROWSER_TEST.md
+  33d931c60abd368e 1-125
+store/activity.go
+  33d931c60abd368e 45
+server/router/frontend/frontend.go
+  33d931c60abd368e 58-60
+test_all.sh
+  33d931c60abd368e 1-474
+server/router/api/v1/activity_service.go
+  33d931c60abd368e 18-25,32-37,39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.12",
+  "base_commit_sha": "95affaeae00f43c3ce613551ca73ff44747cbe7b",
+  "prompts": {
+    "2840b3f49a3e7da0": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "dd8e9c68-b8cc-4b28-897b-e8735c23a437",
+        "model": "claude-4.6-opus-high-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 22,
+      "total_deletions": 17,
+      "accepted_lines": 4,
+      "overriden_lines": 0
+    },
+    "33d931c60abd368e": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "7c435d26-ce6a-499e-bd0e-46f0fc1d15f8",
+        "model": "claude-4.6-opus-high-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 2261,
+      "total_deletions": 650,
+      "accepted_lines": 1692,
+      "overriden_lines": 1
+    }
+  }
+}
