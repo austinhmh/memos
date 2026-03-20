@@ -40,3 +40,44 @@ func IsPublicMethod(procedure string) bool {
 	_, ok := PublicMethods[procedure]
 	return ok
 }
+
+// publicGatewayPaths maps gRPC-Gateway HTTP paths to public access.
+// These must be kept in sync with PublicMethods above.
+var publicGatewayPaths = map[string]map[string]bool{
+	"POST": {
+		"/api/v1/auth/signin":       true,
+		"/api/v1/auth/refreshToken": true,
+		"/api/v1/users":            true, // CreateUser (first-time setup / open registration)
+	},
+	"GET": {
+		"/api/v1/instance/profile": true,
+		"/api/v1/memos":           true,
+		"/api/v1/identityProviders": true,
+	},
+}
+
+// publicGatewayPrefixes matches paths that have dynamic segments.
+var publicGatewayPrefixes = map[string][]string{
+	"GET": {
+		"/api/v1/users/",             // GetUser, GetUserAvatar, GetUserStats
+		"/api/v1/memos/",             // GetMemo, ListMemoComments
+		"/api/v1/instance/settings/", // GetInstanceSetting
+	},
+}
+
+// isPublicGatewayPath checks if an HTTP method+path is a public endpoint.
+func isPublicGatewayPath(method, path string) bool {
+	if paths, ok := publicGatewayPaths[method]; ok {
+		if paths[path] {
+			return true
+		}
+	}
+	if prefixes, ok := publicGatewayPrefixes[method]; ok {
+		for _, prefix := range prefixes {
+			if len(path) > len(prefix) && path[:len(prefix)] == prefix {
+				return true
+			}
+		}
+	}
+	return false
+}

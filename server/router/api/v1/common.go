@@ -1,9 +1,12 @@
 package v1
 
 import (
+	"context"
 	"encoding/base64"
 
 	"github.com/pkg/errors"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
 	v1pb "github.com/usememos/memos/proto/gen/api/v1"
@@ -65,4 +68,22 @@ func unmarshalPageToken(s string, pageToken *v1pb.PageToken) error {
 
 func isSuperUser(user *store.User) bool {
 	return user.Role == store.RoleAdmin || user.Role == store.RoleHost
+}
+
+// checkMemoVisibility checks if the current user has permission to view the memo.
+func (s *APIV1Service) checkMemoVisibility(ctx context.Context, memo *store.Memo) error {
+	if memo.Visibility == store.Public {
+		return nil
+	}
+	user, err := s.fetchCurrentUser(ctx)
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to get user")
+	}
+	if user == nil {
+		return status.Errorf(codes.Unauthenticated, "user not authenticated")
+	}
+	if memo.Visibility == store.Private && memo.CreatorID != user.ID && !isSuperUser(user) {
+		return status.Errorf(codes.PermissionDenied, "permission denied")
+	}
+	return nil
 }

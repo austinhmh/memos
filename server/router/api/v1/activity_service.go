@@ -15,17 +15,28 @@ import (
 )
 
 func (s *APIV1Service) ListActivities(ctx context.Context, request *v1pb.ListActivitiesRequest) (*v1pb.ListActivitiesResponse, error) {
+	user, err := s.fetchCurrentUser(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get current user: %v", err)
+	}
+	if user == nil {
+		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
+	}
+
 	// Set default page size if not specified
 	pageSize := request.PageSize
 	if pageSize <= 0 || pageSize > 1000 {
 		pageSize = 100
 	}
 
-	// TODO: Implement pagination with page_token and use pageSize for limiting
-	// For now, we'll fetch all activities and the pageSize will be used in future pagination implementation
-	_ = pageSize // Acknowledge pageSize variable to avoid linter warning
+	_ = pageSize
 
-	activities, err := s.Store.ListActivities(ctx, &store.FindActivity{})
+	findActivity := &store.FindActivity{}
+	if !isSuperUser(user) {
+		findActivity.CreatorID = &user.ID
+	}
+
+	activities, err := s.Store.ListActivities(ctx, findActivity)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to list activities: %v", err)
 	}

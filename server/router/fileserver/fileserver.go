@@ -117,10 +117,8 @@ func (s *FileServerService) serveAttachmentFile(c echo.Context) error {
 
 	// Determine content type
 	contentType := attachment.Type
-	if strings.HasPrefix(contentType, "text/") {
-		contentType += "; charset=utf-8"
-	}
-	// Prevent XSS attacks by serving potentially unsafe files as octet-stream
+	// Prevent XSS attacks by serving potentially unsafe files as octet-stream.
+	// Must check BEFORE adding charset to avoid bypassing the check.
 	unsafeTypes := []string{
 		"text/html",
 		"text/javascript",
@@ -136,6 +134,9 @@ func (s *FileServerService) serveAttachmentFile(c echo.Context) error {
 			contentType = "application/octet-stream"
 			break
 		}
+	}
+	if strings.HasPrefix(contentType, "text/") && contentType != "application/octet-stream" {
+		contentType += "; charset=utf-8"
 	}
 
 	// Set common headers

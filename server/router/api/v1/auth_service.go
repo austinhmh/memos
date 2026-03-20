@@ -66,6 +66,10 @@ func (s *APIV1Service) SignIn(ctx context.Context, request *v1pb.SignInRequest) 
 
 	// Authentication Method 1: Password-based authentication
 	if passwordCredentials := request.GetPasswordCredentials(); passwordCredentials != nil {
+		rateLimitKey := "signin:" + passwordCredentials.Username
+		if !s.signInLimiter.Allow(rateLimitKey) {
+			return nil, status.Errorf(codes.ResourceExhausted, "too many sign-in attempts, please try again later")
+		}
 		user, err := s.Store.GetUser(ctx, &store.FindUser{
 			Username: &passwordCredentials.Username,
 		})

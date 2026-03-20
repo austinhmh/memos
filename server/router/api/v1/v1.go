@@ -3,6 +3,7 @@ package v1
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
@@ -34,6 +35,8 @@ type APIV1Service struct {
 
 	// thumbnailSemaphore limits concurrent thumbnail generation to prevent memory exhaustion
 	thumbnailSemaphore *semaphore.Weighted
+	// signInLimiter rate limits sign-in attempts to prevent brute force
+	signInLimiter *RateLimiter
 }
 
 func NewAPIV1Service(secret string, profile *profile.Profile, store *store.Store) *APIV1Service {
@@ -45,7 +48,8 @@ func NewAPIV1Service(secret string, profile *profile.Profile, store *store.Store
 		Profile:            profile,
 		Store:              store,
 		MarkdownService:    markdownService,
-		thumbnailSemaphore: semaphore.NewWeighted(3), // Limit to 3 concurrent thumbnail generations
+		thumbnailSemaphore: semaphore.NewWeighted(3),
+		signInLimiter:      NewRateLimiter(10, 5*time.Minute),
 	}
 }
 
@@ -66,9 +70,10 @@ func (s *APIV1Service) RegisterGateway(ctx context.Context, echoServer *echo.Ech
 
 			result := authenticator.Authenticate(ctx, authHeader)
 
-			// Enforce authentication for non-public methods
-			// If rpcMethod cannot be determined, allow through, service layer will handle visibility checks
-			if result == nil && ok && !IsPublicMethod(rpcMethod) {
+		// Enforce authentication for non-public methods.
+		// When RPCMethod can be resolved, check against public methods list.
+		// When it cannot (ok=false), fall through to service-layer checks.
+		if result == nil && ok && !IsPublicMethod(rpcMethod) {
 				http.Error(w, `{"code": 16, "message": "authentication required"}`, http.StatusUnauthorized)
 				return
 			}
@@ -137,13 +142,21 @@ func (s *APIV1Service) RegisterGateway(ctx context.Context, echoServer *echo.Ech
 	connectHandler := NewConnectServiceHandler(s)
 	connectHandler.RegisterConnectHandlers(connectMux, connectInterceptors)
 
-	// Wrap with CORS for browser access
+	// Wrap with CORS for browser access.
+	// In dev mode, allow all origins for local development.
+	// In production, restrict allowed origins.
 	corsHandler := middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowOriginFunc: func(_ string) (bool, error) {
-			return true, nil
+		AllowOriginFunc: func(origin string) (bool, error) {
+			if s.Profile.IsDev() {
+				return true, nil
+			}
+			if s.Profile.InstanceURL != "" {
+				return origin == s.Profile.InstanceURL, nil
+			}
+			return false, nil
 		},
 		AllowMethods:     []string{http.MethodGet, http.MethodPost, http.MethodOptions},
-		AllowHeaders:     []string{"*"},
+		AllowHeaders:     []string{"Authorization", "Content-Type", "Connect-Protocol-Version", "Connect-Timeout-Ms"},
 		AllowCredentials: true,
 	})
 	connectGroup := echoServer.Group("", corsHandler)

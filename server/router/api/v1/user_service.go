@@ -5,7 +5,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -161,6 +163,9 @@ func (s *APIV1Service) CreateUser(ctx context.Context, request *v1pb.CreateUserR
 		}, nil
 	}
 
+	if len(request.User.Password) < 8 {
+		return nil, status.Errorf(codes.InvalidArgument, "password must be at least 8 characters long")
+	}
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(request.User.Password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, echo.NewHTTPError(http.StatusInternalServerError, "failed to generate password hash").SetInternal(err)
@@ -263,11 +268,13 @@ func (s *APIV1Service) UpdateUser(ctx context.Context, request *v1pb.UpdateUserR
 		case "description":
 			update.Description = &request.User.Description
 		case "role":
-			// Only allow admin to update role.
-			if currentUser.Role != store.RoleAdmin && currentUser.Role != store.RoleHost {
-				return nil, status.Errorf(codes.PermissionDenied, "permission denied")
+			if currentUser.Role != store.RoleHost {
+				return nil, status.Errorf(codes.PermissionDenied, "only HOST can change user roles")
 			}
 			role := convertUserRoleToStore(request.User.Role)
+			if role == store.RoleHost {
+				return nil, status.Errorf(codes.PermissionDenied, "cannot assign HOST role")
+			}
 			update.Role = &role
 		case "password":
 			passwordHash, err := bcrypt.GenerateFromPassword([]byte(request.User.Password), bcrypt.DefaultCost)
@@ -311,6 +318,13 @@ func (s *APIV1Service) DeleteUser(ctx context.Context, request *v1pb.DeleteUserR
 	}
 	if user == nil {
 		return nil, status.Errorf(codes.NotFound, "user not found")
+	}
+
+	if user.Role == store.RoleHost && currentUser.Role != store.RoleHost {
+		return nil, status.Errorf(codes.PermissionDenied, "cannot delete HOST user")
+	}
+	if user.Role == store.RoleHost && currentUser.ID == user.ID {
+		return nil, status.Errorf(codes.FailedPrecondition, "cannot delete yourself as HOST")
 	}
 
 	if err := s.Store.DeleteUser(ctx, &store.DeleteUser{
@@ -729,11 +743,16 @@ func (s *APIV1Service) CreateUserWebhook(ctx context.Context, request *v1pb.Crea
 		return nil, status.Errorf(codes.InvalidArgument, "webhook URL is required")
 	}
 
+	webhookURL := strings.TrimSpace(request.Webhook.Url)
+	if err := validateWebhookURL(webhookURL); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid webhook URL: %v", err)
+	}
+
 	webhookID := generateUserWebhookID()
 	webhook := &storepb.WebhooksUserSetting_Webhook{
 		Id:    webhookID,
 		Title: request.Webhook.DisplayName,
-		Url:   strings.TrimSpace(request.Webhook.Url),
+		Url:   webhookURL,
 	}
 
 	err = s.Store.AddUserWebhook(ctx, userID, webhook)
@@ -1439,4 +1458,29 @@ func ExtractNotificationIDFromName(name string) (int32, error) {
 	}
 
 	return int32(id), nil
+}
+
+// validateWebhookURL checks that the webhook URL is safe (no SSRF).
+func validateWebhookURL(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return errors.Wrap(err, "failed to parse URL")
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return errors.Errorf("unsupported scheme %q, only http/https allowed", u.Scheme)
+	}
+	host := u.Hostname()
+	if host == "" {
+		return errors.New("empty hostname")
+	}
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return errors.Wrap(err, "failed to resolve hostname")
+	}
+	for _, ip := range ips {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+			return errors.Errorf("webhook URL resolves to internal/private IP %s", ip.String())
+		}
+	}
+	return nil
 }
