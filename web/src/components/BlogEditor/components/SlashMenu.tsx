@@ -97,9 +97,16 @@ export const SlashMenu = ({ view, items, menuState }: SlashMenuProps) => {
 
   if (!menuState.open || !view || filtered.length === 0) return null;
 
-  const coords = view.coordsAtPos(menuState.from);
-  const left = coords.left;
-  const top = coords.bottom + 4;
+  let left = 0;
+  let top = 0;
+  try {
+    const pos = Math.min(menuState.from, view.state.doc.content.size);
+    const coords = view.coordsAtPos(pos);
+    left = coords.left;
+    top = coords.bottom + 4;
+  } catch {
+    return null;
+  }
 
   let currentGroup = "";
 
