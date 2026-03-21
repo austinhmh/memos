@@ -87,11 +87,15 @@ export function createSlashMenuPlugin(onStateChange: (state: SlashMenuState) => 
         if (!state?.open) return false;
 
         if (event.key === "Escape") {
-          view.dispatch(
-            view.state.tr.setMeta(slashMenuPluginKey, {
-              open: false, query: "", from: 0, to: 0,
-            })
-          );
+          const pluginState = slashMenuPluginKey.getState(view.state);
+          const tr = view.state.tr;
+          if (pluginState && pluginState.from < pluginState.to) {
+            tr.delete(pluginState.from, pluginState.to);
+          }
+          tr.setMeta(slashMenuPluginKey, {
+            open: false, query: "", from: 0, to: 0,
+          });
+          view.dispatch(tr);
           return true;
         }
 

@@ -1,4 +1,4 @@
-import { setBlockType } from "prosemirror-commands";
+import { setBlockType, toggleMark as pmToggleMark } from "prosemirror-commands";
 import type { EditorView } from "prosemirror-view";
 import type { Schema } from "prosemirror-model";
 import toggleBlockType from "@/outline-vendor/shared/editor/commands/toggleBlockType";
@@ -103,6 +103,29 @@ export function buildSlashMenuItems(schema: Schema): SlashMenuItem[] {
     });
   }
 
+  // 链接
+  if (schema.marks.link) {
+    items.push({
+      id: "link",
+      label: "链接",
+      icon: "🔗",
+      keywords: "link url href",
+      group: "基础",
+      action: (view) => {
+        const href = window.prompt("输入链接地址", "https://");
+        if (!href) { view.focus(); return; }
+        const { state, dispatch } = view;
+        if (state.selection.empty) {
+          const text = schema.text(href, [schema.marks.link.create({ href })]);
+          dispatch(state.tr.replaceSelectionWith(text).scrollIntoView());
+        } else {
+          pmToggleMark(schema.marks.link, { href })(state, dispatch);
+        }
+        view.focus();
+      },
+    });
+  }
+
   if (schema.nodes.checkbox_list) {
     items.push({
       id: "checkbox_list",
@@ -146,6 +169,70 @@ export function buildSlashMenuItems(schema: Schema): SlashMenuItem[] {
       action: run((view) =>
         toggleBlockType(schema.nodes.code_block, schema.nodes.paragraph, { language: "mermaid" })(view.state, view.dispatch)
       ),
+    });
+  }
+
+  // 图片
+  if (schema.nodes.image) {
+    items.push({
+      id: "image",
+      label: "图片",
+      icon: "🖼",
+      keywords: "image picture photo upload",
+      group: "常用",
+      action: (view) => {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = "image/*";
+        input.onchange = () => {
+          const file = input.files?.[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = () => {
+            const src = reader.result as string;
+            const node = schema.nodes.image.create({ src, alt: file.name });
+            const { state, dispatch } = view;
+            dispatch(state.tr.replaceSelectionWith(node).scrollIntoView());
+            view.focus();
+          };
+          reader.readAsDataURL(file);
+        };
+        input.click();
+      },
+    });
+  }
+
+  // 视频或文件（上传附件，插入为链接）
+  items.push({
+    id: "file",
+    label: "视频或文件",
+    icon: "📎",
+    keywords: "video file upload attachment",
+    group: "常用",
+    action: (view) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.onchange = () => {
+        const file = input.files?.[0];
+        if (!file) return;
+        const { state, dispatch } = view;
+        const text = schema.text(`[${file.name}]`, []);
+        dispatch(state.tr.replaceSelectionWith(text).scrollIntoView());
+        view.focus();
+      };
+      input.click();
+    },
+  });
+
+  // 高亮块
+  if (schema.marks.highlight) {
+    items.push({
+      id: "highlight",
+      label: "高亮块",
+      icon: "🅰",
+      keywords: "highlight mark color",
+      group: "常用",
+      action: run((view) => pmToggleMark(schema.marks.highlight)(view.state, view.dispatch)),
     });
   }
 
