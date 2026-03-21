@@ -1,0 +1,59 @@
+server/router/api/v1/auth_service.go
+  ae67783d27a75ba4 181,309-310
+web/src/lib/markdown/renderers/MathRenderer.tsx
+  ae67783d27a75ba4 15
+server/auth/extract.go
+  ae67783d27a75ba4 16
+server/router/api/v1/v1.go
+  ae67783d27a75ba4 74-75,77-79,127-140
+server/router/api/v1/memo_attachment_service.go
+  ae67783d27a75ba4 19,77-83
+server/router/fileserver/fileserver.go
+  ae67783d27a75ba4 262,264-270
+server/router/api/v1/test/memo_service_test.go
+  ae67783d27a75ba4 264-265
+web/src/pages/MemoDetail.tsx
+  ae67783d27a75ba4 234-246,294-306
+server/router/api/v1/memo_service.go
+  ae67783d27a75ba4 33-36,52-54,73,75-77,82-84,576-590
+server/router/api/v1/user_service.go
+  ae67783d27a75ba4 100,105-117,194-200,298-304,334,336-343
+server/router/api/v1/acl_config.go
+  ae67783d27a75ba4 3-4,51,57-58,63-65,74-80,91-100,102
+server/server.go
+  ae67783d27a75ba4 5-6,44,165-169
+server/router/api/v1/reaction_service.go
+  ae67783d27a75ba4 58-92
+web/src/lib/markdown/MarkdownRenderer.tsx
+  ae67783d27a75ba4 338,368,608-614,616-623
+SECURITY_AUDIT_REPORT.md
+  ae67783d27a75ba4 1-366
+web/src/pages/BlogDetail.tsx
+  ae67783d27a75ba4 346-358
+server/router/api/v1/activity_service.go
+  ae67783d27a75ba4 60-67,76-83
+server/router/frontend/frontend.go
+  ae67783d27a75ba4 61
+web/src/components/MemoView/MemoView.tsx
+  ae67783d27a75ba4 60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.12",
+  "base_commit_sha": "ae029da12b5fdc02053e29d60b1aa57d7dc100c0",
+  "prompts": {
+    "ae67783d27a75ba4": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "86897878-ffe5-4048-a6cd-20a00bd10ed0",
+        "model": "claude-4.6-opus-high-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 1598,
+      "total_deletions": 544,
+      "accepted_lines": 1156,
+      "overriden_lines": 0
+    }
+  }
+}
