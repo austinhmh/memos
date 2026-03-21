@@ -21,17 +21,22 @@ export function buildSlashMenuItems(schema: Schema): SlashMenuItem[] {
   items.push({
     id: "paragraph",
     label: "文本",
+    subtitle: "Text",
     icon: "T",
+    iconColor: "#8b8fa3",
     keywords: "text paragraph plain p wenben wb 正文 zhengwen zw",
     group: "基础",
     action: run((view) => setBlockType(schema.nodes.paragraph)(view.state, view.dispatch)),
   });
 
+  const headingColors = ["#3b82f6", "#6366f1", "#8b5cf6", "#a855f7", "#c084fc"];
   for (let level = 1; level <= 5; level++) {
     items.push({
       id: `heading${level}`,
       label: `${level}级标题`,
+      subtitle: `Heading ${level}`,
       icon: `H${level}`,
+      iconColor: headingColors[level - 1],
       keywords: `h${level} heading heading${level} title 标题 biaoti bt ${level}ji`,
       group: "基础",
       action: run((view) =>
@@ -44,7 +49,9 @@ export function buildSlashMenuItems(schema: Schema): SlashMenuItem[] {
     items.push({
       id: "ordered_list",
       label: "有序列表",
+      subtitle: "Numbered List",
       icon: "≡",
+      iconColor: "#f59e0b",
       keywords: "ol ordered list numbered num 123 有序 youxu liebiao lb shuzi",
       group: "基础",
       action: run((view) =>
@@ -57,7 +64,9 @@ export function buildSlashMenuItems(schema: Schema): SlashMenuItem[] {
     items.push({
       id: "bullet_list",
       label: "无序列表",
+      subtitle: "Bulleted List",
       icon: "≡",
+      iconColor: "#f59e0b",
       keywords: "ul unordered list bullet 无序 wuxu liebiao lb dot",
       group: "基础",
       action: run((view) =>
@@ -70,7 +79,9 @@ export function buildSlashMenuItems(schema: Schema): SlashMenuItem[] {
     items.push({
       id: "code_block",
       label: "代码块",
+      subtitle: "Code Block",
       icon: "{}",
+      iconColor: "#ef4444",
       keywords: "code codeblock block script fence pre 代码 daima dm daimakuai 程序 chengxu cx",
       group: "基础",
       action: run((view) =>
@@ -83,7 +94,9 @@ export function buildSlashMenuItems(schema: Schema): SlashMenuItem[] {
     items.push({
       id: "blockquote",
       label: "引用",
+      subtitle: "Quote",
       icon: "❝",
+      iconColor: "#64748b",
       keywords: "quote blockquote bq pullquote 引用 yinyong yy 摘录 zhailu",
       group: "基础",
       action: run((view) => toggleWrap(schema.nodes.blockquote)(view.state, view.dispatch)),
@@ -94,7 +107,9 @@ export function buildSlashMenuItems(schema: Schema): SlashMenuItem[] {
     items.push({
       id: "horizontal_rule",
       label: "分隔线",
+      subtitle: "Divider",
       icon: "─",
+      iconColor: "#94a3b8",
       keywords: "hr horizontal rule divider line separator --- 分隔 fenge fg fengehxian 横线 hengxian",
       group: "基础",
       action: (view) => {
@@ -109,7 +124,9 @@ export function buildSlashMenuItems(schema: Schema): SlashMenuItem[] {
     items.push({
       id: "link",
       label: "链接",
+      subtitle: "Link",
       icon: "🔗",
+      iconColor: "#06b6d4",
       keywords: "link url href anchor a 链接 lianjie lj 网址 wangzhi wz hyperlink",
       group: "基础",
       action: (view) => {
@@ -133,7 +150,9 @@ export function buildSlashMenuItems(schema: Schema): SlashMenuItem[] {
     items.push({
       id: "checkbox_list",
       label: "任务",
+      subtitle: "To-do List",
       icon: "☑",
+      iconColor: "#22c55e",
       keywords: "todo task checkbox checklist check 任务 renwu rw 待办 daiban db 清单 qingdan qd",
       group: "常用",
       action: run((view) =>
@@ -146,7 +165,9 @@ export function buildSlashMenuItems(schema: Schema): SlashMenuItem[] {
     items.push({
       id: "image",
       label: "图片",
+      subtitle: "Image",
       icon: "🖼",
+      iconColor: "#f97316",
       keywords: "image img picture photo pic upload 图片 tupian tp 图像 tuxiang tx 照片 zhaopian zp 插图 chatu",
       group: "常用",
       action: (view) => {
@@ -174,7 +195,9 @@ export function buildSlashMenuItems(schema: Schema): SlashMenuItem[] {
   items.push({
     id: "file",
     label: "视频或文件",
+    subtitle: "Video / File",
     icon: "📎",
+    iconColor: "#8b5cf6",
     keywords: "video file upload attachment attach mov mp4 avi pdf doc 视频 shipin sp 文件 wenjian wj 附件 fujian fj",
     group: "常用",
     action: (view) => {
@@ -196,7 +219,9 @@ export function buildSlashMenuItems(schema: Schema): SlashMenuItem[] {
     items.push({
       id: "table",
       label: "表格",
+      subtitle: "Table",
       icon: "▦",
+      iconColor: "#14b8a6",
       keywords: "table grid spreadsheet 表格 biaoge bg 表 biao 网格 wangge",
       group: "常用",
       action: (view) => {
@@ -216,7 +241,9 @@ export function buildSlashMenuItems(schema: Schema): SlashMenuItem[] {
     items.push({
       id: "mermaid",
       label: "Mermaid 图表",
+      subtitle: "Mermaid Diagram",
       icon: "◇",
+      iconColor: "#ec4899",
       keywords: "mermaid diagram flowchart chart graph 图表 tubiao tb 流程图 liuchengtu lct 时序图 shixutu",
       group: "常用",
       action: run((view) =>
@@ -229,7 +256,9 @@ export function buildSlashMenuItems(schema: Schema): SlashMenuItem[] {
     items.push({
       id: "highlight",
       label: "高亮",
+      subtitle: "Highlight",
       icon: "🅰",
+      iconColor: "#eab308",
       keywords: "highlight mark color callout notice 高亮 gaoliang gl 标记 biaoji bj 荧光 yingguang",
       group: "常用",
       action: run((view) => pmToggleMark(schema.marks.highlight)(view.state, view.dispatch)),
@@ -242,7 +271,9 @@ export function buildSlashMenuItems(schema: Schema): SlashMenuItem[] {
     items.push({
       id: "bold",
       label: "加粗",
+      subtitle: "Bold",
       icon: "B",
+      iconColor: "#1e293b",
       keywords: "bold strong 加粗 jiacu jc 粗体 cuti ct",
       group: "格式",
       action: run((view) => pmToggleMark(schema.marks.strong)(view.state, view.dispatch)),
@@ -253,7 +284,9 @@ export function buildSlashMenuItems(schema: Schema): SlashMenuItem[] {
     items.push({
       id: "italic",
       label: "斜体",
+      subtitle: "Italic",
       icon: "I",
+      iconColor: "#475569",
       keywords: "italic em emphasis 斜体 xieti xt 倾斜 qingxie",
       group: "格式",
       action: run((view) => pmToggleMark(schema.marks.em)(view.state, view.dispatch)),
@@ -264,7 +297,9 @@ export function buildSlashMenuItems(schema: Schema): SlashMenuItem[] {
     items.push({
       id: "strikethrough",
       label: "删除线",
+      subtitle: "Strikethrough",
       icon: "S",
+      iconColor: "#64748b",
       keywords: "strikethrough strike del 删除线 shanchuxian scx 划掉 huadiao",
       group: "格式",
       action: run((view) => pmToggleMark(schema.marks.s)(view.state, view.dispatch)),
@@ -275,7 +310,9 @@ export function buildSlashMenuItems(schema: Schema): SlashMenuItem[] {
     items.push({
       id: "inline_code",
       label: "行内代码",
+      subtitle: "Inline Code",
       icon: "`",
+      iconColor: "#ef4444",
       keywords: "inline code mono 行内代码 hangneidaima hndm 代码 daima",
       group: "格式",
       action: run((view) => pmToggleMark(schema.marks.code)(view.state, view.dispatch)),
@@ -286,7 +323,9 @@ export function buildSlashMenuItems(schema: Schema): SlashMenuItem[] {
     items.push({
       id: "underline",
       label: "下划线",
+      subtitle: "Underline",
       icon: "U",
+      iconColor: "#3b82f6",
       keywords: "underline 下划线 xiahuaxian xhx",
       group: "格式",
       action: run((view) => pmToggleMark(schema.marks.underline)(view.state, view.dispatch)),

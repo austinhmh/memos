@@ -4,7 +4,9 @@ import type { EditorView } from "prosemirror-view";
 export interface SlashMenuItem {
   id: string;
   label: string;
+  subtitle?: string;
   icon?: string;
+  iconColor?: string;
   keywords?: string;
   group?: string;
   action: (view: EditorView) => void;
