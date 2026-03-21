@@ -1130,3 +1130,23 @@
 :root.has-bg-image [class*="bg-sidebar"] {
   background-color: color-mix(in oklch, var(--sidebar) 80%, transparent) !important;
 }
+
+:root.has-bg-image .markdown-content pre,
+:root.has-bg-image .blog-editor-content pre,
+:root.has-bg-image .code-block-wrapper pre,
+:root.has-bg-image .mermaid-code-editor pre,
+:root.has-bg-image .mermaid-error-container,
+:root.has-bg-image .mermaid-error-container pre {
+  background: color-mix(in oklch, var(--muted) 65%, transparent) !important;
+  backdrop-filter: blur(8px);
+}
+
+:root.has-bg-image .markdown-content code:not(pre code),
+:root.has-bg-image .blog-editor-content code:not(pre code) {
+  background: color-mix(in oklch, var(--muted) 60%, transparent) !important;
+}
+
+:root.has-bg-image .markdown-content blockquote,
+:root.has-bg-image .blog-editor-content blockquote {
+  border-left-color: color-mix(in oklch, var(--border) 60%, transparent);
+}
