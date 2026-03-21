@@ -70,12 +70,12 @@ const router = createBrowserRouter([
               { path: Routes.EXPLORE, element: <LazyRoute component={Explore} /> },
               { path: Routes.ARCHIVED, element: <LazyRoute component={Archived} /> },
               { path: "u/:username", element: <LazyRoute component={UserProfile} /> },
+              { path: "memos/:uid", element: <LazyRoute component={MemoDetail} /> },
             ],
           },
           { path: Routes.ATTACHMENTS, element: <LazyRoute component={Attachments} /> },
           { path: Routes.INBOX, element: <LazyRoute component={Inboxes} /> },
           { path: Routes.SETTING, element: <LazyRoute component={Setting} /> },
-          { path: "memos/:uid", element: <LazyRoute component={MemoDetail} /> },
           {
             path: "blog",
             element: <LazyRoute component={BlogLayout} />,

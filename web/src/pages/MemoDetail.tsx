@@ -39,6 +39,11 @@ const MemoDetail = () => {
   const memoName = `${memoNamePrefix}${uid}`;
   const [showCommentEditor, setShowCommentEditor] = useState(false);
   const [editorReady, setEditorReady] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const saved = localStorage.getItem("memo-detail-sidebar-width");
+    return saved ? Number(saved) : 20;
+  });
+  const isDragging = useRef(false);
 
   const { data: memo, error, isLoading } = useMemo(memoName, { enabled: !!memoName });
 
@@ -65,6 +70,28 @@ const MemoDetail = () => {
   const creator = useUser(memo?.creator || "").data;
   const isArchived = memo?.state === State.ARCHIVED;
   const canEdit = !!currentUser && (memo?.creator === currentUser?.name || isSuperUser(currentUser)) && !isArchived;
+
+  const handleSidebarDragStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDragging.current = true;
+    const startX = e.clientX;
+    const startWidth = sidebarWidth;
+    const onMove = (ev: MouseEvent) => {
+      if (!isDragging.current) return;
+      const delta = startX - ev.clientX;
+      const vw = window.innerWidth;
+      const newWidth = Math.max(15, Math.min(40, startWidth + (delta / vw) * 100));
+      setSidebarWidth(newWidth);
+    };
+    const onUp = () => {
+      isDragging.current = false;
+      localStorage.setItem("memo-detail-sidebar-width", String(sidebarWidth));
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [sidebarWidth]);
 
   const handleBack = useCallback(() => {
     if (locationState?.from) {
@@ -190,7 +217,15 @@ const MemoDetail = () => {
 
         {/* Right sidebar: metadata + attachments + comments */}
         {md && (
-          <div className="shrink-0 w-60 sticky top-6 self-start max-h-[calc(100vh-3rem)] overflow-y-auto hide-scrollbar pt-2 pl-4">
+          <>
+            <div
+              className="shrink-0 w-1 cursor-col-resize hover:bg-primary/50 bg-border transition-colors"
+              onMouseDown={handleSidebarDragStart}
+            />
+            <div
+              className="shrink-0 sticky top-6 self-start max-h-[calc(100vh-3rem)] overflow-y-auto hide-scrollbar pt-2 pl-4"
+              style={{ width: `${sidebarWidth}%` }}
+            >
             <MemoDetailSidebar className="py-4" memo={memo} parentPage={locationState?.from} />
 
             {/* Attachments */}
@@ -246,6 +281,7 @@ const MemoDetail = () => {
               )}
             </div>
           </div>
+          </>
         )}
       </div>
 
