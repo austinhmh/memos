@@ -13,7 +13,7 @@ func ExtractBearerToken(authHeader string) string {
 		return ""
 	}
 	parts := strings.Fields(authHeader)
-	if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") {
+	if len(parts) != 2 || parts[0] != "Bearer" {
 		return ""
 	}
 	return parts[1]

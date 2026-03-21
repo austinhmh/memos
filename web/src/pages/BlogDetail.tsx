@@ -12,7 +12,7 @@ import MemoView from "@/components/MemoView";
 import MemoTableOfContents from "@/components/MemoTableOfContents";
 import MemoEditor from "@/components/MemoEditor";
 import { MemoDetailSidebar } from "@/components/MemoDetailSidebar";
-import { ArrowLeftIcon, CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, MessageCircleIcon, XIcon } from "lucide-react";
+import { ArrowLeftIcon, CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, MessageCircleIcon } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { lazyWithRetry } from "@/router/lazyWithRetry";
@@ -343,47 +343,24 @@ const BlogDetail = () => {
                   {t("memo.comment.write-a-comment")}
                 </Button>
               )}
+              {showCommentEditor && (
+                <div className="w-full mt-2">
+                  <MemoEditor
+                    cacheKey={`${memo.name}-${memo.updateTime}-comment`}
+                    placeholder={t("editor.add-your-comment-here")}
+                    parentMemoName={memo.name}
+                    autoFocus
+                    compact
+                    onConfirm={async () => setShowCommentEditor(false)}
+                    onCancel={() => setShowCommentEditor(false)}
+                  />
+                </div>
+              )}
             </div>
           </div>
         </div>
       )}
 
-      {/* Comment editor dialog */}
-      {showCommentEditor && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) setShowCommentEditor(false);
-          }}
-        >
-          <div
-            className="w-[calc(100%-2rem)] max-w-lg bg-background border border-border rounded-lg shadow-xl p-6"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2 text-lg font-semibold">
-                <MessageCircleIcon className="w-5 h-5" />
-                {t("memo.comment.write-a-comment")}
-              </div>
-              <button
-                type="button"
-                className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                onClick={() => setShowCommentEditor(false)}
-              >
-                <XIcon className="w-5 h-5" />
-              </button>
-            </div>
-            <MemoEditor
-              cacheKey={`${memo.name}-${memo.updateTime}-comment`}
-              placeholder={t("editor.add-your-comment-here")}
-              parentMemoName={memo.name}
-              autoFocus
-              onConfirm={async () => setShowCommentEditor(false)}
-              onCancel={() => setShowCommentEditor(false)}
-            />
-          </div>
-        </div>
-      )}
     </>
   );
 };

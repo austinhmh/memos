@@ -58,6 +58,7 @@ func (*FrontendService) Serve(_ context.Context, e *echo.Echo) {
 			c.Response().Header().Set("X-Frame-Options", "DENY")
 			c.Response().Header().Set("X-Content-Type-Options", "nosniff")
 			c.Response().Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+			c.Response().Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; font-src 'self'; object-src 'none'; frame-ancestors 'none'")
 			return false
 		}
 		// Set Cache-Control header for static assets.

@@ -97,12 +97,24 @@ func (s *APIV1Service) GetUser(ctx context.Context, request *v1pb.GetUserRequest
 	}
 
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get user: %v", err)
+		return nil, status.Errorf(codes.Internal, "failed to get user")
 	}
 	if user == nil {
 		return nil, status.Errorf(codes.NotFound, "user not found")
 	}
-	return convertUserFromStore(user), nil
+
+	result := convertUserFromStore(user)
+
+	// For unauthenticated requests, redact sensitive fields
+	currentUser, _ := s.fetchCurrentUser(ctx)
+	if currentUser == nil {
+		result.Role = v1pb.User_ROLE_UNSPECIFIED
+		result.Email = ""
+		result.CreateTime = nil
+		result.UpdateTime = nil
+	}
+
+	return result, nil
 }
 
 func (s *APIV1Service) CreateUser(ctx context.Context, request *v1pb.CreateUserRequest) (*v1pb.User, error) {
@@ -179,7 +191,13 @@ func (s *APIV1Service) CreateUser(ctx context.Context, request *v1pb.CreateUserR
 		PasswordHash: string(passwordHash),
 	})
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to create user: %v", err)
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "UNIQUE constraint failed") ||
+			strings.Contains(errMsg, "duplicate key") ||
+			strings.Contains(errMsg, "Duplicate entry") {
+			return nil, status.Errorf(codes.AlreadyExists, "username already exists")
+		}
+		return nil, status.Errorf(codes.Internal, "failed to create user")
 	}
 
 	return convertUserFromStore(user), nil
@@ -277,6 +295,13 @@ func (s *APIV1Service) UpdateUser(ctx context.Context, request *v1pb.UpdateUserR
 			}
 			update.Role = &role
 		case "password":
+			if len(request.User.Password) < 8 {
+				return nil, status.Errorf(codes.InvalidArgument, "password must be at least 8 characters")
+			}
+			// Only HOST can change other users' passwords
+			if currentUser.ID != userID && currentUser.Role != store.RoleHost {
+				return nil, status.Errorf(codes.PermissionDenied, "only HOST can change other users' passwords")
+			}
 			passwordHash, err := bcrypt.GenerateFromPassword([]byte(request.User.Password), bcrypt.DefaultCost)
 			if err != nil {
 				return nil, echo.NewHTTPError(http.StatusInternalServerError, "failed to generate password hash").SetInternal(err)
@@ -306,9 +331,16 @@ func (s *APIV1Service) DeleteUser(ctx context.Context, request *v1pb.DeleteUserR
 	}
 	currentUser, err := s.fetchCurrentUser(ctx)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get user: %v", err)
+		return nil, status.Errorf(codes.Internal, "failed to get user")
 	}
-	if currentUser.ID != userID && currentUser.Role != store.RoleAdmin && currentUser.Role != store.RoleHost {
+	if currentUser == nil {
+		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
+	}
+	// Only admin/host can delete other users; self-deletion is not allowed
+	if currentUser.ID == userID {
+		return nil, status.Errorf(codes.PermissionDenied, "self-deletion is not allowed, contact administrator")
+	}
+	if currentUser.Role != store.RoleAdmin && currentUser.Role != store.RoleHost {
 		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
 	}
 

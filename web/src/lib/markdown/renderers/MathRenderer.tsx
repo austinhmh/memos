@@ -12,7 +12,7 @@ export const MathRenderer: React.FC<MathRendererProps> = ({ content, displayMode
       return katex.renderToString(content.trim(), {
         displayMode,
         throwOnError: false,
-        trust: true,
+        trust: false,
       });
     } catch {
       return content;

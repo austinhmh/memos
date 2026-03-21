@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"net"
@@ -9,7 +11,6 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/pkg/errors"
@@ -40,7 +41,7 @@ func NewServer(ctx context.Context, profile *profile.Profile, store *store.Store
 	}
 
 	echoServer := echo.New()
-	echoServer.Debug = true
+	echoServer.Debug = profile.IsDev()
 	echoServer.HideBanner = true
 	echoServer.HidePort = true
 	echoServer.Use(middleware.Recover())
@@ -161,7 +162,11 @@ func (s *Server) getOrUpsertInstanceBasicSetting(ctx context.Context) (*storepb.
 	}
 	modified := false
 	if instanceBasicSetting.SecretKey == "" {
-		instanceBasicSetting.SecretKey = uuid.NewString()
+		secretBytes := make([]byte, 32)
+		if _, err := rand.Read(secretBytes); err != nil {
+			return nil, errors.Wrap(err, "failed to generate secret key")
+		}
+		instanceBasicSetting.SecretKey = hex.EncodeToString(secretBytes)
 		modified = true
 	}
 	if modified {

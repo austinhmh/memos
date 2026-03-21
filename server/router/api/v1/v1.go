@@ -71,12 +71,12 @@ func (s *APIV1Service) RegisterGateway(ctx context.Context, echoServer *echo.Ech
 			result := authenticator.Authenticate(ctx, authHeader)
 
 		// Enforce authentication for non-public methods.
-		// When RPCMethod can be resolved, check against public methods list.
-		// When it cannot (ok=false), fall through to service-layer checks.
+		// When RPCMethod can be resolved (ok=true), check against PublicMethods.
+		// When RPCMethod cannot be resolved (ok=false), fall through to service-layer.
 		if result == nil && ok && !IsPublicMethod(rpcMethod) {
-				http.Error(w, `{"code": 16, "message": "authentication required"}`, http.StatusUnauthorized)
-				return
-			}
+			http.Error(w, `{"code": 16, "message": "authentication required"}`, http.StatusUnauthorized)
+			return
+		}
 
 			// Set context based on auth result (may be nil for public endpoints)
 			if result != nil {
@@ -124,7 +124,20 @@ func (s *APIV1Service) RegisterGateway(ctx context.Context, echoServer *echo.Ech
 		return err
 	}
 	gwGroup := echoServer.Group("")
-	gwGroup.Use(middleware.CORS())
+	gwGroup.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+		AllowOriginFunc: func(origin string) (bool, error) {
+			if s.Profile.IsDev() {
+				return true, nil
+			}
+			if s.Profile.InstanceURL != "" {
+				return origin == s.Profile.InstanceURL, nil
+			}
+			return false, nil
+		},
+		AllowMethods:     []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions},
+		AllowHeaders:     []string{"Authorization", "Content-Type"},
+		AllowCredentials: true,
+	}))
 	handler := echo.WrapHandler(gwMux)
 
 	gwGroup.Any("/api/v1/*", handler)

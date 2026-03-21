@@ -178,7 +178,7 @@ func (s *APIV1Service) SignIn(ctx context.Context, request *v1pb.SignInRequest) 
 		return nil, status.Errorf(codes.InvalidArgument, "invalid credentials")
 	}
 	if existingUser.RowStatus == store.Archived {
-		return nil, status.Errorf(codes.PermissionDenied, "user has been archived with username %s", existingUser.Username)
+		return nil, status.Errorf(codes.PermissionDenied, "user account has been deactivated")
 	}
 
 	accessToken, accessExpiresAt, err := s.doSignIn(ctx, existingUser)
@@ -306,7 +306,8 @@ func (s *APIV1Service) RefreshToken(ctx context.Context, _ *v1pb.RefreshTokenReq
 	authenticator := auth.NewAuthenticator(s.Store, s.Secret)
 	user, oldTokenID, err := authenticator.AuthenticateByRefreshToken(ctx, refreshToken)
 	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "invalid refresh token: %v", err)
+		slog.Warn("refresh token authentication failed", "error", err)
+		return nil, status.Errorf(codes.Unauthenticated, "invalid refresh token")
 	}
 
 	// --- Refresh Token Rotation ---

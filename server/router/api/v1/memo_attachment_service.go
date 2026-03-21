@@ -16,7 +16,7 @@ import (
 func (s *APIV1Service) SetMemoAttachments(ctx context.Context, request *v1pb.SetMemoAttachmentsRequest) (*emptypb.Empty, error) {
 	user, err := s.fetchCurrentUser(ctx)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get current user: %v", err)
+		return nil, status.Errorf(codes.Internal, "failed to get current user")
 	}
 	if user == nil {
 		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
@@ -74,7 +74,13 @@ func (s *APIV1Service) SetMemoAttachments(ctx context.Context, request *v1pb.Set
 		}
 		tempAttachment, err := s.Store.GetAttachment(ctx, &store.FindAttachment{UID: &attachmentUID})
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to get attachment: %v", err)
+			return nil, status.Errorf(codes.Internal, "failed to get attachment")
+		}
+		if tempAttachment == nil {
+			return nil, status.Errorf(codes.NotFound, "attachment not found")
+		}
+		if tempAttachment.CreatorID != user.ID && !isSuperUser(user) {
+			return nil, status.Errorf(codes.PermissionDenied, "cannot attach resources owned by other users")
 		}
 		updatedTs := time.Now().Unix() + int64(index)
 		if err := s.Store.UpdateAttachment(ctx, &store.UpdateAttachment{

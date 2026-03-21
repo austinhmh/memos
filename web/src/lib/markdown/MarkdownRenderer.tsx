@@ -335,7 +335,7 @@ function renderInline(tokens: Token[], rawContent: string): React.ReactNode[] {
     }
 
     if (token.type === "image") {
-      const src = token.attrGet("src") || "";
+      const src = sanitizeUrl(token.attrGet("src") || "");
       const alt = token.content || token.attrGet("alt") || "";
       const title = token.attrGet("title") || undefined;
       result.push(<img key={i} src={src} alt={alt} title={title} loading="lazy" />);
@@ -365,7 +365,7 @@ function renderInline(tokens: Token[], rawContent: string): React.ReactNode[] {
     }
 
     if (token.type === "link_open") {
-      const href = token.attrGet("href") || "";
+      const href = sanitizeUrl(token.attrGet("href") || "");
       const { children, endIndex } = collectInline(tokens, i, "link_open", "link_close", rawContent);
       const isAnchor = href.startsWith("#");
       result.push(
@@ -605,5 +605,20 @@ function slugify(text: string): string {
 }
 
 function sanitizeHtml(html: string): string {
-  return html.replace(/<script[\s>]/gi, "&lt;script").replace(/on\w+\s*=/gi, "data-removed=");
+  const DANGEROUS_TAGS = /<(script|iframe|object|embed|form|base|meta|link|style|svg|math|details|dialog|template|applet|frameset|frame|bgsound|video|audio|source)[>\s/]/gi;
+  const EVENT_HANDLERS = /\bon\w+\s*=/gi;
+  const DANGEROUS_ATTRS = /\b(srcdoc|formaction|action|xlink:href)\s*=/gi;
+  return html
+    .replace(DANGEROUS_TAGS, "&lt;$1 ")
+    .replace(EVENT_HANDLERS, "data-removed=")
+    .replace(DANGEROUS_ATTRS, "data-removed=");
+}
+
+function sanitizeUrl(url: string): string {
+  if (!url) return "";
+  const trimmed = url.trim();
+  if (/^\s*(javascript|data|vbscript)\s*:/i.test(trimmed)) {
+    return "";
+  }
+  return trimmed;
 }

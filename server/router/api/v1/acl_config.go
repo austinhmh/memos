@@ -1,5 +1,7 @@
 package v1
 
+import "strings"
+
 // PublicMethods defines API endpoints that don't require authentication.
 // All other endpoints require a valid session or access token.
 //
@@ -45,24 +47,35 @@ func IsPublicMethod(procedure string) bool {
 // These must be kept in sync with PublicMethods above.
 var publicGatewayPaths = map[string]map[string]bool{
 	"POST": {
-		"/api/v1/auth/signin":       true,
-		"/api/v1/auth/refreshToken": true,
-		"/api/v1/users":            true, // CreateUser (first-time setup / open registration)
+		"/api/v1/auth/signin":  true,
+		"/api/v1/auth/refresh": true,
+		"/api/v1/users":       true, // CreateUser (first-time setup / open registration)
 	},
 	"GET": {
-		"/api/v1/instance/profile": true,
-		"/api/v1/memos":           true,
-		"/api/v1/identityProviders": true,
+		"/api/v1/instance/profile":    true,
+		"/api/v1/memos":               true,
+		"/api/v1/identity-providers":   true,
+		"/api/v1/users:stats":         true,
 	},
 }
 
 // publicGatewayPrefixes matches paths that have dynamic segments.
+// IMPORTANT: These use prefix matching, so must not match sub-resources
+// like /api/v1/users/1/personalAccessTokens. The isPublicGatewayPath
+// function checks that the path has at most one segment after the prefix.
 var publicGatewayPrefixes = map[string][]string{
 	"GET": {
 		"/api/v1/users/",             // GetUser, GetUserAvatar, GetUserStats
 		"/api/v1/memos/",             // GetMemo, ListMemoComments
 		"/api/v1/instance/settings/", // GetInstanceSetting
 	},
+}
+
+// subResourceKeywords are path segments that indicate a sub-resource,
+// not a direct resource access. These should NOT be treated as public.
+var subResourceKeywords = []string{
+	"/personalAccessTokens", "/webhooks", "/notifications",
+	"/shortcuts", "/settings/",
 }
 
 // isPublicGatewayPath checks if an HTTP method+path is a public endpoint.
@@ -75,7 +88,18 @@ func isPublicGatewayPath(method, path string) bool {
 	if prefixes, ok := publicGatewayPrefixes[method]; ok {
 		for _, prefix := range prefixes {
 			if len(path) > len(prefix) && path[:len(prefix)] == prefix {
-				return true
+				// Check that the remaining path does not contain sub-resource keywords
+				remaining := path[len(prefix):]
+				isSubResource := false
+				for _, keyword := range subResourceKeywords {
+					if strings.Contains(remaining, keyword) {
+						isSubResource = true
+						break
+					}
+				}
+				if !isSubResource {
+					return true
+				}
 			}
 		}
 	}

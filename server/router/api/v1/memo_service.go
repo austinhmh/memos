@@ -30,6 +30,10 @@ func (s *APIV1Service) CreateMemo(ctx context.Context, request *v1pb.CreateMemoR
 		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
 	}
 
+	if request.Memo == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "memo is required")
+	}
+
 	// Use custom memo_id if provided, otherwise generate a new UUID
 	memoUID := strings.TrimSpace(request.MemoId)
 	if memoUID == "" {
@@ -44,6 +48,9 @@ func (s *APIV1Service) CreateMemo(ctx context.Context, request *v1pb.CreateMemoR
 		CreatorID:  user.ID,
 		Content:    request.Memo.Content,
 		Visibility: convertVisibilityToStore(request.Memo.Visibility),
+	}
+	if strings.TrimSpace(create.Content) == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "content cannot be empty")
 	}
 
 	instanceMemoRelatedSetting, err := s.Store.GetInstanceMemoRelatedSetting(ctx)
@@ -63,13 +70,18 @@ func (s *APIV1Service) CreateMemo(ctx context.Context, request *v1pb.CreateMemoR
 		}
 	}
 
-	// Set custom timestamps if provided in the request
-	// These take precedence over display_time
+	// Custom timestamps only allowed for HOST/ADMIN users
 	if request.Memo.CreateTime != nil && request.Memo.CreateTime.IsValid() {
+		if user.Role != store.RoleHost && user.Role != store.RoleAdmin {
+			return nil, status.Errorf(codes.PermissionDenied, "only administrators can set custom timestamps")
+		}
 		createdTs := request.Memo.CreateTime.AsTime().Unix()
 		create.CreatedTs = createdTs
 	}
 	if request.Memo.UpdateTime != nil && request.Memo.UpdateTime.IsValid() {
+		if user.Role != store.RoleHost && user.Role != store.RoleAdmin {
+			return nil, status.Errorf(codes.PermissionDenied, "only administrators can set custom timestamps")
+		}
 		updatedTs := request.Memo.UpdateTime.AsTime().Unix()
 		create.UpdatedTs = updatedTs
 	}
@@ -560,6 +572,21 @@ func (s *APIV1Service) CreateMemoComment(ctx context.Context, request *v1pb.Crea
 	relatedMemo, err := s.Store.GetMemo(ctx, &store.FindMemo{UID: &memoUID})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get memo")
+	}
+	if relatedMemo == nil {
+		return nil, status.Errorf(codes.NotFound, "memo not found")
+	}
+
+	// Check memo visibility before allowing comments
+	user, err := s.fetchCurrentUser(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get current user")
+	}
+	if user == nil {
+		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
+	}
+	if relatedMemo.Visibility == store.Private && relatedMemo.CreatorID != user.ID && !isSuperUser(user) {
+		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
 	}
 
 	// Create the memo comment first.

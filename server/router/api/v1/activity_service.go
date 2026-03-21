@@ -57,6 +57,14 @@ func (s *APIV1Service) ListActivities(ctx context.Context, request *v1pb.ListAct
 }
 
 func (s *APIV1Service) GetActivity(ctx context.Context, request *v1pb.GetActivityRequest) (*v1pb.Activity, error) {
+	user, err := s.fetchCurrentUser(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get current user")
+	}
+	if user == nil {
+		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
+	}
+
 	activityID, err := ExtractActivityIDFromName(request.Name)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid activity name: %v", err)
@@ -65,7 +73,14 @@ func (s *APIV1Service) GetActivity(ctx context.Context, request *v1pb.GetActivit
 		ID: &activityID,
 	})
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get activity: %v", err)
+		return nil, status.Errorf(codes.Internal, "failed to get activity")
+	}
+	if activity == nil {
+		return nil, status.Errorf(codes.NotFound, "activity not found")
+	}
+
+	if activity.CreatorID != user.ID && !isSuperUser(user) {
+		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
 	}
 
 	activityMessage, err := s.convertActivityFromStore(ctx, activity)

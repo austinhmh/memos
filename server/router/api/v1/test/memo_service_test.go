@@ -261,8 +261,8 @@ func TestCreateMemoWithCustomTimestamps(t *testing.T) {
 	ts := NewTestService(t)
 	defer ts.Cleanup()
 
-	// Create a test user
-	user, err := ts.CreateRegularUser(ctx, "test-user-timestamps")
+	// Create a test user (HOST role required for custom timestamps)
+	user, err := ts.CreateHostUser(ctx, "test-user-timestamps")
 	require.NoError(t, err)
 	require.NotNil(t, user)
 

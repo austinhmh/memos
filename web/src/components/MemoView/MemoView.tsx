@@ -57,10 +57,10 @@ const MemoView: React.FC<MemoViewProps> = (props: MemoViewProps) => {
     return (
       <MemoEditor
         autoFocus
+        compact
         className="mb-2"
         cacheKey={`inline-memo-editor-${memoData.name}`}
         memoName={memoData.name}
-        fullHeight={props.fullHeight}
         onConfirm={handleEditorConfirm}
         onCancel={handleEditorCancel}
       />

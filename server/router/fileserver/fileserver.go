@@ -259,8 +259,15 @@ func (*FileServerService) extractImageInfo(dataURI string) (string, string, erro
 
 // checkAttachmentPermission verifies the user has permission to access the attachment.
 func (s *FileServerService) checkAttachmentPermission(ctx context.Context, c echo.Context, attachment *store.Attachment) error {
-	// If attachment is not linked to a memo, allow access
+	// If attachment is not linked to a memo, only the creator can access it
 	if attachment.MemoID == nil {
+		user, err := s.getCurrentUser(ctx, c)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get current user").SetInternal(err)
+		}
+		if user == nil || user.ID != attachment.CreatorID {
+			return echo.NewHTTPError(http.StatusForbidden, "forbidden access")
+		}
 		return nil
 	}
 

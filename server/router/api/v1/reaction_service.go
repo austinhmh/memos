@@ -55,6 +55,41 @@ func (s *APIV1Service) UpsertMemoReaction(ctx context.Context, request *v1pb.Ups
 	if user == nil {
 		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
 	}
+
+	// Check memo visibility before allowing reaction
+	memoUID, err := ExtractMemoUIDFromName(request.Name)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid memo name: %v", err)
+	}
+	memo, err := s.Store.GetMemo(ctx, &store.FindMemo{UID: &memoUID})
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get memo")
+	}
+	if memo == nil {
+		return nil, status.Errorf(codes.NotFound, "memo not found")
+	}
+	if memo.Visibility == store.Private && memo.CreatorID != user.ID && !isSuperUser(user) {
+		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
+	}
+
+	// Validate reaction type against allowed list
+	instanceMemoRelatedSetting, err := s.Store.GetInstanceMemoRelatedSetting(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get instance setting")
+	}
+	if len(instanceMemoRelatedSetting.Reactions) > 0 {
+		allowed := false
+		for _, r := range instanceMemoRelatedSetting.Reactions {
+			if r == request.Reaction.ReactionType {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid reaction type")
+		}
+	}
+
 	reaction, err := s.Store.UpsertReaction(ctx, &store.Reaction{
 		CreatorID:    user.ID,
 		ContentID:    request.Reaction.ContentId,
