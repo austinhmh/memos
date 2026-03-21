@@ -1,0 +1,25 @@
+web/src/pages/MemoDetail.tsx
+  ae67783d27a75ba4 42-46,74-95,220-228,284
+web/src/router/index.tsx
+  ae67783d27a75ba4 73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "ea7fccf7a14b41c6f1f9e2e2a8c4a095bb2ca038",
+  "prompts": {
+    "ae67783d27a75ba4": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "86897878-ffe5-4048-a6cd-20a00bd10ed0",
+        "model": "claude-4.6-opus-high-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 40,
+      "total_deletions": 4,
+      "accepted_lines": 40,
+      "overriden_lines": 0
+    }
+  }
+}
