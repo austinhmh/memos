@@ -12,6 +12,7 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-family: 'Fira Code', var(--font-sans);
   }
 
   /* ========================================

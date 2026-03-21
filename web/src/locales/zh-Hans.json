@@ -316,6 +316,7 @@
     },
     "my-account": "我的账号",
     "preference": "偏好设置",
+    "background": "背景图",
     "preference-section": {
       "default-memo-sort-option": "备忘录显示时间",
       "default-memo-visibility": "默认备忘录可见性",

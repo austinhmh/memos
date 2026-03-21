@@ -7,6 +7,7 @@ import { Toaster } from "react-hot-toast";
 import { RouterProvider } from "react-router-dom";
 import "./i18n";
 import "./index.css";
+import RandomBackground from "@/components/RandomBackground";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import Spinner from "@/components/Spinner";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
@@ -59,6 +60,7 @@ function Main() {
           <AuthProvider>
             <ViewProvider>
               <AppInitializer>
+                <RandomBackground />
                 <RouterProvider router={router} />
                 <Toaster position="top-right" />
               </AppInitializer>
