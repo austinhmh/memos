@@ -19,7 +19,7 @@ export interface SlashMenuState {
 
 export const slashMenuPluginKey = new PluginKey<SlashMenuState>("slashMenu");
 
-export function createSlashMenuPlugin(onStateChange: (state: SlashMenuState) => void): Plugin<SlashMenuState> {
+export function createSlashMenuPlugin(): Plugin<SlashMenuState> {
   return new Plugin<SlashMenuState>({
     key: slashMenuPluginKey,
     state: {
@@ -105,14 +105,6 @@ export function createSlashMenuPlugin(onStateChange: (state: SlashMenuState) => 
 
         return false;
       },
-    },
-    view() {
-      return {
-        update(view) {
-          const state = slashMenuPluginKey.getState(view.state);
-          if (state) onStateChange(state);
-        },
-      };
     },
   });
 }

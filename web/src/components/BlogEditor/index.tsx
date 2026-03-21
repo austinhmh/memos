@@ -48,7 +48,7 @@ import { createCodeFenceActivePlugin } from "./plugins/CodeFenceActivePlugin";
 import { createCodeHighlightPlugin } from "./plugins/CodeHighlightPlugin";
 import { createHeadingIdPlugin } from "./plugins/HeadingIdPlugin";
 import { createMermaidPlugin } from "./plugins/MermaidPlugin";
-import { createSlashMenuPlugin, type SlashMenuState } from "./plugins/SlashMenuPlugin";
+import type { SlashMenuState } from "./plugins/SlashMenuPlugin";
 import { buildSlashMenuItems } from "./menus/slashMenuItems";
 import { SlashMenu } from "./components/SlashMenu";
 
@@ -276,6 +276,8 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
   contentRef.current = normalizeContent(memo.content);
 
   const [slashMenuState, setSlashMenuState] = useState<SlashMenuState>({ open: false, query: "", from: 0, to: 0 });
+  const setSlashMenuStateRef = useRef(setSlashMenuState);
+  setSlashMenuStateRef.current = setSlashMenuState;
   const slashMenuItems = useRef(buildSlashMenuItems(schema)).current;
 
   const userTheme = useAuth().userGeneralSetting?.theme;
@@ -522,7 +524,6 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
           keymap(buildBlogEditorKeymap(manualSaveCommand, promptLinkCommand)),
           history(),
           buildMarkdownInputRules(schema),
-          createSlashMenuPlugin(setSlashMenuState),
           createMermaidPlugin({ isDark: isDarkRef.current }),
           createCodeFenceActivePlugin(),
           createCodeHighlightPlugin(),
@@ -563,6 +564,30 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
         dispatchTransaction(this: EditorView, tr) {
           const nextState = this.state.apply(tr);
           this.updateState(nextState);
+
+          // Slash menu: detect /query in text
+          if (!readonlyRef.current) {
+            const { $from } = nextState.selection;
+            if (!$from.parent.type.spec.code) {
+              const textBefore = $from.parent.textBetween(
+                Math.max(0, $from.parentOffset - 100),
+                $from.parentOffset,
+                undefined,
+                "\ufffc"
+              );
+              const match = /(?:^|\s)\/([^\s/]*)$/.exec(textBefore);
+              if (match) {
+                setSlashMenuStateRef.current({
+                  open: true,
+                  query: match[1],
+                  from: $from.pos - match[1].length - 1,
+                  to: $from.pos,
+                });
+              } else {
+                setSlashMenuStateRef.current((prev) => prev.open ? { open: false, query: "", from: 0, to: 0 } : prev);
+              }
+            }
+          }
 
           if (!readonlyRef.current && tr.docChanged) {
             if (skipNextSaveRef.current) {

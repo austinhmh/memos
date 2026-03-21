@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { EditorView } from "prosemirror-view";
-import { slashMenuPluginKey, type SlashMenuItem, type SlashMenuState } from "../plugins/SlashMenuPlugin";
+import type { SlashMenuItem, SlashMenuState } from "../plugins/SlashMenuPlugin";
 
 interface SlashMenuProps {
   view: EditorView | null;
@@ -13,15 +13,18 @@ export const SlashMenu = ({ view, items, menuState }: SlashMenuProps) => {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const filtered = items.filter((item) => {
-    if (!menuState.query) return true;
-    const q = menuState.query.toLowerCase();
-    return (
-      item.label.toLowerCase().includes(q) ||
-      item.id.toLowerCase().includes(q) ||
-      (item.keywords && item.keywords.toLowerCase().includes(q))
-    );
-  });
+  const filtered = useMemo(() => {
+    return items.filter((item) => {
+      if (!menuState.query) return true;
+      const q = menuState.query.toLowerCase();
+      const tokens = [
+        item.id.toLowerCase(),
+        item.label.toLowerCase(),
+        ...(item.keywords ? item.keywords.toLowerCase().split(/\s+/) : []),
+      ];
+      return tokens.some((token) => token.startsWith(q));
+    });
+  }, [items, menuState.query]);
 
   useEffect(() => {
     setSelectedIndex(0);
@@ -30,9 +33,11 @@ export const SlashMenu = ({ view, items, menuState }: SlashMenuProps) => {
   const executeItem = useCallback(
     (item: SlashMenuItem) => {
       if (!view) return;
-      const { from, to } = menuState;
-      const tr = view.state.tr.delete(from, to);
-      view.dispatch(tr.setMeta(slashMenuPluginKey, { open: false, query: "", from: 0, to: 0 }));
+      const { from } = menuState;
+      const to = view.state.selection.$from.pos;
+      const deleteTo = Math.min(to, view.state.doc.content.size);
+      const deleteFrom = Math.min(from, deleteTo);
+      view.dispatch(view.state.tr.delete(deleteFrom, deleteTo));
       setTimeout(() => {
         item.action(view);
       }, 0);
