@@ -48,6 +48,9 @@ import { createCodeFenceActivePlugin } from "./plugins/CodeFenceActivePlugin";
 import { createCodeHighlightPlugin } from "./plugins/CodeHighlightPlugin";
 import { createHeadingIdPlugin } from "./plugins/HeadingIdPlugin";
 import { createMermaidPlugin } from "./plugins/MermaidPlugin";
+import { createSlashMenuPlugin, type SlashMenuState } from "./plugins/SlashMenuPlugin";
+import { buildSlashMenuItems } from "./menus/slashMenuItems";
+import { SlashMenu } from "./components/SlashMenu";
 
 interface BlogEditorProps {
   memo: Memo;
@@ -271,6 +274,9 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
   const lastSavedTagsRef = useRef(memo.tags ?? []);
   const contentRef = useRef(normalizeContent(memo.content));
   contentRef.current = normalizeContent(memo.content);
+
+  const [slashMenuState, setSlashMenuState] = useState<SlashMenuState>({ open: false, query: "", from: 0, to: 0 });
+  const slashMenuItems = useRef(buildSlashMenuItems(schema)).current;
 
   const userTheme = useAuth().userGeneralSetting?.theme;
   const themePreference = getThemeWithFallback(userTheme);
@@ -516,6 +522,7 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
           keymap(buildBlogEditorKeymap(manualSaveCommand, promptLinkCommand)),
           history(),
           buildMarkdownInputRules(schema),
+          createSlashMenuPlugin(setSlashMenuState),
           createMermaidPlugin({ isDark: isDarkRef.current }),
           createCodeFenceActivePlugin(),
           createCodeHighlightPlugin(),
@@ -692,7 +699,7 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
   }, []);
 
   return (
-    <div className="blog-editor">
+    <div className="blog-editor" style={{ position: "relative" }}>
       {loading && (
         <div className="blog-editor-content ProseMirror" style={{ padding: "2rem", color: "#888" }}>
           <p>正在加载文档…</p>
@@ -703,6 +710,8 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
         ref={containerRef}
         style={loading ? { height: 0, overflow: "hidden" } : undefined}
       />
+
+      <SlashMenu view={viewRef.current} items={slashMenuItems} menuState={slashMenuState} />
 
       {!readonly && (
         <div
