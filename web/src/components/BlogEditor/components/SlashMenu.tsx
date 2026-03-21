@@ -12,11 +12,34 @@ interface SlashMenuProps {
 export const SlashMenu = ({ view, items, menuState }: SlashMenuProps) => {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
+  const [liveQuery, setLiveQuery] = useState("");
+
+  useEffect(() => {
+    if (!menuState.open || !view) {
+      setLiveQuery("");
+      return;
+    }
+    let raf: number;
+    const poll = () => {
+      try {
+        const { $from } = view.state.selection;
+        const tb = $from.parent.textBetween(
+          Math.max(0, $from.parentOffset - 100),
+          $from.parentOffset, undefined, "\ufffc"
+        );
+        const m = /\/([^\s/]*)$/.exec(tb);
+        setLiveQuery(m ? m[1] : "");
+      } catch { /* ignore */ }
+      raf = requestAnimationFrame(poll);
+    };
+    raf = requestAnimationFrame(poll);
+    return () => cancelAnimationFrame(raf);
+  }, [menuState.open, view]);
 
   const filtered = useMemo(() => {
     return items.filter((item) => {
-      if (!menuState.query) return true;
-      const q = menuState.query.toLowerCase();
+      if (!liveQuery) return true;
+      const q = liveQuery.toLowerCase();
       const tokens = [
         item.id.toLowerCase(),
         item.label.toLowerCase(),
@@ -24,11 +47,11 @@ export const SlashMenu = ({ view, items, menuState }: SlashMenuProps) => {
       ];
       return tokens.some((token) => token.startsWith(q));
     });
-  }, [items, menuState.query]);
+  }, [items, liveQuery]);
 
   useEffect(() => {
     setSelectedIndex(0);
-  }, [menuState.query]);
+  }, [liveQuery]);
 
   const executeItem = useCallback(
     (item: SlashMenuItem) => {
