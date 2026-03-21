@@ -21,9 +21,16 @@ const RandomBackground = () => {
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
         const images: BackgroundImage[] = raw ? JSON.parse(raw) : [];
-        setBgUrl(pickRandom(images));
+        const url = pickRandom(images);
+        setBgUrl(url);
+        if (url) {
+          document.documentElement.classList.add("has-bg-image");
+        } else {
+          document.documentElement.classList.remove("has-bg-image");
+        }
       } catch {
         setBgUrl(null);
+        document.documentElement.classList.remove("has-bg-image");
       }
     };
 
@@ -76,7 +83,7 @@ const RandomBackground = () => {
         backgroundImage: `url(${bgUrl})`,
       }}
     >
-      <div className="absolute inset-0 bg-background/70 dark:bg-background/80 backdrop-blur-[2px]" />
+      <div className="absolute inset-0 bg-black/30 dark:bg-black/40 backdrop-blur-[1px]" />
     </div>
   );
 };

@@ -1091,3 +1091,42 @@
   opacity: 0.7;
   line-height: 1.2;
 }
+
+/* ========================================
+ * Background Image Transparency
+ * When a random background image is active,
+ * make containers semi-transparent so the
+ * image shows through.
+ * ======================================== */
+
+:root.has-bg-image body {
+  background: transparent !important;
+}
+
+:root.has-bg-image .bg-background {
+  background-color: color-mix(in oklch, var(--background) 75%, transparent) !important;
+}
+
+:root.has-bg-image .bg-card {
+  background-color: color-mix(in oklch, var(--card) 80%, transparent) !important;
+}
+
+:root.has-bg-image .bg-popover {
+  background-color: color-mix(in oklch, var(--popover) 90%, transparent) !important;
+}
+
+:root.has-bg-image .bg-muted {
+  background-color: color-mix(in oklch, var(--muted) 70%, transparent) !important;
+}
+
+:root.has-bg-image .bg-secondary {
+  background-color: color-mix(in oklch, var(--secondary) 70%, transparent) !important;
+}
+
+:root.has-bg-image .bg-accent {
+  background-color: color-mix(in oklch, var(--accent) 70%, transparent) !important;
+}
+
+:root.has-bg-image [class*="bg-sidebar"] {
+  background-color: color-mix(in oklch, var(--sidebar) 80%, transparent) !important;
+}
