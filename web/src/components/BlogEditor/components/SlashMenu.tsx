@@ -56,14 +56,41 @@ export const SlashMenu = ({ view, items, menuState }: SlashMenuProps) => {
   const executeItem = useCallback(
     (item: SlashMenuItem) => {
       if (!view) return;
+      const { state } = view;
       const { from } = menuState;
-      const to = view.state.selection.$from.pos;
-      const deleteTo = Math.min(to, view.state.doc.content.size);
-      const deleteFrom = Math.min(from, deleteTo);
-      view.dispatch(view.state.tr.delete(deleteFrom, deleteTo));
-      setTimeout(() => {
+      const to = state.selection.$from.pos;
+      const deleteFrom = Math.max(from, 0);
+      const deleteTo = Math.min(to, state.doc.content.size);
+
+      if (deleteFrom >= deleteTo) {
         item.action(view);
-      }, 0);
+        return;
+      }
+
+      const $from = state.doc.resolve(deleteFrom);
+      const parentStart = $from.start($from.depth);
+      const textBeforeSlash = state.doc.textBetween(parentStart, deleteFrom).trim();
+
+      if (textBeforeSlash.length > 0) {
+        let tr = state.tr;
+        tr = tr.delete(deleteFrom, deleteTo);
+        tr = tr.split(deleteFrom);
+        view.dispatch(tr);
+        setTimeout(() => {
+          const newState = view.state;
+          const cursorPos = newState.selection.$from.pos;
+          const $cur = newState.doc.resolve(cursorPos);
+          const blockStart = $cur.start($cur.depth);
+          const blockEnd = $cur.end($cur.depth);
+          if (blockEnd > blockStart) {
+            view.dispatch(newState.tr.delete(blockStart, blockEnd));
+          }
+          setTimeout(() => item.action(view), 0);
+        }, 0);
+      } else {
+        view.dispatch(state.tr.delete(deleteFrom, deleteTo));
+        setTimeout(() => item.action(view), 0);
+      }
     },
     [view, menuState],
   );
