@@ -23,15 +23,6 @@ import { AttachmentList } from "@/components/MemoView/components/metadata";
 
 const BlogEditor = lazyWithRetry(() => import("@/components/BlogEditor"), "BlogEditor");
 
-const BLOG_TAG = "#blog";
-
-function ensureBlogTag(content: string): string {
-  const tagPattern = /(?:^|\s)#blog(?:\s|$)/m;
-  if (tagPattern.test(content)) return content;
-  const trimmed = content.replace(/\n+$/, "");
-  return trimmed + "\n\n" + BLOG_TAG + "\n";
-}
-
 const BlogDetail = () => {
   const params = useParams();
   const navigate = useNavigate();
@@ -206,7 +197,7 @@ const BlogDetail = () => {
           <h1 className="text-2xl font-bold mb-4">{titleLine}</h1>
 
           <Suspense fallback={<div style={{ padding: "2rem", color: "#888" }}>正在加载编辑器…</div>}>
-            <BlogEditor memo={memo} readonly={readonly} normalizeBeforeSave={ensureBlogTag} />
+            <BlogEditor memo={memo} readonly={readonly} />
           </Suspense>
 
           {/* Mobile: inline attachments + comments */}
