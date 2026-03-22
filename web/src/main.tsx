@@ -55,12 +55,12 @@ function AppInitializer({ children }: { children: React.ReactNode }) {
 function Main() {
   return (
     <ErrorBoundary>
+      <RandomBackground />
       <QueryClientProvider client={queryClient}>
         <InstanceProvider>
           <AuthProvider>
             <ViewProvider>
               <AppInitializer>
-                <RandomBackground />
                 <RouterProvider router={router} />
                 <Toaster position="top-right" />
               </AppInitializer>
