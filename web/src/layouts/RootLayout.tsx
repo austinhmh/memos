@@ -49,7 +49,7 @@ const RootLayout = () => {
       <main className="w-full h-auto grow shrink flex flex-col justify-start items-center">
         <Suspense
           fallback={
-            <div className="w-full h-64 flex items-center justify-center">
+            <div className="w-full h-64 flex items-center justify-center bg-transparent">
               <Spinner size="lg" />
             </div>
           }

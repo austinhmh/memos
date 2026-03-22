@@ -43,7 +43,7 @@ function AppInitializer({ children }: { children: React.ReactNode }) {
 
   if (!authInitialized || !instanceInitialized) {
     return (
-      <div className="w-full h-screen flex items-center justify-center">
+      <div className="w-full h-screen flex items-center justify-center bg-transparent">
         <Spinner size="lg" />
       </div>
     );

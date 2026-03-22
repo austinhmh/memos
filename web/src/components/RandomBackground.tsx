@@ -22,8 +22,7 @@ const applyBgClass = (url: string | null) => {
 
 const RandomBackground = () => {
   const [bgUrl, setBgUrl] = useState<string | null>(null);
-  const prevPathRef = useRef(window.location.pathname);
-  const serverFetchedRef = useRef(false);
+  const initializedRef = useRef(false);
 
   useEffect(() => {
     const loadFromCache = (): BackgroundImage[] => {
@@ -41,69 +40,35 @@ const RandomBackground = () => {
       applyBgClass(url);
     };
 
-    const load = () => {
-      apply(loadFromCache());
-    };
-
-    // Initial: try cache first, then fetch from server to sync
-    load();
-
-    if (!serverFetchedRef.current) {
-      serverFetchedRef.current = true;
+    if (!initializedRef.current) {
+      initializedRef.current = true;
+      const cached = loadFromCache();
+      if (cached.length > 0) {
+        apply(cached);
+      }
       fetchBgImagesFromServer().then((serverImages) => {
         if (serverImages.length > 0) {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(serverImages));
-          apply(serverImages);
+          if (cached.length === 0) {
+            apply(serverImages);
+          }
         }
       });
     }
 
-    const handler = () => load();
-    window.addEventListener("background-images-changed", handler);
-
-    const onPopState = () => {
-      if (window.location.pathname !== prevPathRef.current) {
-        prevPathRef.current = window.location.pathname;
-        load();
-      }
+    const onSettingsChanged = () => {
+      apply(loadFromCache());
     };
-    window.addEventListener("popstate", onPopState);
-
-    const origPushState = history.pushState.bind(history);
-    const origReplaceState = history.replaceState.bind(history);
-
-    history.pushState = (...args) => {
-      origPushState(...args);
-      if (window.location.pathname !== prevPathRef.current) {
-        prevPathRef.current = window.location.pathname;
-        load();
-      }
-    };
-
-    history.replaceState = (...args) => {
-      origReplaceState(...args);
-      if (window.location.pathname !== prevPathRef.current) {
-        prevPathRef.current = window.location.pathname;
-        load();
-      }
-    };
-
-    return () => {
-      window.removeEventListener("background-images-changed", handler);
-      window.removeEventListener("popstate", onPopState);
-      history.pushState = origPushState;
-      history.replaceState = origReplaceState;
-    };
+    window.addEventListener("background-images-changed", onSettingsChanged);
+    return () => window.removeEventListener("background-images-changed", onSettingsChanged);
   }, []);
 
   if (!bgUrl) return null;
 
   return (
     <div
-      className="fixed inset-0 -z-10 bg-cover bg-center bg-no-repeat bg-fixed transition-opacity duration-1000"
-      style={{
-        backgroundImage: `url(${bgUrl})`,
-      }}
+      className="fixed inset-0 -z-10 bg-cover bg-center bg-no-repeat bg-fixed"
+      style={{ backgroundImage: `url(${bgUrl})` }}
     >
       <div className="absolute inset-0 bg-black/30 dark:bg-black/40 backdrop-blur-[1px]" />
     </div>

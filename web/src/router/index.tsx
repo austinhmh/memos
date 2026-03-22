@@ -36,7 +36,7 @@ export { ROUTES };
 const LazyRoute = ({ component: Component }: { component: ComponentType }) => (
   <Suspense
     fallback={
-      <div className="w-full h-64 flex items-center justify-center">
+      <div className="w-full h-64 flex items-center justify-center bg-transparent">
         <Spinner size="lg" />
       </div>
     }
