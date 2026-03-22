@@ -1,0 +1,25 @@
+web/src/components/MemoContent/BookmarkCard.tsx
+  bbbe512499d592e4 1-2,8,51-55,57-80,87,90,94-109,111-124,130,137
+web/src/pages/MemoDetail.tsx
+  bbbe512499d592e4 3,138,150-157,207,214-222
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "1d7bcaf05fbcd668458612e6428b5dd440d25e14",
+  "prompts": {
+    "bbbe512499d592e4": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "3913394f-ebe7-4d38-875d-93b992d9850d",
+        "model": "claude-4.6-opus-high-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 86,
+      "overriden_lines": 0
+    }
+  }
+}
