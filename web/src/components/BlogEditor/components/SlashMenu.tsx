@@ -164,7 +164,13 @@ export const SlashMenu = ({ view, items, menuState }: SlashMenuProps) => {
                 executeItem(item);
               }}
             >
-              <span className="slash-menu-icon" style={item.iconColor ? { color: item.iconColor } : undefined}>{item.icon}</span>
+            <span
+                  className="slash-menu-icon"
+                  style={{
+                    color: item.iconColor || undefined,
+                    backgroundColor: item.iconBg || undefined,
+                  }}
+                >{item.icon}</span>
               <span className="slash-menu-text">
                 <span className="slash-menu-label">{item.label}</span>
                 {item.subtitle && <span className="slash-menu-subtitle">{item.subtitle}</span>}

@@ -1,12 +1,15 @@
 import { Plugin, PluginKey } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 
+import type { ReactNode } from "react";
+
 export interface SlashMenuItem {
   id: string;
   label: string;
   subtitle?: string;
-  icon?: string;
+  icon?: ReactNode;
   iconColor?: string;
+  iconBg?: string;
   keywords?: string;
   group?: string;
   action: (view: EditorView) => void;
