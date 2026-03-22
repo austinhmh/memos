@@ -45,7 +45,7 @@ const BlogHome = () => {
         }),
       );
       const uid = memo.name.split("/").pop();
-      navigate(`/blog/${uid}`);
+      navigate(`/memos/${uid}`);
     } catch (err) {
       toast.error("Failed to create document");
       console.error(err);
@@ -55,19 +55,19 @@ const BlogHome = () => {
   return (
     <div className="w-full max-w-4xl mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Blog Documents</h1>
+        <h1 className="text-2xl font-bold">Writing</h1>
         <Button onClick={handleNewDoc}>
           <PlusIcon className="w-4 h-4 mr-2" />
-          New Document
+          New Article
         </Button>
       </div>
 
       {memos.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
-          <p className="text-lg mb-4">No blog documents yet</p>
+          <p className="text-lg mb-4">No articles yet</p>
           <Button variant="outline" onClick={handleNewDoc}>
             <PlusIcon className="w-4 h-4 mr-2" />
-            Create your first document
+            Write your first article
           </Button>
         </div>
       ) : (
@@ -85,7 +85,7 @@ const BlogHome = () => {
                   "w-full text-left px-5 py-4 rounded-lg border border-border bg-card",
                   "hover:border-primary/30 hover:shadow-sm transition-all cursor-pointer",
                 )}
-                onClick={() => navigate(`/blog/${uid}`)}
+                onClick={() => navigate(`/memos/${uid}`)}
               >
                 <div className="flex items-center gap-2 mb-1">
                   <h3 className="text-base font-semibold flex-1 truncate">{title}</h3>

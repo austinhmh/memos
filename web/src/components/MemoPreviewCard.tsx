@@ -1,5 +1,5 @@
 import { timestampDate } from "@bufbuild/protobuf/wkt";
-import { BookmarkIcon, MessageCircleMoreIcon } from "lucide-react";
+import { BookmarkIcon, FileTextIcon, MessageCircleMoreIcon } from "lucide-react";
 import { memo } from "react";
 import { useUser } from "@/hooks/useUserQueries";
 import useNavigateTo from "@/hooks/useNavigateTo";
@@ -53,6 +53,10 @@ const MemoPreviewCard: React.FC<MemoPreviewCardProps> = ({ memo: memoData, showC
     (r) => r.type === MemoRelation_Type.COMMENT && r.relatedMemo?.name === memoData.name,
   ).length;
   const hasAttachments = memoData.attachments && memoData.attachments.length > 0;
+  const isBlog = memoData.tags?.includes("blog");
+  const lineCount = memoData.content.split("\n").length;
+  const isLongForm = isBlog || lineCount > 15;
+  const readingTime = Math.max(1, Math.ceil(memoData.content.length / 400));
 
   const handleClick = () => {
     navigateTo(`/${memoData.name}`, { state: { from: parentPage || "/" } });
@@ -68,6 +72,9 @@ const MemoPreviewCard: React.FC<MemoPreviewCardProps> = ({ memo: memoData, showC
       onClick={handleClick}
     >
       <div className="flex flex-row items-center gap-2 mb-2">
+        {isLongForm && (
+          <FileTextIcon className="w-4 h-4 text-primary/60 shrink-0" />
+        )}
         {showCreator && creator && (
           <div className="flex items-center gap-2 mr-2">
             <UserAvatar className="shrink-0" avatarUrl={creator.avatarUrl} />
@@ -77,6 +84,9 @@ const MemoPreviewCard: React.FC<MemoPreviewCardProps> = ({ memo: memoData, showC
         <span className="text-xs text-muted-foreground">
           <relative-time datetime={displayTime?.toISOString()} lang={i18n.language} format="auto"></relative-time>
         </span>
+        {isLongForm && (
+          <span className="text-xs text-muted-foreground">· {readingTime} min read</span>
+        )}
         <div className="flex-1" />
         {showPinned && memoData.pinned && <BookmarkIcon className="w-4 h-4 text-primary shrink-0" />}
         {showVisibility && memoData.visibility !== Visibility.PRIVATE && (
@@ -94,11 +104,17 @@ const MemoPreviewCard: React.FC<MemoPreviewCardProps> = ({ memo: memoData, showC
       </div>
 
       {title && (
-        <h3 className="text-base font-semibold text-foreground mb-1 line-clamp-1">{title}</h3>
+        <h3 className={cn(
+          "font-semibold text-foreground mb-1 line-clamp-1",
+          isLongForm ? "text-lg" : "text-base",
+        )}>{title}</h3>
       )}
 
       {summary && (
-        <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3 whitespace-pre-line">{summary}</p>
+        <p className={cn(
+          "text-sm text-muted-foreground leading-relaxed whitespace-pre-line",
+          isLongForm ? "line-clamp-4" : "line-clamp-3",
+        )}>{summary}</p>
       )}
 
       {hasAttachments && (
@@ -110,7 +126,10 @@ const MemoPreviewCard: React.FC<MemoPreviewCardProps> = ({ memo: memoData, showC
       {memoData.tags && memoData.tags.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1">
           {memoData.tags.slice(0, 5).map((tag) => (
-            <span key={tag} className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">#{tag}</span>
+            <span key={tag} className={cn(
+              "text-xs px-2 py-0.5 rounded-full",
+              tag === "blog" ? "bg-blue-500/10 text-blue-600 dark:text-blue-400" : "bg-primary/10 text-primary",
+            )}>#{tag}</span>
           ))}
           {memoData.tags.length > 5 && (
             <span className="text-xs px-2 py-0.5 text-muted-foreground">+{memoData.tags.length - 5}</span>

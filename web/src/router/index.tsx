@@ -10,7 +10,6 @@ import Home from "@/pages/Home";
 const AdminSignIn = lazyWithRetry(() => import("@/pages/AdminSignIn"), "AdminSignIn");
 const Archived = lazyWithRetry(() => import("@/pages/Archived"), "Archived");
 const AuthCallback = lazyWithRetry(() => import("@/pages/AuthCallback"), "AuthCallback");
-const BlogDetail = lazyWithRetry(() => import("@/pages/BlogDetail"), "BlogDetailRoute");
 const BlogHome = lazyWithRetry(() => import("@/pages/BlogHome"), "BlogHome");
 const BlogLayout = lazyWithRetry(() => import("@/layouts/BlogLayout"), "BlogLayout");
 const Explore = lazyWithRetry(() => import("@/pages/Explore"), "Explore");
@@ -81,7 +80,7 @@ const router = createBrowserRouter([
             element: <LazyRoute component={BlogLayout} />,
             children: [
               { path: "", element: <LazyRoute component={BlogHome} /> },
-              { path: ":uid", element: <LazyRoute component={BlogDetail} /> },
+              { path: ":uid", element: <LazyRoute component={MemoDetailRedirect} /> },
             ],
           },
           // Redirect old path to new path
