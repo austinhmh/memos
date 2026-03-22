@@ -45,6 +45,8 @@ func NewServer(ctx context.Context, profile *profile.Profile, store *store.Store
 	echoServer.HideBanner = true
 	echoServer.HidePort = true
 	echoServer.Use(middleware.Recover())
+	echoServer.Use(middleware.BodyLimit("64M"))
+	echoServer.Use(securityHeadersMiddleware())
 	s.echoServer = echoServer
 
 	instanceBasicSetting, err := s.getOrUpsertInstanceBasicSetting(ctx)
@@ -65,6 +67,9 @@ func NewServer(ctx context.Context, profile *profile.Profile, store *store.Store
 	rootGroup := echoServer.Group("")
 
 	apiV1Service := apiv1.NewAPIV1Service(s.Secret, profile, store)
+
+	// Register URL metadata endpoint (needs auth, registered before gateway).
+	apiV1Service.RegisterLinkRoutes(echoServer)
 
 	// Register HTTP file server routes BEFORE gRPC-Gateway to ensure proper range request handling for Safari.
 	// This uses native HTTP serving (http.ServeContent) instead of gRPC for video/audio files.
@@ -153,6 +158,22 @@ func (s *Server) StartBackgroundRunners(ctx context.Context) {
 
 	// Log the number of goroutines running
 	slog.Info("background runners started", "goroutines", runtime.NumGoroutine())
+}
+
+func securityHeadersMiddleware() echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			method := c.Request().Method
+			if method == "TRACE" || method == "TRACK" {
+				return c.String(http.StatusMethodNotAllowed, "Method Not Allowed")
+			}
+			c.Response().Header().Set("X-Content-Type-Options", "nosniff")
+			c.Response().Header().Set("X-Frame-Options", "DENY")
+			c.Response().Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+			c.Response().Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+			return next(c)
+		}
+	}
 }
 
 func (s *Server) getOrUpsertInstanceBasicSetting(ctx context.Context) (*storepb.InstanceBasicSetting, error) {

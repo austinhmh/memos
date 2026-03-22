@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/pkg/errors"
 	"golang.org/x/net/html"
@@ -30,6 +31,7 @@ type HTMLMeta struct {
 	Title       string `json:"title"`
 	Description string `json:"description"`
 	Image       string `json:"image"`
+	Favicon     string `json:"favicon"`
 }
 
 func GetHTMLMeta(urlStr string) (*HTMLMeta, error) {
@@ -51,9 +53,10 @@ func GetHTMLMeta(urlStr string) (*HTMLMeta, error) {
 		return nil, errors.New("not a HTML page")
 	}
 
-	// TODO: limit the size of the response body
+	const maxHTMLSize = 1 * 1024 * 1024 // 1 MiB
+	limitedBody := io.LimitReader(response.Body, maxHTMLSize)
 
-	htmlMeta := extractHTMLMeta(response.Body)
+	htmlMeta := extractHTMLMeta(limitedBody)
 	enrichSiteMeta(response.Request.URL, htmlMeta)
 	return htmlMeta, nil
 }
@@ -76,6 +79,13 @@ func extractHTMLMeta(resp io.Reader) *HTMLMeta {
 				tokenizer.Next()
 				token := tokenizer.Token()
 				htmlMeta.Title = token.Data
+			} else if token.DataAtom == atom.Link {
+				if htmlMeta.Favicon == "" {
+					favicon, ok := extractFaviconLink(token)
+					if ok {
+						htmlMeta.Favicon = favicon
+					}
+				}
 			} else if token.DataAtom == atom.Meta {
 				description, ok := extractMetaProperty(token, "description")
 				if ok {
@@ -163,4 +173,36 @@ func enrichSiteMeta(url *url.URL, meta *HTMLMeta) {
 			}
 		}
 	}
+	if meta.Favicon == "" {
+		meta.Favicon = fmt.Sprintf("%s://%s/favicon.ico", url.Scheme, url.Host)
+	} else if !isAbsoluteURL(meta.Favicon) {
+		meta.Favicon = fmt.Sprintf("%s://%s%s", url.Scheme, url.Host, meta.Favicon)
+	}
+	if meta.Image != "" && !isAbsoluteURL(meta.Image) {
+		meta.Image = fmt.Sprintf("%s://%s%s", url.Scheme, url.Host, meta.Image)
+	}
+}
+
+func isAbsoluteURL(u string) bool {
+	return len(u) > 4 && (u[:4] == "http" || u[:2] == "//")
+}
+
+func extractFaviconLink(token html.Token) (string, bool) {
+	var href string
+	isIcon := false
+	for _, attr := range token.Attr {
+		if attr.Key == "rel" {
+			val := strings.ToLower(attr.Val)
+			if strings.Contains(val, "icon") {
+				isIcon = true
+			}
+		}
+		if attr.Key == "href" {
+			href = attr.Val
+		}
+	}
+	if isIcon && href != "" {
+		return href, true
+	}
+	return "", false
 }

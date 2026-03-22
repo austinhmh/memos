@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect, useRef, startTransition } from "re
 import type Token from "markdown-it/lib/token.mjs";
 import type { Node as ProsemirrorNode } from "prosemirror-model";
 import headingToSlug from "@/outline-vendor/shared/editor/lib/headingToSlug";
+import BookmarkCard from "@/components/MemoContent/BookmarkCard";
 import { createMarkdownParser } from "./parser";
 import { CodeBlockRenderer } from "./renderers/CodeBlockRenderer";
 import { MathRenderer } from "./renderers/MathRenderer";
@@ -180,7 +181,29 @@ function renderTokens(
 
     if (token.type === "paragraph_open") {
       const inlineToken = tokens[i + 1];
-      const children = inlineToken ? renderInline(inlineToken.children || [], rawContent) : null;
+      const inlineChildren = inlineToken?.children || [];
+
+      // Detect standalone autolink: paragraph contains only a single link
+      // where link text === href (autolink / naked URL on its own line)
+      if (inlineChildren.length === 3) {
+        const first = inlineChildren[0];
+        const middle = inlineChildren[1];
+        const last = inlineChildren[2];
+        if (
+          first.type === "link_open" &&
+          middle.type === "text" &&
+          last.type === "link_close"
+        ) {
+          const href = first.attrGet("href") || "";
+          if (href && middle.content === href && !href.startsWith("#")) {
+            result.push(<BookmarkCard key={i} url={href} />);
+            i += 3;
+            continue;
+          }
+        }
+      }
+
+      const children = inlineToken ? renderInline(inlineChildren, rawContent) : null;
       result.push(<p key={i}>{children}</p>);
       i += 3;
       continue;
@@ -605,13 +628,15 @@ function slugify(text: string): string {
 }
 
 function sanitizeHtml(html: string): string {
-  const DANGEROUS_TAGS = /<(script|iframe|object|embed|form|base|meta|link|style|svg|math|details|dialog|template|applet|frameset|frame|bgsound|video|audio|source)[>\s/]/gi;
+  const DANGEROUS_TAGS = /<(script|iframe|object|embed|form|base|meta|link|style|svg|math|details|dialog|template|applet|frameset|frame|bgsound|video|audio|source|input|textarea|select|button|marquee|keygen|noscript|plaintext|listing|xmp)[>\s/]/gi;
   const EVENT_HANDLERS = /\bon\w+\s*=/gi;
-  const DANGEROUS_ATTRS = /\b(srcdoc|formaction|action|xlink:href)\s*=/gi;
+  const DANGEROUS_ATTRS = /\b(srcdoc|formaction|action|xlink:href|data-\w+)\s*=/gi;
+  const DANGEROUS_PROTOCOLS = /\b(href|src)\s*=\s*["']?\s*(javascript|vbscript|data)\s*:/gi;
   return html
     .replace(DANGEROUS_TAGS, "&lt;$1 ")
     .replace(EVENT_HANDLERS, "data-removed=")
-    .replace(DANGEROUS_ATTRS, "data-removed=");
+    .replace(DANGEROUS_ATTRS, "data-removed=")
+    .replace(DANGEROUS_PROTOCOLS, '$1="about:blank" data-removed=');
 }
 
 function sanitizeUrl(url: string): string {
