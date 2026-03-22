@@ -1,10 +1,11 @@
-import { CodeIcon, ExternalLinkIcon, XIcon } from "lucide-react";
-import { useState } from "react";
+import { ExternalLinkIcon, PencilIcon } from "lucide-react";
+import { useCallback, useRef, useState } from "react";
 import { useURLMetadata } from "@/hooks/useURLMetadata";
 import { cn } from "@/lib/utils";
 
 interface BookmarkCardProps {
   url: string;
+  onUrlChange?: (oldUrl: string, newUrl: string) => void;
 }
 
 function extractDomain(url: string): string {
@@ -47,65 +48,93 @@ function BookmarkCardFallback({ url }: { url: string }) {
   );
 }
 
-export default function BookmarkCard({ url }: BookmarkCardProps) {
-  const { data, isLoading, isError } = useURLMetadata(url);
-  const [showSource, setShowSource] = useState(false);
+export default function BookmarkCard({ url: initialUrl, onUrlChange }: BookmarkCardProps) {
+  const [currentUrl, setCurrentUrl] = useState(initialUrl);
+  const [isEditingUrl, setIsEditingUrl] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const { data, isLoading, isError } = useURLMetadata(currentUrl);
+
+  const handleEditClick = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsEditingUrl(true);
+    setTimeout(() => inputRef.current?.select(), 50);
+  }, []);
+
+  const handleUrlSubmit = useCallback(() => {
+    const newUrl = inputRef.current?.value.trim();
+    if (newUrl && newUrl !== currentUrl) {
+      onUrlChange?.(currentUrl, newUrl);
+      setCurrentUrl(newUrl);
+    }
+    setIsEditingUrl(false);
+  }, [currentUrl, onUrlChange]);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleUrlSubmit();
+    } else if (e.key === "Escape") {
+      setIsEditingUrl(false);
+    }
+  }, [handleUrlSubmit]);
 
   if (isLoading) {
     return <BookmarkCardSkeleton />;
   }
 
   if (isError || !data || (!data.title && !data.description)) {
-    return <BookmarkCardFallback url={url} />;
+    return <BookmarkCardFallback url={currentUrl} />;
   }
 
-  const domain = extractDomain(url);
+  const domain = extractDomain(currentUrl);
 
   return (
     <div className="relative my-2 group/card">
-      {/* Toggle source button */}
-      <button
-        type="button"
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          setShowSource(!showSource);
-        }}
-        className={cn(
-          "absolute top-2 right-2 z-10 px-2 py-0.5 rounded text-[11px]",
-          "border border-border bg-card/90 backdrop-blur-sm",
-          "text-muted-foreground hover:text-foreground hover:bg-accent",
-          "transition-all cursor-pointer select-none",
-          showSource ? "opacity-100" : "opacity-0 group-hover/card:opacity-100",
-        )}
-      >
-        {showSource ? (
-          <span className="flex items-center gap-1"><XIcon className="w-3 h-3" />隐藏链接</span>
-        ) : (
-          <span className="flex items-center gap-1"><CodeIcon className="w-3 h-3" />显示链接</span>
-        )}
-      </button>
+      {/* Edit URL button — top right */}
+      {onUrlChange && !isEditingUrl && (
+        <button
+          type="button"
+          onClick={handleEditClick}
+          className={cn(
+            "absolute top-2 right-2 z-10 p-1 rounded",
+            "bg-card/80 backdrop-blur-sm border border-border",
+            "text-muted-foreground hover:text-foreground hover:bg-accent",
+            "opacity-0 group-hover/card:opacity-100 transition-all cursor-pointer",
+          )}
+          title="编辑链接"
+        >
+          <PencilIcon className="w-3.5 h-3.5" />
+        </button>
+      )}
 
-      {/* Source URL bar */}
-      {showSource && (
-        <div className="flex items-center gap-2 px-3 py-1.5 mb-0 border border-border border-b-0 rounded-t-lg bg-muted/50 text-xs text-muted-foreground font-mono overflow-hidden">
-          <ExternalLinkIcon className="w-3 h-3 shrink-0 opacity-50" />
-          <a href={url} target="_blank" rel="noopener noreferrer" className="truncate hover:text-primary transition-colors">
-            {url}
-          </a>
+      {/* Inline URL editor */}
+      {isEditingUrl && (
+        <div className="flex items-center gap-2 px-3 py-1.5 border border-border border-b-0 rounded-t-lg bg-muted/50">
+          <ExternalLinkIcon className="w-3.5 h-3.5 shrink-0 opacity-50" />
+          <input
+            ref={inputRef}
+            type="url"
+            defaultValue={currentUrl}
+            onBlur={handleUrlSubmit}
+            onKeyDown={handleKeyDown}
+            className="flex-1 bg-transparent text-sm font-mono outline-none placeholder:text-muted-foreground"
+            placeholder="https://..."
+            autoFocus
+          />
         </div>
       )}
 
       {/* Card */}
       <a
-        href={url}
+        href={currentUrl}
         target="_blank"
         rel="noopener noreferrer"
         className={cn(
           "flex border border-border overflow-hidden",
           "no-underline text-inherit hover:shadow-md hover:border-primary/20",
           "transition-all duration-200 group",
-          showSource ? "rounded-b-lg" : "rounded-lg",
+          isEditingUrl ? "rounded-b-lg" : "rounded-lg",
         )}
       >
         <div className="flex-1 min-w-0 p-3 flex flex-col justify-between">

@@ -1,6 +1,6 @@
 import { ConnectError } from "@connectrpc/connect";
 import { timestampDate } from "@bufbuild/protobuf/wkt";
-import { ArrowLeftIcon, Edit3Icon, EyeIcon, MessageCircleIcon } from "lucide-react";
+import { ArrowLeftIcon, MessageCircleIcon } from "lucide-react";
 import { Suspense, useState, useCallback, useRef, useMemo as useReactMemo } from "react";
 import { toast } from "react-hot-toast";
 import { Link, useLocation, useParams } from "react-router-dom";
@@ -38,7 +38,6 @@ const MemoDetail = () => {
   const memoName = `${memoNamePrefix}${uid}`;
   const [showCommentEditor, setShowCommentEditor] = useState(false);
   const [editorReady, setEditorReady] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
 
   // Resizable panels
   const [leftWidth, setLeftWidth] = useState(20);
@@ -136,6 +135,7 @@ const MemoDetail = () => {
   }
 
   const displayTime = memo.displayTime ? timestampDate(memo.displayTime) : undefined;
+  const showCache = !canEdit || !editorReady;
 
   return (
     <section className="@container w-full min-h-full flex flex-col">
@@ -147,30 +147,14 @@ const MemoDetail = () => {
 
       {/* Top bar */}
       <div className="w-full flex items-center justify-between px-4 sm:px-6 pt-3 md:pt-6 pb-2">
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-            onClick={handleBack}
-          >
-            <ArrowLeftIcon className="w-4 h-4" />
-            <span>Back</span>
-          </button>
-          {canEdit && (
-            <Button
-              variant={isEditing ? "default" : "outline"}
-              size="sm"
-              className="ml-2 gap-1.5 text-xs h-7"
-              onClick={() => setIsEditing(!isEditing)}
-            >
-              {isEditing ? (
-                <><EyeIcon className="w-3.5 h-3.5" />Preview</>
-              ) : (
-                <><Edit3Icon className="w-3.5 h-3.5" />Edit</>
-              )}
-            </Button>
-          )}
-        </div>
+        <button
+          type="button"
+          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+          onClick={handleBack}
+        >
+          <ArrowLeftIcon className="w-4 h-4" />
+          <span>Back</span>
+        </button>
         <div className="flex items-center gap-3">
           {creator && (
             <Link className="flex items-center gap-1.5 hover:opacity-80" to={`/u/${encodeURIComponent(creator.username)}`} viewTransition>
@@ -220,20 +204,22 @@ const MemoDetail = () => {
         <div className="flex-1 min-w-0 px-4 sm:px-6 pb-8 overflow-y-auto">
           <MemoViewContext.Provider value={memoViewContextValue}>
             <div className="w-full">
-              {!isEditing && (
+              {showCache && (
                 <div className="blog-editor">
                   <div className="blog-editor-content ProseMirror">
                     <MarkdownRenderer content={memo.content} />
                   </div>
                 </div>
               )}
-              {isEditing && canEdit && (
-                <Suspense fallback={<div style={{ padding: "2rem", color: "#888" }}><p>正在加载编辑器…</p></div>}>
-                  <BlogEditor
-                    memo={stableMemo ?? memo}
-                    readonly={false}
-                    onReady={() => setEditorReady(true)}
-                  />
+              {canEdit && (
+                <Suspense fallback={showCache ? null : <div style={{ padding: "2rem", color: "#888" }}><p>正在加载编辑器…</p></div>}>
+                  <div style={showCache ? { height: 0, overflow: "hidden", opacity: 0 } : undefined}>
+                    <BlogEditor
+                      memo={stableMemo ?? memo}
+                      readonly={false}
+                      onReady={() => setEditorReady(true)}
+                    />
+                  </div>
                 </Suspense>
               )}
             </div>
