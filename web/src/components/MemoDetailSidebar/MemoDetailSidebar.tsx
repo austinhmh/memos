@@ -83,7 +83,7 @@ const MemoDetailSidebar = ({ memo, className, parentPage }: Props) => {
       console.error("Failed to remove tag:", err);
       toast.error("删除标签失败 Failed to remove tag");
     }
-  }, [memo, invalidate]);
+  }, [memo, invalidateMemo]);
 
   const handleTagSubmit = useCallback(() => {
     if (tagValue.trim()) {
