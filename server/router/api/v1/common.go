@@ -3,6 +3,7 @@ package v1
 import (
 	"context"
 	"encoding/base64"
+	"unicode"
 
 	"github.com/pkg/errors"
 	"google.golang.org/grpc/codes"
@@ -68,6 +69,37 @@ func unmarshalPageToken(s string, pageToken *v1pb.PageToken) error {
 
 func isSuperUser(user *store.User) bool {
 	return user.Role == store.RoleAdmin || user.Role == store.RoleHost
+}
+
+func validatePassword(password string) error {
+	if len(password) < 8 {
+		return errors.New("password must be at least 8 characters long")
+	}
+	// bcrypt silently truncates at 72 bytes
+	if len(password) > 72 {
+		return errors.New("password must not exceed 72 bytes")
+	}
+	var hasUpper, hasLower, hasDigit bool
+	for _, r := range password {
+		switch {
+		case unicode.IsUpper(r):
+			hasUpper = true
+		case unicode.IsLower(r):
+			hasLower = true
+		case unicode.IsDigit(r):
+			hasDigit = true
+		}
+	}
+	if !hasUpper {
+		return errors.New("password must contain at least one uppercase letter")
+	}
+	if !hasLower {
+		return errors.New("password must contain at least one lowercase letter")
+	}
+	if !hasDigit {
+		return errors.New("password must contain at least one digit")
+	}
+	return nil
 }
 
 // checkMemoVisibility checks if the current user has permission to view the memo.

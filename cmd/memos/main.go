@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -140,7 +142,7 @@ func printGreetings(profile *profile.Profile) {
 	if profile.IsDev() {
 		fmt.Fprint(os.Stderr, "Development mode is enabled\n")
 		if profile.DSN != "" {
-			fmt.Fprintf(os.Stderr, "Database: %s\n", profile.DSN)
+			fmt.Fprintf(os.Stderr, "Database: %s\n", sanitizeDSN(profile.DSN))
 		}
 	}
 
@@ -172,4 +174,21 @@ func main() {
 	if err := rootCmd.Execute(); err != nil {
 		panic(err)
 	}
+}
+
+func sanitizeDSN(dsn string) string {
+	if strings.Contains(dsn, "://") {
+		if u, err := url.Parse(dsn); err == nil {
+			if _, has := u.User.Password(); has {
+				u.User = url.UserPassword(u.User.Username(), "****")
+			}
+			return u.String()
+		}
+	}
+	if atIdx := strings.Index(dsn, "@"); atIdx > 0 {
+		if colonIdx := strings.Index(dsn[:atIdx], ":"); colonIdx > 0 {
+			return dsn[:colonIdx+1] + "****" + dsn[atIdx:]
+		}
+	}
+	return dsn
 }

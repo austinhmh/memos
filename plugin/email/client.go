@@ -2,6 +2,7 @@ package email
 
 import (
 	"crypto/tls"
+	"log/slog"
 	"net/smtp"
 
 	"github.com/pkg/errors"
@@ -79,11 +80,11 @@ func (c *Client) sendWithTLS(auth smtp.Auth, recipients []string, body string) e
 	serverAddr := c.config.GetServerAddress()
 
 	if c.config.UseTLS {
-		// Use STARTTLS
 		return smtp.SendMail(serverAddr, auth, c.config.FromEmail, recipients, []byte(body))
 	}
 
-	// Send without encryption (not recommended)
+	slog.Warn("sending email without encryption is insecure, consider enabling TLS or SSL",
+		slog.String("smtp_host", c.config.SMTPHost))
 	return smtp.SendMail(serverAddr, auth, c.config.FromEmail, recipients, []byte(body))
 }
 

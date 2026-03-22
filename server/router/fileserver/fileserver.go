@@ -5,6 +5,10 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"net/http"
 	"os"
@@ -393,14 +397,23 @@ func (s *FileServerService) getAttachmentReader(attachment *store.Attachment) (i
 		if s3Object == nil {
 			return nil, errors.New("S3 object payload is missing")
 		}
-		if s3Object.S3Config == nil {
-			return nil, errors.New("S3 config is missing")
-		}
 		if s3Object.Key == "" {
 			return nil, errors.New("S3 object key is missing")
 		}
 
-		s3Client, err := s3.NewClient(context.Background(), s3Object.S3Config)
+		s3Config := s3Object.S3Config
+		if s3Config == nil {
+			instanceStorageSetting, err := s.Store.GetInstanceStorageSetting(context.Background())
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to get instance storage setting")
+			}
+			s3Config = instanceStorageSetting.GetS3Config()
+		}
+		if s3Config == nil {
+			return nil, errors.New("S3 config is missing")
+		}
+
+		s3Client, err := s3.NewClient(context.Background(), s3Config)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to create S3 client")
 		}
@@ -447,14 +460,23 @@ func (s *FileServerService) getAttachmentBlob(attachment *store.Attachment) ([]b
 		if s3Object == nil {
 			return nil, errors.New("S3 object payload is missing")
 		}
-		if s3Object.S3Config == nil {
-			return nil, errors.New("S3 config is missing")
-		}
 		if s3Object.Key == "" {
 			return nil, errors.New("S3 object key is missing")
 		}
 
-		s3Client, err := s3.NewClient(context.Background(), s3Object.S3Config)
+		s3Config := s3Object.S3Config
+		if s3Config == nil {
+			instanceStorageSetting, err := s.Store.GetInstanceStorageSetting(context.Background())
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to get instance storage setting")
+			}
+			s3Config = instanceStorageSetting.GetS3Config()
+		}
+		if s3Config == nil {
+			return nil, errors.New("S3 config is missing")
+		}
+
+		s3Client, err := s3.NewClient(context.Background(), s3Config)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to create S3 client")
 		}
@@ -473,10 +495,10 @@ func (s *FileServerService) getAttachmentBlob(attachment *store.Attachment) ([]b
 // Uses semaphore to limit concurrent thumbnail generation and prevent memory exhaustion.
 func (s *FileServerService) getOrGenerateThumbnail(ctx context.Context, attachment *store.Attachment) ([]byte, error) {
 	thumbnailCacheFolder := filepath.Join(s.Profile.Data, ThumbnailCacheFolder)
-	if err := os.MkdirAll(thumbnailCacheFolder, os.ModePerm); err != nil {
+	if err := os.MkdirAll(thumbnailCacheFolder, 0750); err != nil {
 		return nil, errors.Wrap(err, "failed to create thumbnail cache folder")
 	}
-	filePath := filepath.Join(thumbnailCacheFolder, fmt.Sprintf("%d%s", attachment.ID, filepath.Ext(attachment.Filename)))
+	filePath := filepath.Join(thumbnailCacheFolder, fmt.Sprintf("%s%s", attachment.UID, filepath.Ext(attachment.Filename)))
 
 	// Check if thumbnail already exists
 	if _, err := os.Stat(filePath); err == nil {
@@ -522,14 +544,31 @@ func (s *FileServerService) getOrGenerateThumbnail(ctx context.Context, attachme
 	}
 	defer reader.Close()
 
-	// Decode image - this is memory intensive
+	const maxPixels int64 = 100_000_000 // 100M pixels
+
+	// Pre-check image dimensions BEFORE full decode to prevent decompression bombs.
+	// This reads only the image header, using minimal memory.
+	imgConfig, _, cfgErr := image.DecodeConfig(reader)
+	if cfgErr != nil {
+		return nil, errors.Wrap(cfgErr, "failed to read image config")
+	}
+	if int64(imgConfig.Width)*int64(imgConfig.Height) > maxPixels {
+		return nil, errors.Errorf("image dimensions too large: %dx%d exceeds pixel limit", imgConfig.Width, imgConfig.Height)
+	}
+
+	// Re-obtain reader since DecodeConfig consumed part of it
+	reader.Close()
+	reader, err = s.getAttachmentReader(attachment)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to re-open attachment reader")
+	}
+
+	// Full decode is now safe since we've verified dimensions
 	img, err := imaging.Decode(reader, imaging.AutoOrientation(true))
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to decode thumbnail image")
 	}
 
-	// The largest dimension is set to thumbnailMaxSize and the smaller dimension is scaled proportionally.
-	// Small images are not enlarged.
 	width := img.Bounds().Dx()
 	height := img.Bounds().Dy()
 	var thumbnailWidth, thumbnailHeight int

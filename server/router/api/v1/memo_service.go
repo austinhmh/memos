@@ -409,9 +409,15 @@ func (s *APIV1Service) UpdateMemo(ctx context.Context, request *v1pb.UpdateMemoR
 			rowStatus := convertStateToStore(request.Memo.State)
 			update.RowStatus = &rowStatus
 		} else if path == "create_time" {
+			if user.Role != store.RoleHost && user.Role != store.RoleAdmin {
+				return nil, status.Errorf(codes.PermissionDenied, "only administrators can set custom timestamps")
+			}
 			createdTs := request.Memo.CreateTime.AsTime().Unix()
 			update.CreatedTs = &createdTs
 		} else if path == "update_time" {
+			if user.Role != store.RoleHost && user.Role != store.RoleAdmin {
+				return nil, status.Errorf(codes.PermissionDenied, "only administrators can set custom timestamps")
+			}
 			updatedTs := time.Now().Unix()
 			if request.Memo.UpdateTime != nil {
 				updatedTs = request.Memo.UpdateTime.AsTime().Unix()
@@ -658,6 +664,12 @@ func (s *APIV1Service) ListMemoComments(ctx context.Context, request *v1pb.ListM
 	memo, err := s.Store.GetMemo(ctx, &store.FindMemo{UID: &memoUID})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get memo")
+	}
+	if memo == nil {
+		return nil, status.Errorf(codes.NotFound, "memo not found")
+	}
+	if err := s.checkMemoVisibility(ctx, memo); err != nil {
+		return nil, err
 	}
 
 	currentUser, err := s.fetchCurrentUser(ctx)

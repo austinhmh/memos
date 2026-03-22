@@ -62,6 +62,9 @@ func (s *APIV1Service) SetMemoRelations(ctx context.Context, request *v1pb.SetMe
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "failed to get related memo")
 		}
+		if relatedMemo == nil {
+			return nil, status.Errorf(codes.NotFound, "related memo not found")
+		}
 		if _, err := s.Store.UpsertMemoRelation(ctx, &store.MemoRelation{
 			MemoID:        memo.ID,
 			RelatedMemoID: relatedMemo.ID,

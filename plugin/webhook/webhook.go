@@ -2,9 +2,11 @@ package webhook
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"time"
 
@@ -14,19 +16,35 @@ import (
 )
 
 var (
-	// timeout is the timeout for webhook request. Default to 30 seconds.
-	timeout = 30 * time.Second
+	timeout        = 30 * time.Second
+	maxResponseSize int64 = 1 * 1024 * 1024 // 1 MiB
 )
 
 type WebhookRequestPayload struct {
-	// The target URL for the webhook request.
-	URL string `json:"url"`
-	// The type of activity that triggered this webhook.
-	ActivityType string `json:"activityType"`
-	// The resource name of the creator. Format: users/{user}
-	Creator string `json:"creator"`
-	// The memo that triggered this webhook (if applicable).
-	Memo *v1pb.Memo `json:"memo"`
+	URL          string   `json:"url"`
+	ActivityType string   `json:"activityType"`
+	Creator      string   `json:"creator"`
+	Memo         *v1pb.Memo `json:"memo"`
+}
+
+var safeTransport = &http.Transport{
+	DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, errors.Wrap(err, "invalid address")
+		}
+		ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
+		if err != nil {
+			return nil, errors.Wrap(err, "DNS resolution failed")
+		}
+		for _, ip := range ips {
+			if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+				return nil, errors.Errorf("webhook target resolves to internal/private IP %s", ip.String())
+			}
+		}
+		dialer := &net.Dialer{Timeout: 10 * time.Second}
+		return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0].String(), port))
+	},
 }
 
 // Post posts the message to webhook endpoint.
@@ -43,7 +61,8 @@ func Post(requestPayload *WebhookRequestPayload) error {
 
 	req.Header.Set("Content-Type", "application/json")
 	client := &http.Client{
-		Timeout: timeout,
+		Timeout:   timeout,
+		Transport: safeTransport,
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -51,7 +70,7 @@ func Post(requestPayload *WebhookRequestPayload) error {
 	}
 	defer resp.Body.Close()
 
-	b, err := io.ReadAll(resp.Body)
+	b, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
 	if err != nil {
 		return errors.Wrapf(err, "failed to read webhook response from %s", requestPayload.URL)
 	}

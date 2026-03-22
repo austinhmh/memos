@@ -59,14 +59,14 @@ func checkDataDir(dataDir string) (string, error) {
 
 func (p *Profile) Validate() error {
 	if p.Mode != "demo" && p.Mode != "dev" && p.Mode != "prod" {
-		p.Mode = "demo"
+		return fmt.Errorf("invalid mode %q: must be one of \"prod\", \"dev\", \"demo\"", p.Mode)
 	}
 
 	if p.Mode == "prod" && p.Data == "" {
 		if runtime.GOOS == "windows" {
 			p.Data = filepath.Join(os.Getenv("ProgramData"), "memos")
 			if _, err := os.Stat(p.Data); os.IsNotExist(err) {
-				if err := os.MkdirAll(p.Data, 0770); err != nil {
+				if err := os.MkdirAll(p.Data, 0700); err != nil {
 					slog.Error("failed to create data directory", slog.String("data", p.Data), slog.String("error", err.Error()))
 					return err
 				}

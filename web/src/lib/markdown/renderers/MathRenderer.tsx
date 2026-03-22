@@ -15,7 +15,8 @@ export const MathRenderer: React.FC<MathRendererProps> = ({ content, displayMode
         trust: false,
       });
     } catch {
-      return content;
+      const escaped = content.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      return escaped;
     }
   }, [content, displayMode]);
 

@@ -24,7 +24,7 @@ func TestCreateUserRegistration(t *testing.T) {
 			User: &apiv1.User{
 				Username: "newuser",
 				Email:    "newuser@example.com",
-				Password: "password123",
+				Password: "Password123",
 			},
 		})
 		require.NoError(t, err)
@@ -54,7 +54,7 @@ func TestCreateUserRegistration(t *testing.T) {
 			User: &apiv1.User{
 				Username: "newuser",
 				Email:    "newuser@example.com",
-				Password: "password123",
+				Password: "Password123",
 			},
 		})
 		require.Error(t, err)
@@ -86,7 +86,7 @@ func TestCreateUserRegistration(t *testing.T) {
 			User: &apiv1.User{
 				Username: "newuser",
 				Email:    "newuser@example.com",
-				Password: "password123",
+				Password: "Password123",
 			},
 		})
 		require.NoError(t, err)
@@ -117,7 +117,7 @@ func TestCreateUserRegistration(t *testing.T) {
 			User: &apiv1.User{
 				Username: "newuser",
 				Email:    "newuser@example.com",
-				Password: "password123",
+				Password: "Password123",
 			},
 		})
 		require.Error(t, err)
@@ -138,7 +138,7 @@ func TestCreateUserRegistration(t *testing.T) {
 			User: &apiv1.User{
 				Username: "newadmin",
 				Email:    "newadmin@example.com",
-				Password: "password123",
+				Password: "Password123",
 				Role:     apiv1.User_ADMIN,
 			},
 		})
@@ -162,7 +162,7 @@ func TestCreateUserRegistration(t *testing.T) {
 			User: &apiv1.User{
 				Username: "wannabeadmin",
 				Email:    "wannabeadmin@example.com",
-				Password: "password123",
+				Password: "Password123",
 				Role:     apiv1.User_ADMIN, // This should be ignored
 			},
 		})

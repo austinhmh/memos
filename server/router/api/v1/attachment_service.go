@@ -358,7 +358,7 @@ func SaveAttachmentBlob(ctx context.Context, profile *profile.Profile, stores *s
 			osPath = filepath.Join(profile.Data, osPath)
 		}
 		dir := filepath.Dir(osPath)
-		if err = os.MkdirAll(dir, os.ModePerm); err != nil {
+		if err = os.MkdirAll(dir, 0750); err != nil {
 			return errors.Wrap(err, "Failed to create directory")
 		}
 
@@ -399,7 +399,6 @@ func SaveAttachmentBlob(ctx context.Context, profile *profile.Profile, stores *s
 		create.Payload = &storepb.AttachmentPayload{
 			Payload: &storepb.AttachmentPayload_S3Object_{
 				S3Object: &storepb.AttachmentPayload_S3Object{
-					S3Config:          s3Config,
 					Key:               key,
 					LastPresignedTime: timestamppb.New(time.Now()),
 				},
@@ -441,14 +440,23 @@ func (s *APIV1Service) GetAttachmentBlob(attachment *store.Attachment) ([]byte, 
 		if s3Object == nil {
 			return nil, errors.New("S3 object payload is missing")
 		}
-		if s3Object.S3Config == nil {
-			return nil, errors.New("S3 config is missing")
-		}
 		if s3Object.Key == "" {
 			return nil, errors.New("S3 object key is missing")
 		}
 
-		s3Client, err := s3.NewClient(context.Background(), s3Object.S3Config)
+		s3Config := s3Object.S3Config
+		if s3Config == nil {
+			instanceStorageSetting, err := s.Store.GetInstanceStorageSetting(context.Background())
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to get instance storage setting")
+			}
+			s3Config = instanceStorageSetting.GetS3Config()
+		}
+		if s3Config == nil {
+			return nil, errors.New("S3 config is missing")
+		}
+
+		s3Client, err := s3.NewClient(context.Background(), s3Config)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to create S3 client")
 		}
@@ -506,6 +514,21 @@ func validateFilename(filename string) bool {
 		return false
 	}
 
+	// Reject dangerous file extensions regardless of MIME type
+	ext := strings.ToLower(filepath.Ext(filename))
+	dangerousExts := map[string]bool{
+		".php": true, ".phtml": true, ".php3": true, ".php4": true, ".php5": true,
+		".jsp": true, ".jspx": true, ".asp": true, ".aspx": true,
+		".exe": true, ".bat": true, ".cmd": true, ".com": true, ".msi": true,
+		".sh": true, ".bash": true, ".csh": true, ".ksh": true,
+		".py": true, ".pl": true, ".rb": true, ".cgi": true,
+		".htaccess": true, ".htpasswd": true,
+		".hta": true, ".shtml": true,
+	}
+	if dangerousExts[ext] {
+		return false
+	}
+
 	return true
 }
 
@@ -551,16 +574,31 @@ func isDangerousMimeType(mimeType string) bool {
 	dangerousTypes := []string{
 		"text/html",
 		"text/javascript",
+		"text/xml",
+		"text/x-php",
+		"text/x-python",
+		"text/x-perl",
+		"text/x-ruby",
 		"application/javascript",
 		"application/x-javascript",
 		"application/xhtml+xml",
+		"application/xml",
+		"image/svg+xml",
 		"application/x-msdownload",
 		"application/x-executable",
 		"application/x-dosexec",
 		"application/x-msdos-program",
+		"application/x-httpd-php",
+		"application/x-php",
 		"application/batch",
 		"application/x-sh",
 		"application/x-csh",
+		"application/x-bash",
+		"application/x-python",
+		"application/x-perl",
+		"application/x-ruby",
+		"application/hta",
+		"application/x-hta",
 	}
 	lower := strings.ToLower(mimeType)
 	for _, t := range dangerousTypes {

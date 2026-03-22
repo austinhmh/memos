@@ -92,7 +92,7 @@ func (s *APIV1Service) UpsertMemoReaction(ctx context.Context, request *v1pb.Ups
 
 	reaction, err := s.Store.UpsertReaction(ctx, &store.Reaction{
 		CreatorID:    user.ID,
-		ContentID:    request.Reaction.ContentId,
+		ContentID:    request.Name,
 		ReactionType: request.Reaction.ReactionType,
 	})
 	if err != nil {

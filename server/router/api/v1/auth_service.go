@@ -77,6 +77,9 @@ func (s *APIV1Service) SignIn(ctx context.Context, request *v1pb.SignInRequest) 
 			return nil, status.Errorf(codes.Internal, "failed to get user, error: %v", err)
 		}
 		if user == nil {
+			// Perform dummy bcrypt comparison to eliminate timing side-channel
+			// that could reveal whether a username exists
+			bcrypt.CompareHashAndPassword([]byte("$2a$10$xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"), []byte(passwordCredentials.Password))
 			return nil, status.Errorf(codes.InvalidArgument, unmatchedUsernameAndPasswordError)
 		}
 		// Compare the stored hashed password, with the hashed version of the password that was received.

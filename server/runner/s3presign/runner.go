@@ -89,9 +89,6 @@ func (r *Runner) CheckAndPresign(ctx context.Context) {
 			}
 
 			s3Config := instanceStorageSetting.GetS3Config()
-			if s3ObjectPayload.S3Config != nil {
-				s3Config = s3ObjectPayload.S3Config
-			}
 			if s3Config == nil {
 				slog.Error("S3 config is not found")
 				continue
@@ -109,7 +106,6 @@ func (r *Runner) CheckAndPresign(ctx context.Context) {
 				continue
 			}
 
-			s3ObjectPayload.S3Config = s3Config
 			s3ObjectPayload.LastPresignedTime = timestamppb.New(time.Now())
 			if err := r.Store.UpdateAttachment(ctx, &store.UpdateAttachment{
 				ID:        attachment.ID,

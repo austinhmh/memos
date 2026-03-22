@@ -259,8 +259,7 @@ func (s *RSSService) generateRSSFromMemoList(ctx context.Context, memoList []*st
 				authorName = creator.Username
 			}
 			item.Author = &feeds.Author{
-				Name:  authorName,
-				Email: creator.Email,
+				Name: authorName,
 			}
 		}
 
@@ -332,7 +331,15 @@ func (s *RSSService) getRSSItemDescription(content string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	html = sanitizeRSSHTML(html)
 	return html, nil
+}
+
+func sanitizeRSSHTML(html string) string {
+	html = strings.ReplaceAll(html, "javascript:", "")
+	html = strings.ReplaceAll(html, "vbscript:", "")
+	html = strings.ReplaceAll(html, "data:text/html", "")
+	return html
 }
 
 // getFromCache retrieves a cached feed entry if it exists and is not expired.

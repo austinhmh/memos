@@ -3,6 +3,7 @@ package v1
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -49,7 +50,7 @@ func NewAPIV1Service(secret string, profile *profile.Profile, store *store.Store
 		Store:              store,
 		MarkdownService:    markdownService,
 		thumbnailSemaphore: semaphore.NewWeighted(3),
-		signInLimiter:      NewRateLimiter(10, 5*time.Minute),
+		signInLimiter:      NewRateLimiter(5, 5*time.Minute),
 	}
 }
 
@@ -71,9 +72,14 @@ func (s *APIV1Service) RegisterGateway(ctx context.Context, echoServer *echo.Ech
 			result := authenticator.Authenticate(ctx, authHeader)
 
 		// Enforce authentication for non-public methods.
-		// When RPCMethod can be resolved (ok=true), check against PublicMethods.
-		// When RPCMethod cannot be resolved (ok=false), fall through to service-layer.
-		if result == nil && ok && !IsPublicMethod(rpcMethod) {
+		// Check RPC method name first; fall back to HTTP path matching for gateway routes.
+		isPublic := false
+		if ok {
+			isPublic = IsPublicMethod(rpcMethod)
+		} else {
+			isPublic = isPublicGatewayPath(r.Method, r.URL.Path)
+		}
+		if result == nil && !isPublic {
 			http.Error(w, `{"code": 16, "message": "authentication required"}`, http.StatusUnauthorized)
 			return
 		}
@@ -125,15 +131,7 @@ func (s *APIV1Service) RegisterGateway(ctx context.Context, echoServer *echo.Ech
 	}
 	gwGroup := echoServer.Group("")
 	gwGroup.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowOriginFunc: func(origin string) (bool, error) {
-			if s.Profile.IsDev() {
-				return true, nil
-			}
-			if s.Profile.InstanceURL != "" {
-				return origin == s.Profile.InstanceURL, nil
-			}
-			return false, nil
-		},
+		AllowOriginFunc: s.corsAllowOrigin,
 		AllowMethods:     []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions},
 		AllowHeaders:     []string{"Authorization", "Content-Type"},
 		AllowCredentials: true,
@@ -159,15 +157,7 @@ func (s *APIV1Service) RegisterGateway(ctx context.Context, echoServer *echo.Ech
 	// In dev mode, allow all origins for local development.
 	// In production, restrict allowed origins.
 	corsHandler := middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowOriginFunc: func(origin string) (bool, error) {
-			if s.Profile.IsDev() {
-				return true, nil
-			}
-			if s.Profile.InstanceURL != "" {
-				return origin == s.Profile.InstanceURL, nil
-			}
-			return false, nil
-		},
+		AllowOriginFunc: s.corsAllowOrigin,
 		AllowMethods:     []string{http.MethodGet, http.MethodPost, http.MethodOptions},
 		AllowHeaders:     []string{"Authorization", "Content-Type", "Connect-Protocol-Version", "Connect-Timeout-Ms"},
 		AllowCredentials: true,
@@ -176,4 +166,17 @@ func (s *APIV1Service) RegisterGateway(ctx context.Context, echoServer *echo.Ech
 	connectGroup.Any("/memos.api.v1.*", echo.WrapHandler(connectMux))
 
 	return nil
+}
+
+func (s *APIV1Service) corsAllowOrigin(origin string) (bool, error) {
+	if s.Profile.IsDev() {
+		return strings.HasPrefix(origin, "http://localhost:") ||
+			strings.HasPrefix(origin, "http://127.0.0.1:") ||
+			origin == "http://localhost" ||
+			origin == "http://127.0.0.1", nil
+	}
+	if s.Profile.InstanceURL != "" {
+		return origin == s.Profile.InstanceURL, nil
+	}
+	return false, nil
 }

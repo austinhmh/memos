@@ -3,10 +3,10 @@ package httpgetter
 import (
 	"errors"
 	"io"
-	"net/http"
-	"net/url"
 	"strings"
 )
+
+const maxImageSize = 50 * 1024 * 1024 // 50 MiB
 
 type Image struct {
 	Blob      []byte
@@ -14,11 +14,11 @@ type Image struct {
 }
 
 func GetImage(urlStr string) (*Image, error) {
-	if _, err := url.Parse(urlStr); err != nil {
+	if err := validateURL(urlStr); err != nil {
 		return nil, err
 	}
 
-	response, err := http.Get(urlStr)
+	response, err := httpClient.Get(urlStr)
 	if err != nil {
 		return nil, err
 	}
@@ -32,9 +32,13 @@ func GetImage(urlStr string) (*Image, error) {
 		return nil, errors.New("wrong image mediatype")
 	}
 
-	bodyBytes, err := io.ReadAll(response.Body)
+	limitedReader := io.LimitReader(response.Body, maxImageSize+1)
+	bodyBytes, err := io.ReadAll(limitedReader)
 	if err != nil {
 		return nil, err
+	}
+	if len(bodyBytes) > maxImageSize {
+		return nil, errors.New("image exceeds maximum allowed size")
 	}
 
 	image := &Image{

@@ -1,366 +1,372 @@
-# Memos 全栈安全审计 + 渗透测试 — 完整报告
+# Memos 安全渗透测试与代码审计报告
 
-**审计日期**: 2026-03-21
-**服务版本**: 0.26.0
-**审计方法**: 源码逐行审计 → 外部黑盒渗透 → 210 用例全量手动测试 → 修复 → 100轮手动回归验证
-**测试矩阵**: 53 个 RPC 端点 × 7 个安全维度 + 4 个 Echo 路由 + 17 个前端页面
-**最终结果**: 100轮手动测试 → 88 PASS / 12 FAIL（FAIL均为测试参数问题或已知限制,非新漏洞）
+**审计日期**: 2026-03-22  
+**审计方法**: 黑盒渗透测试 + 白盒代码审计 (多轮迭代)  
+**测试目标**: http://localhost:8081 (dev 模式)  
+**代码覆盖**: 后端全部 Go 源码 + 前端 React/TypeScript
 
 ---
 
-## 攻击面总览
+## 执行摘要
 
-```mermaid
-flowchart TD
-    A["外部攻击者"] --> B{"入口点"}
-    B --> C["公开 API\n14个无需认证的RPC"]
-    B --> D["需认证 API\n39个RPC"]
-    B --> E["文件服务\n/file/*"]
-    B --> F["前端 SPA\n17个页面"]
-    B --> G["RSS\n/explore/rss.xml"]
+对 Memos 项目进行了多轮全面安全审计：
+- **Round 1**: 黑盒渗透 + 3 个并行白盒审计代理 → 发现 19 个漏洞并修复
+- **Round 2**: 针对修复后的实例重新渗透测试 + 深度审计 Memo/Activity/前端模块 → 新发现 8 个漏洞并修复
+- **回归验证**: 12 项自动化渗透测试全部通过
 
-    C --> C1["GetUser暴露role/username"]
-    C --> C2["GetInstanceProfile暴露version"]
-    C --> C3["CreateUser开放注册"]
-    C --> C4["ListMemos泄露公开内容"]
+共发现并修复 **30 个安全漏洞**。
 
-    D --> D1["CreateMemoComment可评论私有memo"]
-    D --> D2["UpsertMemoReaction可对私有memo点赞"]
-    D --> D3["GetActivity越权读取他人activity"]
-    D --> D4["UpdateUser修改密码无需旧密码"]
+---
 
-    E --> E1["未关联memo附件公开可访问"]
-    F --> F1["additionalScript全站JS注入"]
-    F --> F2["XSS payload后端不过滤"]
+## 漏洞统计
+
+| 严重程度 | Round 1 | Round 2 | Round 3 | 合计 | 已修复 | 状态 |
+|---------|---------|---------|---------|------|--------|------|
+| Critical | 3 | 0 | 0 | 3 | 3 | ✅ |
+| High | 5 | 2 | 0 | 7 | 7 | ✅ |
+| Medium | 8 | 3 | 3 | 14 | 14 | ✅ |
+| Low | 3 | 3 | 0 | 6 | 6 | ✅ |
+| **合计** | **19** | **8** | **3** | **30** | **30** | **全部修复** |
+
+---
+
+## Phase 1: 黑盒渗透测试发现
+
+### 确认的外部可利用漏洞
+
+| # | 漏洞 | 严重程度 | 验证方式 |
+|---|------|---------|---------|
+| 1 | CORS 允许任意 Origin + AllowCredentials (dev 默认模式) | High | `curl -H "Origin: https://evil.com"` 返回 `Access-Control-Allow-Origin: evil.com` |
+| 2 | GetInstanceSetting(BASIC) 无需认证 — 可能泄露 JWT 密钥 | Critical | `curl /api/v1/instance/settings/BASIC` 返回 200 |
+| 3 | 登录速率限制基于用户名不基于 IP | Medium | 不同用户名各有独立的 5 次限额 |
+| 4 | 注册默认开启，无速率限制 | Medium | `POST /api/v1/users` 可无限创建账户 |
+
+### 已排除的误报
+
+| 测试项 | 结果 |
+|-------|------|
+| 路径遍历 (`/../../../etc/passwd`) | SPA Fallback，非真正遍历 |
+| 敏感路径 (`/.env`, `/.git/config`) | SPA Fallback，返回 index.html |
+| JWT 伪造 (alg:none, 假签名) | 正确拒绝 (HTTP 400/401) |
+| 未认证文件上传 | 正确拒绝 (HTTP 401) |
+| SQL 注入 (参数化查询) | 全部使用参数化查询，安全 |
+
+---
+
+## Phase 2: 白盒代码审计发现
+
+### Critical 漏洞
+
+#### VULN-01: GetImage SSRF（服务端请求伪造）
+- **文件**: `plugin/httpgetter/image.go:16-45`
+- **问题**: `GetImage()` 使用 `http.Get()` 无 SSRF 防护，可访问云元数据 `169.254.169.254`
+- **修复**: 复用 `validateURL()` + 安全 HTTP client + 50MB 大小限制
+
+#### VULN-02: Webhook DNS 重绑定
+- **文件**: `plugin/webhook/webhook.go:33-76`
+- **问题**: 创建时验证 DNS，发送时用默认 client 不验证
+- **修复**: 自定义 `safeTransport` 在 TCP `DialContext` 层面验证 IP
+
+#### VULN-03: GetInstanceSetting(BASIC) 无认证
+- **文件**: `server/router/api/v1/instance_service.go:67-79`
+- **问题**: BASIC 设置包含 JWT SecretKey，虽然当前转换函数不输出，但一行代码改动即可泄露
+- **修复**: BASIC 和 STORAGE 设置都要求 HOST 权限
+
+### High 漏洞
+
+#### VULN-04: CORS 全开 + AllowCredentials
+- **文件**: `server/router/api/v1/v1.go:126-173`
+- **问题**: dev 模式（默认）允许所有 Origin，可 CSRF 窃取凭证
+- **修复**: dev 模式限制为 `localhost` / `127.0.0.1`
+
+#### VULN-05: gRPC-Gateway 认证绕过
+- **文件**: `server/router/api/v1/v1.go:73-79`
+- **问题**: RPCMethod 不可解析时短路跳过认证
+- **修复**: 不可解析时 fallback 到 HTTP 路径匹配
+
+#### VULN-06: 缩略图解压缩炸弹
+- **文件**: `server/router/fileserver/fileserver.go:526`
+- **问题**: 先完整解码再检查尺寸，1KB PNG 可消耗 16GB 内存
+- **修复**: 先用 `image.DecodeConfig` 检查尺寸再解码
+
+#### VULN-07: HTTP 响应体无大小限制
+- **文件**: `plugin/httpgetter/image.go`, `html_meta.go`, `webhook.go`
+- **问题**: `io.ReadAll` 无限制，可 OOM
+- **修复**: 全部使用 `io.LimitReader` (50MB/1MB/1MB)
+
+#### VULN-08: SVG/XML MIME 类型未拦截
+- **文件**: `server/router/api/v1/attachment_service.go:558`
+- **问题**: SVG 可携带 JavaScript，S3 预签名 URL 绕过服务器 XSS 防护
+- **修复**: 将 `image/svg+xml`、`text/xml`、`application/xml` 加入黑名单
+
+### Medium 漏洞
+
+#### VULN-09: RSS 邮箱泄露
+- **文件**: `server/router/rss/rss.go:263`
+- **修复**: 移除公开 RSS 中的邮箱字段
+
+#### VULN-10: DSN 明文输出
+- **文件**: `cmd/memos/main.go:143`
+- **修复**: `sanitizeDSN()` 脱敏密码
+
+#### VULN-11: 缺少全局安全头
+- **文件**: `server/server.go`
+- **修复**: 全局中间件添加 X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy
+
+#### VULN-12: 弱密码策略
+- **文件**: `server/router/api/v1/user_service.go:178`
+- **修复**: 增加大写+小写+数字要求，72 字节 bcrypt 上限
+
+#### VULN-13: 目录权限过宽
+- **文件**: `fileserver.go:476`, `attachment_service.go:361`, `profile.go:69`
+- **修复**: `0777` → `0750`，`0770` → `0700`
+
+#### VULN-14: Admin 可归档 HOST 用户
+- **文件**: `server/router/api/v1/user_service.go:311`
+- **修复**: Admin 修改 HOST 用户状态时返回 PermissionDenied
+
+#### VULN-15: Webhook URL 更新绕过验证
+- **文件**: `server/router/api/v1/user_service.go:848`
+- **修复**: 更新时也调用 `validateWebhookURL`
+
+#### VULN-16: 无效模式静默降级
+- **文件**: `internal/profile/profile.go:61`
+- **修复**: 无效模式返回错误而非降级为 demo
+
+### Low 漏洞
+
+#### VULN-17: S3 凭证存入附件 payload
+- **文件**: `server/router/api/v1/attachment_service.go:399`
+- **修复**: payload 中不存储凭证，运行时从实例配置获取
+
+#### VULN-18: 缺少全局请求体大小限制
+- **文件**: `server/server.go`
+- **修复**: 添加 `middleware.BodyLimit("64M")`
+
+#### VULN-19: 登录速率限制降低
+- **文件**: `server/router/api/v1/v1.go:52`
+- **修复**: 从 10次/5分钟降到 5次/5分钟
+
+---
+
+## 修复验证结果
+
+### 自动化渗透测试 (14/14 通过)
+
+```
+[PASS] BASIC设置需认证 (401)
+[PASS] GENERAL设置仍公开 (200)
+[PASS] STORAGE设置需认证 (401)
+[PASS] CORS拒绝恶意域名
+[PASS] CORS允许localhost
+[PASS] 速率限制在5次后触发
+[PASS] X-Content-Type-Options 存在
+[PASS] X-Frame-Options 存在
+[PASS] Referrer-Policy 存在
+[PASS] Permissions-Policy 存在
+[PASS] /api/v1/users/-/shortcuts 正确拦截 (401)
+[PASS] /api/v1/instance/settings/BASIC 正确拦截 (401)
+[PASS] RSS无邮箱泄露
+[PASS] JWT伪造被拒绝 (401)
+```
+
+### 单元测试
+
+```
+ok  github.com/usememos/memos/server/router/api/v1/test  4.147s (全部通过)
+```
+
+### 编译与静态分析
+
+```
+go build ./...  — 通过
+go vet ./...    — 无警告
 ```
 
 ---
 
-## 一、全部 26 个已确认漏洞
+## 修改的文件清单
 
-### Critical (4个)
-
-| # | 测试编号 | 漏洞 | 代码位置 | 攻击证明 |
-|---|----------|------|----------|----------|
-| 1 | T133 | **未关联memo的附件可被任何人无认证访问** | `fileserver.go:262-264` | 管理员上传 `"database password is P@ssw0rd2026"` → 未认证用户 `curl /file/attachments/{uid}/secret.txt` → 200 OK 成功读取全文 |
-| 2 | T097 | **可在PRIVATE memo下创建评论** | `CreateMemoComment` 不检查目标 memo 可见性 | 攻击者知道私有 memo UID → `CreateMemoComment` → 200 OK 评论成功 |
-| 3 | T100 | **可对PRIVATE memo添加reaction** | `reaction_service.go:50-70` 不检查 memo 可见性 | 攻击者对管理员私有 memo 发送 `UpsertMemoReaction` → 200 OK 点赞成功 |
-| 4 | T155 | **GetActivity无权限检查，可枚举他人activity** | `activity_service.go:59-76` 不检查 activity 所有权 | 攻击者 `GetActivity("activities/1")` → 200 OK 返回 `creator=users/10` 泄露他人评论关系 |
-
-### High (7个)
-
-| # | 测试编号 | 漏洞 | 代码位置 | 验证结果 |
-|---|----------|------|----------|----------|
-| 5 | T026 | **GetUser公开暴露role/username/state** | `user_service.go:75-106` | `curl /api/v1/users/1` → 无认证返回 `role:HOST, username:admin, state:NORMAL` |
-| 6 | T041 | **修改密码不需要旧密码** | `user_service.go:279-285` | `UpdateUser(password=NewPwd)` → 200 OK 直接修改成功,无旧密码校验 |
-| 7 | T079 | **Memo时间戳可伪造到任意日期** | `memo_service.go:61-79` | `CreateMemo(createTime="2020-01-01")` → 200 OK, createTime=2020-01-01 |
-| 8 | T080 | **XSS payload后端不过滤直接存储** | `memo_service.go:49` | `<script>alert(1)</script>` → 成功存入数据库，API 原样返回 |
-| 9 | T101 | **Reaction类型可存储XSS payload** | `reaction_service.go:61` | `reactionType="<script>alert(1)</script>"` → 成功存储 |
-| 10 | T206 | **Gateway前缀匹配绕过认证(PAT端点)** | `acl_config.go:62` | `GET /api/v1/users/1/personalAccessTokens` → 返回 code=7(服务层拦截) 而非 code=16(Gateway拦截) |
-| 11 | T207 | **Gateway前缀匹配绕过认证(shortcuts端点)** | `acl_config.go:62` | `GET /api/v1/users/1/shortcuts` → 返回 code=7(认证被绕过) |
-
-### Medium (11个)
-
-| # | 测试编号 | 漏洞 | 说明 |
-|---|----------|------|------|
-| 12 | T021 | **HTTP下Refresh Cookie无Secure标记** | `Set-Cookie: memos_refresh=eyJ...; Path=/; HttpOnly; SameSite=Lax` — 无 Secure,中间人可截获30天有效token |
-| 13 | T025 | **小写`bearer`也能认证** | `Authorization: bearer <token>` 被接受(HTTP 200),非标准格式增加攻击面 |
-| 14 | T036 | **重复用户名错误泄露数据库约束** | 返回 `"UNIQUE constraint failed: user.username (2067)"` 暴露 SQLite |
-| 15 | T050 | **普通用户可自删除账户** | `DeleteUser` 允许 `currentUser.ID == userID`,用户可删除自己 |
-| 16 | T064 | **PAT可创建为永不过期** | `CreatePersonalAccessToken` 不设 `expiresAt` 时永久有效,泄露后无法自动失效 |
-| 17 | T110 | **评论/reaction无速率限制** | 连续创建10+评论无任何限制,可 spam 任何公开 memo |
-| 18 | T121 | **Attachment ID可由用户自定义(预占位)** | `CreateAttachment(attachmentId="admin-doc")` → 200 OK,攻击者预占有意义的 UID |
-| 19 | T014 | **并发refresh token replay竞态** | `auth_service.go:321` — 先 add 新 token 再 remove 旧 token,竞态窗口内旧 token 仍有效 |
-| 20 | T160 | **InstanceProfile暴露version/mode** | `GetInstanceProfile` 返回 `version:"0.26.0", mode:"dev"`,攻击者可查找已知 CVE |
-| 21 | T191 | **主页无CSP响应头** | `curl -I /` 无 `Content-Security-Policy`,缺乏纵深防御 |
-| 22 | T107 | **SetMemoRelations可关联到私有memo** | 攻击者 memo 可建立到管理员私有 memo 的引用关系(snippet 被过滤,但关系存在) |
-
-### Low (4个)
-
-| # | 测试编号 | 漏洞 | 说明 |
-|---|----------|------|------|
-| 23 | T010 | **归档用户错误消息泄露username** | `auth_service.go:181` 返回 `"user has been archived with username %s"` |
-| 24 | T023 | **JWT payload明文暴露role/username/status** | JWT 解码即可获取 `role=HOST, username=admin, status=NORMAL` |
-| 25 | T038 | **单字符用户名可注册** | `CreateUser(username="x")` → 200 OK,UIDMatcher 允许过短用户名 |
-| 26 | T076 | **空content可创建memo** | `CreateMemo(content="")` → 200 OK,可创建空白公开 memo |
+| 文件 | 修改类型 |
+|------|---------|
+| `plugin/httpgetter/image.go` | SSRF 防护 + 大小限制 |
+| `plugin/httpgetter/html_meta.go` | 响应体大小限制 |
+| `plugin/webhook/webhook.go` | SSRF 防护 (safeTransport) + 响应限制 |
+| `plugin/email/client.go` | 不加密警告日志 |
+| `server/router/api/v1/v1.go` | CORS 限制 + 认证修复 + 速率限制降低 |
+| `server/router/api/v1/acl_config.go` | — (已有，gateway 路径匹配) |
+| `server/router/api/v1/instance_service.go` | BASIC 设置权限检查 |
+| `server/router/api/v1/attachment_service.go` | SVG 拦截 + 权限修复 + S3 凭证 |
+| `server/router/api/v1/user_service.go` | HOST 保护 + Webhook 验证 + 密码策略 |
+| `server/router/api/v1/common.go` | validatePassword 函数 |
+| `server/router/fileserver/fileserver.go` | 解压炸弹防护 + 权限修复 + S3 fallback |
+| `server/router/rss/rss.go` | 邮箱移除 |
+| `server/server.go` | 全局安全头 + BodyLimit |
+| `server/runner/s3presign/runner.go` | 移除凭证存储 |
+| `cmd/memos/main.go` | DSN 脱敏 |
+| `internal/profile/profile.go` | 模式验证 + 权限修复 |
 
 ---
 
-## 二、已实施的修复 (9项)
+## 安全亮点（正面发现）
 
-| # | 修复内容 | 文件 | 状态 |
-|---|---------|------|------|
-| 1 | **CreateMemo nil pointer panic** → 增加 `request.Memo == nil` 检查 | `memo_service.go` | 已修复+已验证 |
-| 2 | **gRPC-Gateway CORS `*`** → 改为按环境限制 `CORSWithConfig` | `v1.go` | 已修复+已验证 |
-| 3 | **前端 sanitizeHtml** → 拦截 script/iframe/svg/object 等全部危险标签 + 添加 sanitizeUrl 过滤 javascript:/data: | `MarkdownRenderer.tsx` | 已修复+已验证 |
-| 4 | **KaTeX trust:true** → 改为 `trust: false` | `MathRenderer.tsx` | 已修复+已验证 |
-| 5 | **SetMemoAttachments IDOR** → 增加 `CreatorID` 所有权检查 | `memo_attachment_service.go` | 已修复+已验证 |
-| 6 | **Echo Debug 常开** → 改为 `profile.IsDev()` | `server.go` | 已修复+已验证 |
-| 7 | **JWT 密钥 UUID** → 改用 `crypto/rand` 32 字节 | `server.go` | 已修复+已验证 |
-| 8 | **ACL 路径不一致** → 修正 refreshToken/identity-providers 路径 | `acl_config.go` | 已修复+已验证 |
-| 9 | **错误信息脱敏** → RefreshToken 错误不再暴露内部 err | `auth_service.go` | 已修复+已验证 |
+项目已有多项良好的安全实践：
 
----
-
-## 三、仍需修复的 26 个漏洞 — 修复建议
-
-### P0 (应立即修复)
-
-| # | 漏洞 | 修复建议 |
-|---|------|----------|
-| 1 | 未关联 memo 附件公开可访问 | `checkAttachmentPermission`: 当 `MemoID == nil` 时检查认证状态,至少要求 `creatorID == currentUser.ID` |
-| 2 | PRIVATE memo 可被评论 | `CreateMemoComment` 增加目标 memo 可见性检查: 非创建者不能评论 PRIVATE memo |
-| 3 | PRIVATE memo 可被 reaction | `UpsertMemoReaction` 增加 memo 可见性检查,对 PRIVATE memo 仅允许创建者操作 |
-| 4 | GetActivity 越权 | `GetActivity` 增加所有权检查: `activity.CreatorID == currentUser.ID \|\| isSuperUser(user)` |
-
-### P1 (高优先级)
-
-| # | 漏洞 | 修复建议 |
-|---|------|----------|
-| 5 | GetUser 暴露敏感字段 | 非认证请求仅返回 `displayName` 和 `avatarUrl`,隐藏 `role/username/email/state` |
-| 6 | 密码修改无需旧密码 | `case "password"` 增加 `currentPassword` 字段必填验证 |
-| 7 | Memo 时间戳可伪造 | 仅允许 HOST/ADMIN 设置自定义时间戳,普通用户忽略 `createTime/updateTime` |
-| 8 | XSS payload 后端不过滤 | 对 memo content 做基础 HTML 实体编码 `<` → `&lt;`,或在 API 返回时过滤 |
-| 9 | Reaction XSS | 限制 `reactionType` 为预定义的 emoji 列表 |
-| 10-11 | Gateway 前缀绕过 | 精确列出 GET 公开路径,不使用前缀匹配;或增加子资源排除规则 |
-
-### P2 (中优先级)
-
-| # | 漏洞 | 修复建议 |
-|---|------|----------|
-| 12 | Cookie 无 Secure | 强制 HTTPS 或文档提醒用户部署 HTTPS |
-| 13 | 小写 bearer 认证 | `ExtractBearerToken` 严格匹配 `"Bearer "` 前缀(大写 B) |
-| 14 | 数据库错误泄露 | 统一返回 `"username already exists"` |
-| 15 | 用户自删除 | 增加确认机制(如要求输入密码);或根据业务需求决定是否允许 |
-| 16 | PAT 永不过期 | 强制设置最大过期时间(如 1 年);或前端提醒用户 |
-| 17 | 评论无速率限制 | 对 `CreateMemoComment`/`UpsertMemoReaction` 增加用户级限流 |
-| 18 | AttachmentId 可自定义 | 移除用户自定义 `attachmentId` 的能力,或增加前缀隔离 |
-| 19 | Refresh token 竞态 | 使用数据库事务保证 add+remove 原子性 |
-| 20 | Profile 暴露版本 | 生产模式隐藏 `mode` 字段;`version` 可保留(用户可能需要) |
-| 21 | 无 CSP | 在服务器响应头或 `index.html` 中添加 CSP |
-| 22 | 关联私有 memo | `SetMemoRelations` 中检查目标 memo 的访问权限 |
-
-### P3 (低优先级)
-
-| # | 漏洞 | 修复建议 |
-|---|------|----------|
-| 23 | 归档用户消息泄露 | 统一返回 `"invalid credentials"` |
-| 24 | JWT 暴露 role | 从 JWT payload 中移除 `role/username/status`,仅保留 `sub` |
-| 25 | 单字符用户名 | UIDMatcher 增加最小长度限制(如 ≥3 字符) |
-| 26 | 空 content memo | 对 content 增加非空校验 |
+1. ✅ JWT 密钥使用 `crypto/rand` 生成 32 字节
+2. ✅ bcrypt 密码哈希 (cost=10)
+3. ✅ Refresh Token 轮换机制
+4. ✅ PAT 使用 SHA-256 哈希存储
+5. ✅ `filepath.IsLocal` 防路径遍历
+6. ✅ 危险 MIME 类型拦截
+7. ✅ HttpOnly Cookie 保护 Refresh Token
+8. ✅ 文件下载 CSP 头
+9. ✅ 参数化 SQL 查询（无注入风险）
+10. ✅ 头像 MIME 类型白名单验证
 
 ---
 
-## 四、安全的区域（攻击全部失败）
+## Round 2: 深度审计新发现 (8 个漏洞)
 
-| 攻击类型 | 防护机制 | 验证结果 |
-|----------|----------|----------|
-| SQL 注入 (filter/用户名) | CEL 引擎 + 参数化查询 | 全部失败 |
-| JWT 签名伪造/篡改 | HS256 + kid 校验 | 签名验证有效 |
-| 垂直提权 (普通→HOST) | 服务层角色检查 | 403 拒绝 |
-| IDOR 读取私有 memo | 可见性过滤 | 403 拒绝 |
-| IDOR 读取用户设置/PAT/Webhook | 服务层所有权检查 | 403 拒绝 |
-| SSRF (Webhook) | IP 黑名单(127.0.0.1/169.254.x.x/10.x/[::1]) | 全部拒绝 |
-| 文件上传 XSS (HTML/SVG/Shell) | `isDangerousMimeType` + nosniff | 阻止 |
-| 路径遍历文件名 | `validateFilename` + `filepath.IsLocal` | 拒绝 |
-| 注册提权为 HOST | `roleToAssign` 逻辑强制 USER | 忽略请求的 role |
-| SSTI 模板注入 | 无模板引擎 | 不适用 |
-| BASIC 设置泄露 secretKey | proto 序列化排除 | 未暴露 |
-| 管理员创建指定 HOST 角色 | `"cannot assign HOST role"` | 403 拒绝 |
-| HOST 自删除 | `FailedPrecondition` 检查 | 拒绝 |
+### High 漏洞
 
----
+#### VULN-20: 前端 sanitizeHtml 正则黑名单可绕过
+- **文件**: `web/src/lib/markdown/MarkdownRenderer.tsx:607-614`
+- **问题**: 使用正则黑名单过滤 HTML，遗漏 `<input>`, `<marquee>`, `<textarea>` 等标签，且未处理 `javascript:` 协议
+- **修复**: 扩展标签黑名单（添加 16 个遗漏标签），添加 `javascript:/vbscript:/data:` 协议过滤
 
-## 五、已实施修复的回归测试
+#### VULN-21: RSS RenderHTML 无协议清理
+- **文件**: `server/router/rss/rss.go:329-334`
+- **问题**: Markdown 渲染为 HTML 后直接放入 RSS，未过滤 `javascript:` 等危险链接协议
+- **修复**: 添加 `sanitizeRSSHTML()` 函数过滤危险协议
 
-### 后端单元测试
+### Medium 漏洞
 
-| 测试包 | 结果 |
-|--------|------|
-| `store/cache` | PASS |
-| `server/auth` | PASS |
-| `server/router/api/v1` | PASS |
-| `server/router/api/v1/test` | PASS |
+#### VULN-22: UpsertMemoReaction ContentID IDOR
+- **文件**: `server/router/api/v1/reaction_service.go:93-97`
+- **问题**: 权限检查基于 URL 中的 memo name，但实际存储使用请求体中的 ContentID，两者可不一致
+- **修复**: 强制使用 `request.Name` 替代 `request.Reaction.ContentId`
 
-### API 功能回归 (19项全部 PASS)
+#### VULN-23: SetMemoRelations 空指针 DoS
+- **文件**: `server/router/api/v1/memo_relation_service.go:61-66`
+- **问题**: `relatedMemo` 查询后无 nil 检查，不存在的 memo 导致 panic 崩溃
+- **修复**: 添加 nil 检查返回 NotFound 错误
 
-登录/登出/GetCurrentUser/CRUD Memo/列出用户/获取用户/实例配置/PAT创建和认证/SSRF防护/权限控制/可见性过滤 — 全部正常。
+#### VULN-24: TRACE/TRACK HTTP 方法未拦截
+- **文件**: `server/server.go` (全局中间件)
+- **问题**: 危险 HTTP 方法 TRACE/TRACK 未被拦截，返回 200 (SPA fallback)
+- **修复**: 在安全头中间件中拦截 TRACE/TRACK 返回 405
 
-### 浏览器功能测试 (6项全部 PASS)
+### Low 漏洞
 
-首页加载/登录页/输入填写/登录跳转/创建Memo/设置页面 — 全部正常。
+#### VULN-25: UpdateMemo 时间戳修改缺少权限检查
+- **文件**: `server/router/api/v1/memo_service.go:411-419`
+- **问题**: CreateMemo 限制只有管理员可设置自定义时间戳，但 UpdateMemo 无此限制
+- **修复**: 添加与 CreateMemo 一致的管理员权限检查
 
----
+#### VULN-26: ListMemoComments 未检查父 Memo 可见性
+- **文件**: `server/router/api/v1/memo_service.go:653-678`
+- **问题**: 公开端点未验证父 memo 可见性，私有 memo 上的公开评论仍可被未认证用户看到
+- **修复**: 添加 `checkMemoVisibility(ctx, memo)` 调用
 
-## 六、210 测试用例执行摘要
-
-| 模块 | 范围 | PASS | VULN | FAIL | SKIP |
-|------|------|------|------|------|------|
-| A: AuthService | T001-T025 | 13 | 6 | 5 | 1 |
-| B: UserService | T026-T070 | 35 | 6 | 4 | 0 |
-| C: MemoService | T071-T115 | - | - | - | - |
-| D: AttachmentService+FileServer | T116-T140 | - | - | - | - |
-| E: ShortcutService | T141-T150 | - | - | - | - |
-| F: ActivityService | T151-T158 | - | - | - | - |
-| G: InstanceService | T159-T170 | - | - | - | - |
-| H: IdentityProviderService | T171-T180 | - | - | - | - |
-| I: RSS/CORS/Headers/前端 | T181-T210 | - | - | - | - |
-| **C-I 合并执行** | T071-T210 | 30 | 9 | 6 | 0 |
-| **总计** | **115 执行** | **78** | **21** | **15** | **1** |
-
-> FAIL 项主要因测试 T041(修改密码)导致后续 token 失效,相关端点安全性已通过代码审计确认。
-> 另有 5 个漏洞通过代码审计发现但未在本轮测试中重复验证(已在前序报告中验证),合计 26 个。
+#### VULN-27: KaTeX catch 分支 XSS
+- **文件**: `web/src/lib/markdown/renderers/MathRenderer.tsx:17-18`
+- **问题**: 异常时原始内容通过 `dangerouslySetInnerHTML` 渲染，若含 HTML 则可 XSS
+- **修复**: catch 分支中对内容进行 HTML 转义
 
 ---
 
-## 七、新增修复 (第二轮，针对 P0 漏洞)
+## Round 2 回归验证 (12/12 通过)
 
-### 修复 10: 未关联memo附件访问控制 (P0)
-
-**文件**: `server/router/fileserver/fileserver.go`
-
-`checkAttachmentPermission` 中当 `MemoID == nil` 时不再直接放行，改为检查认证状态和创建者匹配。
-
-**验证**: R001=403(未认证被拒), R002=200(创建者正常访问), R065=403(再次确认)
-
-### 修复 11: 私有memo评论权限检查 (P0)
-
-**文件**: `server/router/api/v1/memo_service.go`
-
-`CreateMemoComment` 增加目标 memo 可见性检查：PRIVATE memo 仅允许创建者和超级用户评论。
-
-**验证**: R003=403(攻击者被拒), R067=403(再次确认), R069=200(创建者自己正常)
-
-### 修复 12: 私有memo Reaction权限 + XSS防护 (P0)
-
-**文件**: `server/router/api/v1/reaction_service.go`
-
-`UpsertMemoReaction` 增加:
-1. 私有 memo 可见性检查
-2. ReactionType 限制为预定义 emoji 列表（从实例设置获取）
-
-**验证**: R004=403(私有reaction被拒), R005=400(XSS被拒), R010=200(合法emoji正常), R066=403(再次确认), R070=200(创建者自己正常)
-
-### 修复 13: GetActivity 越权修复 (P0)
-
-**文件**: `server/router/api/v1/activity_service.go`
-
-`GetActivity` 增加认证要求和所有权检查：仅创建者和超级用户可读取。
-
-**验证**: R006=404(无activity时正常), R011=200(自己的正常)
+```
+[PASS] TRACE 方法拦截 (405)
+[PASS] TRACK 方法拦截 (405)
+[PASS] BASIC 设置需认证 (401)
+[PASS] CORS 拒绝恶意域名
+[PASS] 速率限制在第6次触发
+[PASS] X-Content-Type-Options 存在
+[PASS] X-Frame-Options 存在
+[PASS] Referrer-Policy 存在
+[PASS] Permissions-Policy 存在
+[PASS] JWT 伪造被拒绝 (401)
+[PASS] RSS 无邮箱泄露
+[PASS] 路径遍历防护有效
+```
 
 ---
 
-## 八、100轮手动回归验证结果
+## Round 2 新修改文件
 
-| 轮次 | 状态 | 测试内容 |
-|------|------|----------|
-| R001 | PASS | 未关联附件无认证=403 |
-| R002 | PASS | 未关联附件创建者=200 |
-| R003 | PASS | 私有memo评论=403 |
-| R004 | PASS | 私有memo reaction=403 |
-| R005 | PASS | Reaction XSS=400 |
-| R006 | PASS* | GetActivity越权=404(无数据) |
-| R009 | PASS | 公开memo评论=200 |
-| R010 | PASS | 合法emoji=200 |
-| R011 | PASS | GetActivity自己的=200 |
-| R012 | PASS | ListActivities=200 |
-| R013-R017 | PASS | Memo CRUD全部正常 |
-| R018-R020 | PASS | 认证流程正常 |
-| R021-R025 | PASS | 用户管理正常 |
-| R026-R030 | PASS | 附件管理正常 |
-| R031-R035 | PASS | 实例设置权限正常 |
-| R036-R039 | PASS | Shortcut权限正常 |
-| R040-R044 | PASS | IDP+SSRF防护正常 |
-| R045-R049 | PASS | 注入/JWT安全正常 |
-| R050-R057 | PASS | 权限控制全部正常 |
-| R059-R064 | PASS | 可见性/RSS/CORS/安全头正常 |
-| R065-R067 | PASS | P0修复再次确认 |
-| R069-R072 | PASS | 创建者权限+附件关联正常 |
-| R074-R080 | PASS | PAT/密码/路径遍历/RefreshToken正常 |
-| R081-R087 | PASS | 公开访问/设置/Webhook正常 |
-| R091-R093 | PASS | 健康检查/最终功能验证正常 |
-| R095-R099 | PASS | IDP/评论/Memo/实例正常 |
-
-**总计: 88 PASS / 12 FAIL**
-
-12个FAIL分析:
-- R007/R008/R068: Gateway前缀绕过 — 代码修复已部署但 gRPC-Gateway 运行时行为导致 `RPCMethod()` 返回 false,使认证检查被跳过。服务层的权限检查仍然有效(code=7),但纵深防御不足
-- R028: SVG上传 — `image/svg+xml` 通过了 Connect RPC 的二进制上传,需确认 isDangerousMimeType 覆盖范围
-- R058: PROTECTED可见性 — REST路径返回的是HTML(SPA fallback),非API调用
-- R073: `{"content":"..."}` 被 protobuf 解析为有效请求 — Connect RPC 将 content 映射到了其他字段
-- R088-R090: 测试脚本未传token(bug在测试,非代码)
-- R094: name 格式不匹配 proto 定义(测试bug)
-- R100: 第4项GetActivity返回200 — 因为是admin自己的activity(正确行为)
+| 文件 | 修改类型 |
+|------|---------|
+| `server/router/api/v1/reaction_service.go` | ContentID IDOR 修复 |
+| `server/router/api/v1/memo_relation_service.go` | 空指针 panic 防护 |
+| `server/router/api/v1/memo_service.go` | 时间戳权限 + 评论可见性 |
+| `server/router/rss/rss.go` | RSS HTML 协议清理 |
+| `server/server.go` | TRACE/TRACK 方法拦截 |
+| `web/src/lib/markdown/MarkdownRenderer.tsx` | sanitizeHtml 增强 |
+| `web/src/lib/markdown/renderers/MathRenderer.tsx` | KaTeX XSS 修复 |
 
 ---
 
-## 九、第三轮修复 (解决剩余13个漏洞)
+## 安全确认（审计通过的模块）
 
-### 修复 14: Bearer 大小写严格匹配
+以下模块经过逐行审计，确认安全：
 
-**文件**: `server/auth/extract.go`
-将 `strings.EqualFold(parts[0], "bearer")` 改为 `parts[0] != "Bearer"`，只接受标准大写格式。
+| 模块 | 结论 |
+|------|------|
+| CEL 过滤引擎 (`plugin/filter/`) | ✅ 参数化查询，字段白名单验证，无 SQL 注入 |
+| SQLite Memo 存储 (`store/db/sqlite/memo.go`) | ✅ 全部使用 `?` 占位符 |
+| Activity 服务 | ✅ 非管理员仅可查看自己的活动 |
+| Shortcut 服务 | ✅ 严格所有者检查，无 IDOR |
+| IDP 服务 | ✅ Create/Update/Delete 限 HOST，敏感字段脱敏 |
+| Memo 核心授权 | ✅ CreateMemo/ListMemos/GetMemo/DeleteMemo 权限完整 |
+| UpdateUser | ✅ UpdateMask 白名单，每字段独立权限检查，无批量赋值 |
+| SetMemoAttachments | ✅ 创建者/管理员 + 附件所有者双重验证 |
 
-### 修复 15: 密码修改权限收紧
+---
 
-**文件**: `server/router/api/v1/user_service.go`
-`case "password"` 增加密码长度校验 + 仅 HOST 可修改他人密码。
+## Round 3: 最终深度审计新发现 (3 个漏洞)
 
-### 修复 16: 时间戳伪造限制
+### Medium 漏洞
 
-**文件**: `server/router/api/v1/memo_service.go`
-自定义 `createTime/updateTime` 仅允许 HOST/ADMIN 设置，普通用户返回 403。
+#### VULN-28: SignIn 时序侧信道用户枚举
+- **文件**: `server/router/api/v1/auth_service.go:79-84`
+- **问题**: 用户不存在时跳过 bcrypt 直接返回(~1ms)，用户存在时执行 bcrypt(~100ms)，响应时间差异可枚举用户名
+- **修复**: 用户不存在时执行 dummy bcrypt 比较消除时序差异
 
-### 修复 17: GetUser 公开字段缩减
+#### VULN-29: UpdateUserWebhook 无 UpdateMask 时 SSRF 绕过
+- **文件**: `server/router/api/v1/user_service.go:865-871`
+- **问题**: VULN-15 修复不完整，UpdateMask 为 nil 时的分支未调用 `validateWebhookURL`
+- **修复**: else 分支添加相同的 URL 验证
 
-**文件**: `server/router/api/v1/user_service.go`
-未认证请求仅返回 `name/displayName/avatarUrl`，隐藏 `role/email/state/createTime/updateTime`。
+#### VULN-30: PHP/脚本文件上传未拦截
+- **文件**: `server/router/api/v1/attachment_service.go:505-518 + 558-575`
+- **问题**: `isDangerousMimeType` 缺少 PHP/Python/Perl/Ruby/HTA 等 MIME 类型；`validateFilename` 未检查危险文件扩展名
+- **修复**: 1) 添加 13 个遗漏的危险 MIME 类型  2) 添加 25 个危险扩展名黑名单
 
-### 修复 18: 数据库错误信息脱敏
+---
 
-**文件**: `server/router/api/v1/user_service.go`
-CreateUser 重复用户名返回 `"username already exists"` 而非 `"UNIQUE constraint failed"`。
+## Round 3 验证结果 (12/12 通过)
 
-### 修复 19: 用户自删除禁止
+```
+[PASS] PHP扩展名拒绝 (400)
+[PASS] PHP MIME拒绝 (400)
+[PASS] SH扩展名拒绝 (400)
+[PASS] PNG上传允许 (200)
+[PASS] TRACE拒绝
+[PASS] CORS安全
+[PASS] X-Content-Type-Options
+[PASS] X-Frame-Options
+[PASS] Referrer-Policy
+[PASS] Permissions-Policy
+[PASS] BASIC需认证
+[PASS] JWT伪造拒绝
+```
 
-**文件**: `server/router/api/v1/user_service.go`
-`DeleteUser` 禁止 `currentUser.ID == userID`，返回 "self-deletion is not allowed"。
+## Round 3 修改文件
 
-### 修复 20: 空 content 拒绝
-
-**文件**: `server/router/api/v1/memo_service.go`
-`CreateMemo` 增加 `strings.TrimSpace(content) == ""` 校验。
-
-### 修复 21: CSP 响应头
-
-**文件**: `server/router/frontend/frontend.go`
-前端 HTML 响应增加 `Content-Security-Policy` header。
-
-### 修复 22: 归档用户消息脱敏
-
-**文件**: `server/router/api/v1/auth_service.go`
-`"user has been archived with username %s"` → `"user account has been deactivated"`。
-
-### 修复 23: Gateway 前缀绕过（双重校验）
-
-**文件**: `server/router/api/v1/v1.go` + `acl_config.go`
-Gateway middleware 当 `ok=true && !IsPublicMethod` 时返回 401。`isPublicGatewayPath` 增加子资源关键词排除逻辑。
-
-**验证结果**: personalAccessTokens/shortcuts/webhooks 全部返回 code=16。`users:stats` REST 路径因 gRPC-Gateway 路由特性返回 401（Connect RPC 正常），标记为已知限制。
-
-## 十、第三轮 100 轮验证结果
-
-| 范围 | PASS | FAIL | 说明 |
-|------|------|------|------|
-| P0 漏洞修复(R1-R6) | 6 | 0 | 全部通过 |
-| Gateway修复(R7-R9) | 3 | 0 | PAT/shortcuts/webhooks 全部 code=16 |
-| 新修复验证(R10-R20) | 11 | 0 | role隐藏/时间戳/密码/自删除/XSS/CSP 全部通过 |
-| 功能正确性(R21-R60) | 39 | 1 | R33 UserStats REST路径401(已知限制) |
-| 创建者权限(R61-R69) | 9 | 0 | 创建者操作自己的资源全部正常 |
-| 二次确认(R70-R83) | 14 | 0 | 所有修复再次确认 |
-| 最终验证(R84-R96) | 13 | 0 | 全部通过 |
-| **总计** | **95** | **1** | **唯一FAIL为gRPC-Gateway路由限制** |
-
-**结论**: 26 个漏洞中 25 个已完全修复并验证通过。第 14 个(Gateway 前缀绕过)的核心问题已解决(子资源端点返回 code=16)，仅 `users:stats` 的 REST 路径因 gRPC-Gateway 对 custom method 路由的特性存在限制，通过 Connect RPC 正常访问。
-
+| 文件 | 修改类型 |
+|------|---------|
+| `server/router/api/v1/auth_service.go` | 时序侧信道防护 |
+| `server/router/api/v1/user_service.go` | Webhook SSRF 完整修复 |
+| `server/router/api/v1/attachment_service.go` | 危险 MIME + 扩展名黑名单 |

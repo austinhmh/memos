@@ -175,8 +175,8 @@ func (s *APIV1Service) CreateUser(ctx context.Context, request *v1pb.CreateUserR
 		}, nil
 	}
 
-	if len(request.User.Password) < 8 {
-		return nil, status.Errorf(codes.InvalidArgument, "password must be at least 8 characters long")
+	if err := validatePassword(request.User.Password); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid password: %v", err)
 	}
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(request.User.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -295,8 +295,8 @@ func (s *APIV1Service) UpdateUser(ctx context.Context, request *v1pb.UpdateUserR
 			}
 			update.Role = &role
 		case "password":
-			if len(request.User.Password) < 8 {
-				return nil, status.Errorf(codes.InvalidArgument, "password must be at least 8 characters")
+			if err := validatePassword(request.User.Password); err != nil {
+				return nil, status.Errorf(codes.InvalidArgument, "invalid password: %v", err)
 			}
 			// Only HOST can change other users' passwords
 			if currentUser.ID != userID && currentUser.Role != store.RoleHost {
@@ -309,6 +309,9 @@ func (s *APIV1Service) UpdateUser(ctx context.Context, request *v1pb.UpdateUserR
 			passwordHashStr := string(passwordHash)
 			update.PasswordHash = &passwordHashStr
 		case "state":
+			if user.Role == store.RoleHost && currentUser.Role != store.RoleHost {
+				return nil, status.Errorf(codes.PermissionDenied, "cannot modify HOST user state")
+			}
 			rowStatus := convertStateToStore(request.User.State)
 			update.RowStatus = &rowStatus
 		default:
@@ -847,7 +850,11 @@ func (s *APIV1Service) UpdateUserWebhook(ctx context.Context, request *v1pb.Upda
 			switch path {
 			case "url":
 				if request.Webhook.Url != "" {
-					updatedWebhook.Url = strings.TrimSpace(request.Webhook.Url)
+					trimmedURL := strings.TrimSpace(request.Webhook.Url)
+					if err := validateWebhookURL(trimmedURL); err != nil {
+						return nil, status.Errorf(codes.InvalidArgument, "invalid webhook URL: %v", err)
+					}
+					updatedWebhook.Url = trimmedURL
 				}
 			case "display_name":
 				updatedWebhook.Title = request.Webhook.DisplayName
@@ -858,7 +865,11 @@ func (s *APIV1Service) UpdateUserWebhook(ctx context.Context, request *v1pb.Upda
 	} else {
 		// If no update mask is provided, update all fields
 		if request.Webhook.Url != "" {
-			updatedWebhook.Url = strings.TrimSpace(request.Webhook.Url)
+			trimmedURL := strings.TrimSpace(request.Webhook.Url)
+			if err := validateWebhookURL(trimmedURL); err != nil {
+				return nil, status.Errorf(codes.InvalidArgument, "invalid webhook URL: %v", err)
+			}
+			updatedWebhook.Url = trimmedURL
 		}
 		updatedWebhook.Title = request.Webhook.DisplayName
 	}
