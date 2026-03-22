@@ -1,0 +1,49 @@
+web/src/components/BlogEditor/plugins/BookmarkPlugin.ts
+  97e660e74fb8f950 1-465
+web/src/index.css
+  bbbe512499d592e4 1688
+  97e660e74fb8f950 1104-1357,1689
+web/src/components/BlogEditor/lib/markdownParser.ts
+  97e660e74fb8f950 78-123,214-219
+web/src/components/BlogEditor/lib/markdownSerializer.ts
+  97e660e74fb8f950 149-152
+web/src/components/BlogEditor/menus/slashMenuItems.ts
+  97e660e74fb8f950 5,191,195-200
+web/src/components/BlogEditor/index.tsx
+  97e660e74fb8f950 46,488,610
+web/src/components/BlogEditor/lib/schema.ts
+  97e660e74fb8f950 209-230
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "e0c140c8ec7a80985c689b322ab6b6372e4c082b",
+  "prompts": {
+    "97e660e74fb8f950": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "dd865655-875f-4756-93c3-039bd807115a",
+        "model": "claude-4.6-opus-high-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 1042,
+      "total_deletions": 359,
+      "accepted_lines": 811,
+      "overriden_lines": 0
+    },
+    "bbbe512499d592e4": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "3913394f-ebe7-4d38-875d-93b992d9850d",
+        "model": "claude-4.6-opus-high-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 236,
+      "total_deletions": 102,
+      "accepted_lines": 135,
+      "overriden_lines": 0
+    }
+  }
+}
