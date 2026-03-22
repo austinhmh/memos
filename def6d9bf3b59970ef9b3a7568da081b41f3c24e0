@@ -1,0 +1,25 @@
+web/src/index.css
+  ae67783d27a75ba4 865-867,1156-1203
+web/src/lib/markdown/renderers/CodeBlockRenderer.tsx
+  ae67783d27a75ba4 3-4,15-16,20-22,54-62,74,88-92,95-114,116-118,120-130,132-133
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "def6d9bf3b59970ef9b3a7568da081b41f3c24e0",
+  "prompts": {
+    "ae67783d27a75ba4": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "86897878-ffe5-4048-a6cd-20a00bd10ed0",
+        "model": "claude-4.6-opus-high-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 110,
+      "total_deletions": 15,
+      "accepted_lines": 110,
+      "overriden_lines": 0
+    }
+  }
+}
