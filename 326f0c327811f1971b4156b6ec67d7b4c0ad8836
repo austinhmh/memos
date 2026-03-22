@@ -1,0 +1,29 @@
+web/src/layouts/RootLayout.tsx
+  ae67783d27a75ba4 52
+web/src/components/RandomBackground.tsx
+  ae67783d27a75ba4 25,43-48,52-54,59-60,62-63,70-71
+web/src/main.tsx
+  ae67783d27a75ba4 46
+web/src/router/index.tsx
+  ae67783d27a75ba4 39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "326f0c327811f1971b4156b6ec67d7b4c0ad8836",
+  "prompts": {
+    "ae67783d27a75ba4": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "86897878-ffe5-4048-a6cd-20a00bd10ed0",
+        "model": "claude-4.6-opus-high-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 19,
+      "total_deletions": 54,
+      "accepted_lines": 19,
+      "overriden_lines": 0
+    }
+  }
+}
