@@ -66,7 +66,7 @@ const RandomBackground = () => {
   if (!bgUrl) return null;
 
   return (
-    <div className="fixed inset-0 -z-10 overflow-hidden">
+    <div className="fixed inset-0 -z-10 overflow-hidden" style={{ height: "100dvh" }}>
       <img
         src={bgUrl}
         alt=""

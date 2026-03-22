@@ -294,9 +294,13 @@ const MemoDetail = () => {
         )}
       </div>
 
-      {/* Mobile: attachments + comments inline */}
+      {/* Mobile: sidebar + attachments + comments inline */}
       {!md && (
         <div className="w-full px-4 sm:px-6">
+          <div className="mt-4 pt-4 border-t border-border">
+            <MemoDetailSidebar className="py-2" memo={memo} parentPage={locationState?.from} />
+          </div>
+
           {memo.attachments.length > 0 && (
             <div className="mt-4">
               <AttachmentList attachments={memo.attachments} />

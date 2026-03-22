@@ -200,9 +200,13 @@ const BlogDetail = () => {
             <BlogEditor memo={memo} readonly={readonly} />
           </Suspense>
 
-          {/* Mobile: inline attachments + comments */}
+          {/* Mobile: sidebar + attachments + comments */}
           {!md && (
             <>
+              <div className="mt-6 pt-4 border-t border-border">
+                <MemoDetailSidebar className="py-2" memo={memo} parentPage={locationState?.from || "/blog"} />
+              </div>
+
               {memo.attachments.length > 0 && (
                 <div className="mt-4">
                   <AttachmentList attachments={memo.attachments} />
