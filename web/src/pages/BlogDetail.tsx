@@ -59,12 +59,39 @@ const BlogDetail = () => {
   const currentUser = useCurrentUser();
   const t = useTranslate();
   const md = useMediaQuery("md");
-  const lgLayout = useMediaQuery("lg");
   const updateMetadataMemo = useUpdateMemo();
   const [showCommentEditor, setShowCommentEditor] = useState(false);
 
-  const leftPanel = useHoverPanel();
-  const rightPanel = useHoverPanel();
+  // Resizable panels
+  const [leftWidth, setLeftWidth] = useState(20);
+  const [rightWidth, setRightWidth] = useState(20);
+  const draggingRef = useRef<"left" | "right" | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const handleMouseDown = useCallback((side: "left" | "right") => {
+    draggingRef.current = side;
+    const onMouseMove = (e: MouseEvent) => {
+      if (!containerRef.current || !draggingRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const pct = ((e.clientX - rect.left) / rect.width) * 100;
+      if (draggingRef.current === "left") {
+        setLeftWidth(Math.max(10, Math.min(35, pct)));
+      } else {
+        setRightWidth(Math.max(10, Math.min(35, 100 - pct)));
+      }
+    };
+    const onMouseUp = () => {
+      draggingRef.current = null;
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+  }, []);
 
   const { data: memo, isLoading, error } = useMemoQuery(memoName, { enabled: !!memoName });
   const { data: commentsResponse } = useMemoComments(memoName, { enabled: !!memo });

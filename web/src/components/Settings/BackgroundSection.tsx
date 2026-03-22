@@ -1,5 +1,5 @@
 import { create } from "@bufbuild/protobuf";
-import { ImagePlusIcon, Trash2Icon, ImageIcon } from "lucide-react";
+import { ImagePlusIcon, Trash2Icon, ImageIcon, Loader2Icon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { attachmentServiceClient } from "@/connect";
 import { AttachmentSchema } from "@/types/proto/api/v1/attachment_service_pb";
@@ -13,9 +13,17 @@ interface BackgroundImage {
   filename: string;
 }
 
+const BG_PREFIX = "_bg_";
 const STORAGE_KEY = "memos-background-images";
 
-const loadBackgroundImages = (): BackgroundImage[] => {
+const isBgAttachment = (filename: string) => filename.startsWith(BG_PREFIX);
+
+const syncToLocalStorage = (images: BackgroundImage[]) => {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(images));
+  window.dispatchEvent(new CustomEvent("background-images-changed"));
+};
+
+const loadFromLocalStorage = (): BackgroundImage[] => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     return raw ? JSON.parse(raw) : [];
@@ -24,20 +32,37 @@ const loadBackgroundImages = (): BackgroundImage[] => {
   }
 };
 
-const saveBackgroundImages = (images: BackgroundImage[]) => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(images));
-  window.dispatchEvent(new CustomEvent("background-images-changed"));
-};
+async function fetchBgImagesFromServer(): Promise<BackgroundImage[]> {
+  try {
+    const { attachments } = await attachmentServiceClient.listAttachments({});
+    return attachments
+      .filter((a) => isBgAttachment(a.filename))
+      .map((a) => ({
+        url: getAttachmentUrl(a),
+        name: a.name,
+        filename: a.filename.slice(BG_PREFIX.length),
+      }));
+  } catch {
+    return [];
+  }
+}
 
 const BackgroundSection = () => {
-  const [images, setImages] = useState<BackgroundImage[]>(loadBackgroundImages);
+  const [images, setImages] = useState<BackgroundImage[]>(loadFromLocalStorage);
   const [uploading, setUploading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const handler = () => setImages(loadBackgroundImages());
-    window.addEventListener("background-images-changed", handler);
-    return () => window.removeEventListener("background-images-changed", handler);
+    let cancelled = false;
+    (async () => {
+      const serverImages = await fetchBgImagesFromServer();
+      if (cancelled) return;
+      setImages(serverImages);
+      syncToLocalStorage(serverImages);
+      setLoading(false);
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   const handleUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -53,7 +78,7 @@ const BackgroundSection = () => {
 
         const buffer = new Uint8Array(await file.arrayBuffer());
         const attachmentRequest = create(AttachmentSchema, {
-          filename: file.name,
+          filename: `${BG_PREFIX}${file.name}`,
           size: BigInt(file.size),
           type: file.type,
           content: buffer,
@@ -64,12 +89,16 @@ const BackgroundSection = () => {
         });
 
         const url = getAttachmentUrl(attachment);
-        newImages.push({ url, name: attachment.name, filename: attachment.filename });
+        newImages.push({
+          url,
+          name: attachment.name,
+          filename: attachment.filename.slice(BG_PREFIX.length),
+        });
       }
 
       const updated = [...images, ...newImages];
       setImages(updated);
-      saveBackgroundImages(updated);
+      syncToLocalStorage(updated);
     } catch (err) {
       console.error("Failed to upload background image:", err);
     } finally {
@@ -78,20 +107,31 @@ const BackgroundSection = () => {
     }
   }, [images]);
 
-  const handleRemove = useCallback((index: number) => {
+  const handleRemove = useCallback(async (index: number) => {
+    const img = images[index];
+    try {
+      await attachmentServiceClient.deleteAttachment({ name: img.name });
+    } catch (err) {
+      console.error("Failed to delete background attachment:", err);
+    }
     const updated = images.filter((_, i) => i !== index);
     setImages(updated);
-    saveBackgroundImages(updated);
+    syncToLocalStorage(updated);
   }, [images]);
 
   return (
     <SettingSection>
       <SettingGroup title="背景图 Background Images" description="上传图片作为页面背景，每次访问随机展示 Upload images for random page backgrounds">
         <div className="flex flex-col gap-4 w-full">
-          {images.length > 0 && (
+          {loading ? (
+            <div className="flex items-center justify-center py-8 text-muted-foreground">
+              <Loader2Icon className="w-5 h-5 animate-spin mr-2" />
+              <span className="text-sm">加载中 Loading...</span>
+            </div>
+          ) : images.length > 0 ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
               {images.map((img, index) => (
-                <div key={img.url} className="group relative aspect-video rounded-lg overflow-hidden border border-border bg-muted">
+                <div key={img.name} className="group relative aspect-video rounded-lg overflow-hidden border border-border bg-muted">
                   <img
                     src={img.url}
                     alt={img.filename}
@@ -113,9 +153,7 @@ const BackgroundSection = () => {
                 </div>
               ))}
             </div>
-          )}
-
-          {images.length === 0 && (
+          ) : (
             <div className="flex flex-col items-center justify-center py-8 text-muted-foreground border border-dashed border-border rounded-lg">
               <ImageIcon className="w-10 h-10 mb-2 opacity-40" />
               <p className="text-sm">暂无背景图 No background images yet</p>
@@ -153,4 +191,4 @@ const BackgroundSection = () => {
 
 export default BackgroundSection;
 
-export { loadBackgroundImages, STORAGE_KEY };
+export { loadFromLocalStorage as loadBackgroundImages, fetchBgImagesFromServer, STORAGE_KEY, BG_PREFIX };

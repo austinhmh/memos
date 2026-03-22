@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { STORAGE_KEY } from "@/components/Settings/BackgroundSection";
+import { STORAGE_KEY, fetchBgImagesFromServer } from "@/components/Settings/BackgroundSection";
 
 interface BackgroundImage {
   url: string;
@@ -12,29 +12,51 @@ const pickRandom = (images: BackgroundImage[]): string | null => {
   return images[Math.floor(Math.random() * images.length)].url;
 };
 
+const applyBgClass = (url: string | null) => {
+  if (url) {
+    document.documentElement.classList.add("has-bg-image");
+  } else {
+    document.documentElement.classList.remove("has-bg-image");
+  }
+};
+
 const RandomBackground = () => {
   const [bgUrl, setBgUrl] = useState<string | null>(null);
   const prevPathRef = useRef(window.location.pathname);
+  const serverFetchedRef = useRef(false);
 
   useEffect(() => {
-    const load = () => {
+    const loadFromCache = (): BackgroundImage[] => {
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
-        const images: BackgroundImage[] = raw ? JSON.parse(raw) : [];
-        const url = pickRandom(images);
-        setBgUrl(url);
-        if (url) {
-          document.documentElement.classList.add("has-bg-image");
-        } else {
-          document.documentElement.classList.remove("has-bg-image");
-        }
+        return raw ? JSON.parse(raw) : [];
       } catch {
-        setBgUrl(null);
-        document.documentElement.classList.remove("has-bg-image");
+        return [];
       }
     };
 
+    const apply = (images: BackgroundImage[]) => {
+      const url = pickRandom(images);
+      setBgUrl(url);
+      applyBgClass(url);
+    };
+
+    const load = () => {
+      apply(loadFromCache());
+    };
+
+    // Initial: try cache first, then fetch from server to sync
     load();
+
+    if (!serverFetchedRef.current) {
+      serverFetchedRef.current = true;
+      fetchBgImagesFromServer().then((serverImages) => {
+        if (serverImages.length > 0) {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(serverImages));
+          apply(serverImages);
+        }
+      });
+    }
 
     const handler = () => load();
     window.addEventListener("background-images-changed", handler);
