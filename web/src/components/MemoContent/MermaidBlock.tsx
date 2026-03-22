@@ -1,7 +1,7 @@
-import mermaid from "mermaid";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { normalizeMermaidCode } from "@/lib/mermaid/normalizeMermaidCode";
+import { renderMermaid } from "@/lib/mermaid/mermaidInit";
 import { cn } from "@/lib/utils";
 import { getThemeWithFallback, resolveTheme, setupSystemThemeListener } from "@/utils/theme";
 import { extractCodeContent } from "./utils";
@@ -24,59 +24,25 @@ export const MermaidBlock = ({ children, className }: MermaidBlockProps) => {
 
   const codeContent = extractCodeContent(children);
 
-  // Get theme preference (reactive via AuthContext)
-  // Falls back to localStorage or system preference if no user setting
   const themePreference = getThemeWithFallback(userGeneralSetting?.theme);
-
-  // Resolve theme to actual value (handles "system" theme + system theme changes)
   const currentTheme = useMemo(() => resolveTheme(themePreference), [themePreference, systemThemeChange]);
 
-  // Listen for OS theme changes when using "system" theme preference
   useEffect(() => {
-    if (themePreference !== "system") {
-      return;
-    }
-
+    if (themePreference !== "system") return;
     return setupSystemThemeListener(() => {
       setSystemThemeChange((prev) => prev + 1);
     });
   }, [themePreference]);
 
-  // Render Mermaid diagram when content or theme changes
   useEffect(() => {
-    if (!codeContent?.trim()) {
-      return;
-    }
+    if (!codeContent?.trim()) return;
 
-    const renderDiagram = async () => {
+    const render = async () => {
       try {
-        const id = `mermaid-${Math.random().toString(36).substring(7)}`;
-        const mermaidTheme = getMermaidTheme(currentTheme);
-
-        mermaid.initialize({
-          startOnLoad: false,
-          theme: mermaidTheme,
-          securityLevel: "strict",
-          fontFamily: "inherit",
-          flowchart: {
-            padding: 20,
-            nodeSpacing: 80,
-            rankSpacing: 60,
-            useMaxWidth: true,
-            htmlLabels: true,
-            curve: "basis",
-            defaultRenderer: "dagre-wrapper",
-          },
-          block: {
-            padding: 20,
-          },
-          sequence: {
-            useMaxWidth: true,
-          },
-        });
-
         const normalizedCode = normalizeMermaidCode(codeContent);
-        const { svg: renderedSvg } = await mermaid.render(id, normalizedCode);
+        const { svg: renderedSvg } = await renderMermaid(normalizedCode, {
+          theme: getMermaidTheme(currentTheme),
+        });
         setSvg(renderedSvg);
         setError("");
       } catch (err) {
@@ -85,10 +51,9 @@ export const MermaidBlock = ({ children, className }: MermaidBlockProps) => {
       }
     };
 
-    renderDiagram();
+    render();
   }, [codeContent, currentTheme]);
 
-  // If there's an error, fall back to showing the code
   if (error) {
     return (
       <div className="w-full">

@@ -1,7 +1,7 @@
-import mermaid from "mermaid";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { normalizeMermaidCode } from "@/lib/mermaid/normalizeMermaidCode";
+import { renderMermaid } from "@/lib/mermaid/mermaidInit";
 import { cn } from "@/lib/utils";
 import { getThemeWithFallback, resolveTheme, setupSystemThemeListener } from "@/utils/theme";
 
@@ -30,33 +30,19 @@ export const MermaidBlockRenderer: React.FC<MermaidBlockRendererProps> = ({ code
 
   useEffect(() => {
     if (!code?.trim()) return;
-    const renderDiagram = async () => {
+    const render = async () => {
       try {
-        const id = `mermaid-${Math.random().toString(36).substring(7)}`;
-        mermaid.initialize({
-          startOnLoad: false,
-          theme: getMermaidTheme(currentTheme),
-          securityLevel: "strict",
-          fontFamily: "inherit",
-          flowchart: {
-            padding: 20,
-            nodeSpacing: 80,
-            rankSpacing: 60,
-            useMaxWidth: true,
-            htmlLabels: true,
-            curve: "basis",
-            defaultRenderer: "dagre-wrapper",
-          },
-        });
         const normalizedCode = normalizeMermaidCode(code);
-        const { svg: renderedSvg } = await mermaid.render(id, normalizedCode);
+        const { svg: renderedSvg } = await renderMermaid(normalizedCode, {
+          theme: getMermaidTheme(currentTheme),
+        });
         setSvg(renderedSvg);
         setError("");
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to render diagram");
       }
     };
-    renderDiagram();
+    render();
   }, [code, currentTheme]);
 
   if (error) {

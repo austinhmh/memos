@@ -229,12 +229,15 @@ class MermaidRenderer {
 
     try {
       mermaidLib ??= (await import("mermaid")).default;
+      const elkLayouts = (await import("@mermaid-js/layout-elk")).default;
+      mermaidLib.registerLayoutLoaders(elkLayouts);
       mermaidLib.initialize({
         startOnLoad: true,
         suppressErrorRendering: true,
         fontFamily: getComputedStyle(this.diagramElement).fontFamily || "inherit",
         theme: isDark ? "dark" : "default",
         securityLevel: "strict",
+        layout: "elk",
         flowchart: {
           padding: 20,
           nodeSpacing: 80,
@@ -242,7 +245,7 @@ class MermaidRenderer {
           useMaxWidth: true,
           htmlLabels: true,
           curve: "basis",
-          defaultRenderer: "dagre-wrapper",
+          defaultRenderer: "elk",
         },
       });
 
