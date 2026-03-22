@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { EditorView } from "prosemirror-view";
 import type { SlashMenuItem, SlashMenuState } from "../plugins/SlashMenuPlugin";
@@ -167,10 +167,12 @@ export const SlashMenu = ({ view, items, menuState }: SlashMenuProps) => {
             <span
                   className="slash-menu-icon"
                   style={{
-                    color: item.iconColor || undefined,
                     backgroundColor: item.iconBg || undefined,
                   }}
-                >{item.icon}</span>
+                >{item.icon && item.iconColor && React.isValidElement(item.icon)
+                    ? React.cloneElement(item.icon as React.ReactElement<{ color?: string }>, { color: item.iconColor })
+                    : item.icon
+                }</span>
               <span className="slash-menu-text">
                 <span className="slash-menu-label">{item.label}</span>
                 {item.subtitle && <span className="slash-menu-subtitle">{item.subtitle}</span>}
