@@ -1,0 +1,29 @@
+web/src/lib/mermaid/mermaidInit.ts
+  ae67783d27a75ba4 1-48
+web/src/components/BlogEditor/plugins/MermaidPlugin.ts
+  ae67783d27a75ba4 232-233,240,248
+web/src/components/MemoContent/MermaidBlock.tsx
+  ae67783d27a75ba4 4,31,38,40,43-45,54
+web/src/lib/markdown/renderers/MermaidBlockRenderer.tsx
+  ae67783d27a75ba4 4,33,35-36,45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "73d5dc808380512aa1d4e6f1f1500a3524a0e487",
+  "prompts": {
+    "ae67783d27a75ba4": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "86897878-ffe5-4048-a6cd-20a00bd10ed0",
+        "model": "claude-4.6-opus-high-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 66,
+      "total_deletions": 64,
+      "accepted_lines": 66,
+      "overriden_lines": 0
+    }
+  }
+}
