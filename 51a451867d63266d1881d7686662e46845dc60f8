@@ -1,0 +1,29 @@
+web/src/components/BlogEditor/plugins/SlashMenuPlugin.ts
+  ae67783d27a75ba4 4-5,10,12
+web/src/index.css
+  ae67783d27a75ba4 1070-1074,1076-1081
+web/src/components/BlogEditor/components/SlashMenu.tsx
+  ae67783d27a75ba4 167-173
+web/src/components/BlogEditor/menus/slashMenuItems.ts
+  ae67783d27a75ba4 1,5-29,35-71,86-87,98-99,113-114,128-129,143-144,158-159,171-172,188-189,212-213,227-228,257-258,281-282,303-304,318-319,331-332,344-345,357-358,370-371,383-384
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "51a451867d63266d1881d7686662e46845dc60f8",
+  "prompts": {
+    "ae67783d27a75ba4": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "86897878-ffe5-4048-a6cd-20a00bd10ed0",
+        "model": "claude-4.6-opus-high-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 123,
+      "total_deletions": 53,
+      "accepted_lines": 123,
+      "overriden_lines": 0
+    }
+  }
+}
