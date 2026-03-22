@@ -146,6 +146,10 @@ export function createMdSerializer(): MarkdownSerializer {
     text(state, node) {
       state.text(node.text!, true);
     },
+    bookmark(state, node) {
+      state.write(node.attrs.url as string || "");
+      state.closeBlock(node);
+    },
   };
 
   const marks: Record<string, MarkSpec> = {

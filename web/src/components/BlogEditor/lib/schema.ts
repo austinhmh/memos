@@ -206,6 +206,28 @@ export const blogEditorSchema = new Schema({
         return ["td", attrs, 0];
       },
     },
+    bookmark: {
+      attrs: { url: { default: "" } },
+      group: "block",
+      atom: true,
+      selectable: true,
+      draggable: true,
+      parseDOM: [
+        {
+          tag: "div.bookmark-block",
+          getAttrs: (dom: HTMLElement) => ({
+            url: dom.dataset.url || "",
+          }),
+        },
+      ],
+      toDOM: (node) => [
+        "div",
+        {
+          class: "bookmark-block",
+          "data-url": node.attrs.url || "",
+        },
+      ],
+    },
     text: {
       group: "inline",
     },

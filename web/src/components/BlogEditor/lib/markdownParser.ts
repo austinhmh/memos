@@ -75,6 +75,52 @@ function getProseMirrorTokenizer(): MarkdownIt {
     }
   });
 
+  const bareUrlPattern = /^https?:\/\/\S+$/;
+  md.core.ruler.push("prosemirror_bookmark", (state) => {
+    const tokens = state.tokens;
+    let i = 0;
+    while (i < tokens.length) {
+      if (
+        tokens[i].type === "paragraph_open" &&
+        i + 2 < tokens.length &&
+        tokens[i + 1].type === "inline" &&
+        tokens[i + 2].type === "paragraph_close"
+      ) {
+        const children = tokens[i + 1].children || [];
+        let bookmarkUrl: string | null = null;
+
+        if (
+          children.length === 3 &&
+          children[0].type === "link_open" &&
+          children[1].type === "text" &&
+          children[2].type === "link_close"
+        ) {
+          const href = children[0].attrGet("href") || "";
+          if (href && children[1].content === href && !href.startsWith("#")) {
+            bookmarkUrl = href;
+          }
+        }
+
+        if (
+          !bookmarkUrl &&
+          children.length === 1 &&
+          children[0].type === "text" &&
+          bareUrlPattern.test(children[0].content.trim())
+        ) {
+          bookmarkUrl = children[0].content.trim();
+        }
+
+        if (bookmarkUrl) {
+          const token = new state.Token("bookmark", "", 0);
+          token.attrSet("url", bookmarkUrl);
+          tokens.splice(i, 3, token);
+          continue;
+        }
+      }
+      i++;
+    }
+  });
+
   cachedTokenizer = md;
   return md;
 }
@@ -165,6 +211,12 @@ export function createMdParser(schema: Schema): MarkdownParser {
       }),
     },
     code_inline: { mark: "code", noCloseToken: true },
+    bookmark: {
+      node: "bookmark",
+      getAttrs: (tok: { attrGet: (n: string) => string | null }) => ({
+        url: tok.attrGet("url") || "",
+      }),
+    },
   };
 
   return new MarkdownParser(schema, tokenizer, tokens);

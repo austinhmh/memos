@@ -40,11 +40,10 @@ import toggleList from "@/outline-vendor/shared/editor/commands/toggleList";
 import { toggleCheckboxItems } from "@/outline-vendor/shared/editor/commands/toggleCheckboxItems";
 import toggleWrap from "@/outline-vendor/shared/editor/commands/toggleWrap";
 import { getCurrentBlock } from "@/outline-vendor/shared/editor/queries/getCurrentBlock";
-import { getMarkRange } from "@/outline-vendor/shared/editor/queries/getMarkRange";
 import { isInCode } from "@/outline-vendor/shared/editor/queries/isInCode";
 import { selectAll } from "@/outline-vendor/shared/editor/commands/selectAll";
-import { sanitizeUrl } from "@/outline-shims/shared/utils/urls";
 import { isMac } from "@/outline-shims/shared/utils/browser";
+import { createBookmarkPlugin } from "./plugins/BookmarkPlugin";
 import { createCodeFenceActivePlugin } from "./plugins/CodeFenceActivePlugin";
 import { createCodeHighlightPlugin } from "./plugins/CodeHighlightPlugin";
 import { createHeadingIdPlugin } from "./plugins/HeadingIdPlugin";
@@ -179,7 +178,7 @@ const blurEditor: Command = (_state, _dispatch, view) => {
   return true;
 };
 
-const buildBlogEditorKeymap = (manualSave: Command, promptLink: Command): Record<string, Command> => ({
+const buildBlogEditorKeymap = (manualSave: Command): Record<string, Command> => ({
   "Mod-a": chainCommands(selectAll(schema.nodes.code_block), selectAll(schema.nodes.blockquote)),
   "Mod-s": manualSave,
   "Mod-z": undo,
@@ -204,7 +203,6 @@ const buildBlogEditorKeymap = (manualSave: Command, promptLink: Command): Record
           (state, dispatch, view) => (!isInCode(state) ? manualSave(state, dispatch, view) : false),
         ),
       }),
-  "Mod-k": promptLink,
   "Mod-b": pmToggleMark(schema.marks.strong),
   "Mod-B": pmToggleMark(schema.marks.strong),
   "Mod-i": pmToggleMark(schema.marks.em),
@@ -459,47 +457,6 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
     return true;
   }, [handleManualSave]);
 
-  const promptLinkCommand = useCallback<Command>((state, dispatch) => {
-    const linkType = schema.marks.link;
-    if (!linkType || typeof window === "undefined") {
-      return false;
-    }
-
-    const existingRange = getMarkRange(state.selection.$from, linkType);
-    const existingHref = existingRange && existingRange.mark ? String(existingRange.mark.attrs.href ?? "") : "";
-    const input = window.prompt("输入链接地址", existingHref);
-    if (input === null) {
-      return true;
-    }
-
-    const trimmed = input.trim();
-    if (!trimmed) {
-      if (existingRange && existingRange.mark) {
-        dispatch?.(state.tr.removeMark(existingRange.from, existingRange.to, linkType));
-      }
-      return true;
-    }
-
-    const href = sanitizeUrl(trimmed) ?? trimmed;
-    const mark = linkType.create({ href, title: null });
-
-    if (existingRange && existingRange.mark) {
-      dispatch?.(
-        state.tr
-          .removeMark(existingRange.from, existingRange.to, linkType)
-          .addMark(existingRange.from, existingRange.to, mark),
-      );
-      return true;
-    }
-
-    if (state.selection.empty) {
-      return true;
-    }
-
-    dispatch?.(state.tr.addMark(state.selection.from, state.selection.to, mark));
-    return true;
-  }, []);
-
   useEffect(() => {
     let cancelled = false;
 
@@ -523,11 +480,12 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
         doc,
         schema,
         plugins: [
-          keymap(buildBlogEditorKeymap(manualSaveCommand, promptLinkCommand)),
+          keymap(buildBlogEditorKeymap(manualSaveCommand)),
           history(),
           buildMarkdownInputRules(schema),
           createSlashMenuPlugin(setSlashMenuState),
           createMermaidPlugin({ isDark: isDarkRef.current }),
+          createBookmarkPlugin(),
           createCodeFenceActivePlugin(),
           createCodeHighlightPlugin(),
           createHeadingIdPlugin(),
@@ -649,7 +607,7 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
         viewRef.current = null;
       }
     };
-  }, [memo.name, flushPendingSave, manualSaveCommand, promptLinkCommand]);
+  }, [memo.name, flushPendingSave, manualSaveCommand]);
 
   useEffect(() => {
     const view = viewRef.current;

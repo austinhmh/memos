@@ -2,6 +2,7 @@ import React from "react";
 import { setBlockType, toggleMark as pmToggleMark } from "prosemirror-commands";
 import type { EditorView } from "prosemirror-view";
 import type { Schema } from "prosemirror-model";
+import { bookmarkPluginKey } from "../plugins/BookmarkPlugin";
 import {
   TypeIcon,
   Heading1Icon,
@@ -187,19 +188,16 @@ export function buildSlashMenuItems(schema: Schema): SlashMenuItem[] {
       subtitle: "Link",
       icon: React.createElement(LinkIcon, { size: I }),
       ...colors.link,
-      keywords: "link url href anchor a 链接 lianjie lj 网址 wangzhi wz hyperlink",
+      keywords: "link url href anchor a 链接 lianjie lj 网址 wangzhi wz hyperlink bookmark 书签 shuqian sq",
       group: "基础",
       action: (view) => {
-        const href = window.prompt("输入链接地址", "https://");
-        if (!href) { view.focus(); return; }
         const { state, dispatch } = view;
-        if (state.selection.empty) {
-          const text = schema.text(href, [schema.marks.link.create({ href })]);
-          dispatch(state.tr.replaceSelectionWith(text).scrollIntoView());
-        } else {
-          pmToggleMark(schema.marks.link, { href })(state, dispatch);
-        }
-        view.focus();
+        const bookmarkNode = state.schema.nodes.bookmark?.create({ url: "" });
+        if (!bookmarkNode) { view.focus(); return; }
+        const tr = state.tr.replaceSelectionWith(bookmarkNode);
+        const insertedPos = tr.selection.from - bookmarkNode.nodeSize;
+        tr.setMeta(bookmarkPluginKey, { editingPos: insertedPos });
+        dispatch(tr);
       },
     });
   }
