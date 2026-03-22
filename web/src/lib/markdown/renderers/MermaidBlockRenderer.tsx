@@ -33,7 +33,21 @@ export const MermaidBlockRenderer: React.FC<MermaidBlockRendererProps> = ({ code
     const renderDiagram = async () => {
       try {
         const id = `mermaid-${Math.random().toString(36).substring(7)}`;
-        mermaid.initialize({ startOnLoad: false, theme: getMermaidTheme(currentTheme), securityLevel: "strict", fontFamily: "inherit" });
+        mermaid.initialize({
+          startOnLoad: false,
+          theme: getMermaidTheme(currentTheme),
+          securityLevel: "strict",
+          fontFamily: "inherit",
+          flowchart: {
+            padding: 20,
+            nodeSpacing: 80,
+            rankSpacing: 60,
+            useMaxWidth: true,
+            htmlLabels: true,
+            curve: "basis",
+            defaultRenderer: "dagre-wrapper",
+          },
+        });
         const normalizedCode = normalizeMermaidCode(code);
         const { svg: renderedSvg } = await mermaid.render(id, normalizedCode);
         setSvg(renderedSvg);

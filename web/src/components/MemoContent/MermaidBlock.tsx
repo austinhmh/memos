@@ -59,14 +59,19 @@ export const MermaidBlock = ({ children, className }: MermaidBlockProps) => {
           securityLevel: "strict",
           fontFamily: "inherit",
           flowchart: {
-            padding: 15,
-            nodeSpacing: 50,
-            rankSpacing: 50,
-            useMaxWidth: false,
-            htmlLabels: true, // 使用 HTML 标签渲染，更好支持中文
+            padding: 20,
+            nodeSpacing: 80,
+            rankSpacing: 60,
+            useMaxWidth: true,
+            htmlLabels: true,
+            curve: "basis",
+            defaultRenderer: "dagre-wrapper",
           },
           block: {
-            padding: 15,
+            padding: 20,
+          },
+          sequence: {
+            useMaxWidth: true,
           },
         });
 

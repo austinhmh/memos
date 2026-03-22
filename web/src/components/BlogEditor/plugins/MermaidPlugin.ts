@@ -235,6 +235,15 @@ class MermaidRenderer {
         fontFamily: getComputedStyle(this.diagramElement).fontFamily || "inherit",
         theme: isDark ? "dark" : "default",
         securityLevel: "strict",
+        flowchart: {
+          padding: 20,
+          nodeSpacing: 80,
+          rankSpacing: 60,
+          useMaxWidth: true,
+          htmlLabels: true,
+          curve: "basis",
+          defaultRenderer: "dagre-wrapper",
+        },
       });
 
       const normalized = normalizeMermaidCode(text);
