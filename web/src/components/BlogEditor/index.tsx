@@ -42,6 +42,7 @@ import toggleWrap from "@/outline-vendor/shared/editor/commands/toggleWrap";
 import { getCurrentBlock } from "@/outline-vendor/shared/editor/queries/getCurrentBlock";
 import { getMarkRange } from "@/outline-vendor/shared/editor/queries/getMarkRange";
 import { isInCode } from "@/outline-vendor/shared/editor/queries/isInCode";
+import { selectAll } from "@/outline-vendor/shared/editor/commands/selectAll";
 import { sanitizeUrl } from "@/outline-shims/shared/utils/urls";
 import { isMac } from "@/outline-shims/shared/utils/browser";
 import { createCodeFenceActivePlugin } from "./plugins/CodeFenceActivePlugin";
@@ -179,6 +180,7 @@ const blurEditor: Command = (_state, _dispatch, view) => {
 };
 
 const buildBlogEditorKeymap = (manualSave: Command, promptLink: Command): Record<string, Command> => ({
+  "Mod-a": chainCommands(selectAll(schema.nodes.code_block), selectAll(schema.nodes.blockquote)),
   "Mod-s": manualSave,
   "Mod-z": undo,
   "Mod-y": redo,
