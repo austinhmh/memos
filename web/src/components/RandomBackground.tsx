@@ -66,10 +66,13 @@ const RandomBackground = () => {
   if (!bgUrl) return null;
 
   return (
-    <div
-      className="fixed inset-0 -z-10 bg-cover bg-center bg-no-repeat bg-fixed"
-      style={{ backgroundImage: `url(${bgUrl})` }}
-    >
+    <div className="fixed inset-0 -z-10 overflow-hidden">
+      <img
+        src={bgUrl}
+        alt=""
+        className="absolute inset-0 w-full h-full object-cover"
+        draggable={false}
+      />
       <div className="absolute inset-0 bg-black/30 dark:bg-black/40 backdrop-blur-[1px]" />
     </div>
   );
