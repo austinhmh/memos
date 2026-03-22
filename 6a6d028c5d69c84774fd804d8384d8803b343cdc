@@ -1,0 +1,33 @@
+web/src/components/MemoContent/BookmarkCard.tsx
+  bbbe512499d592e4 1-112
+server/router/api/v1/link_service.go
+  bbbe512499d592e4 1-101
+web/src/hooks/useURLMetadata.ts
+  bbbe512499d592e4 1-25
+plugin/httpgetter/html_meta.go
+  bbbe512499d592e4 9,34,56-57,59,82-88,176-207
+server/server.go
+  bbbe512499d592e4 48-49,71-73,163-178
+web/src/lib/markdown/MarkdownRenderer.tsx
+  bbbe512499d592e4 5,184-206,631,633-634,638-639
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "6a6d028c5d69c84774fd804d8384d8803b343cdc",
+  "prompts": {
+    "bbbe512499d592e4": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "3913394f-ebe7-4d38-875d-93b992d9850d",
+        "model": "claude-4.6-opus-high-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 332,
+      "overriden_lines": 0
+    }
+  }
+}
