@@ -862,6 +862,9 @@
     border: 1px solid var(--border);
     border-radius: 8px;
     overflow-x: auto;
+    max-height: 50vh;
+    overflow-y: auto;
+    scrollbar-width: thin;
   }
 
   /* ProseMirror code-block (Outline-style) and Mermaid widget */
@@ -1149,4 +1152,52 @@
 :root.has-bg-image .markdown-content blockquote,
 :root.has-bg-image .blog-editor-content blockquote {
   border-left-color: color-mix(in oklch, var(--border) 60%, transparent);
+}
+
+/* ========================================
+ * Code Block Collapsible
+ * Max height 50vh with expand/collapse button
+ * ======================================== */
+
+.code-block-collapsible {
+  position: relative;
+}
+
+.code-block-collapsible pre {
+  scrollbar-width: thin;
+}
+
+.code-block-expand-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  padding: 4px 0;
+  border: none;
+  border-top: 1px solid var(--border);
+  background: color-mix(in oklch, var(--muted) 80%, transparent);
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s;
+  border-radius: 0 0 0.375rem 0.375rem;
+  user-select: none;
+}
+
+.code-block-expand-btn:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+
+.blog-editor .code-block pre,
+.blog-editor-content .code-block pre {
+  max-height: 50vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.blog-editor .code-block.code-expanded pre,
+.blog-editor-content .code-block.code-expanded pre {
+  max-height: none;
 }

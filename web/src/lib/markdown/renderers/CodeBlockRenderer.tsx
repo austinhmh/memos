@@ -1,7 +1,7 @@
 import copy from "copy-to-clipboard";
 import hljs from "highlight.js";
-import { CheckIcon, CopyIcon } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { CheckIcon, ChevronDownIcon, ChevronUpIcon, CopyIcon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { getThemeWithFallback, resolveTheme } from "@/utils/theme";
@@ -12,9 +12,14 @@ interface CodeBlockRendererProps {
   code: string;
 }
 
+const MAX_HEIGHT = "50vh";
+
 export const CodeBlockRenderer: React.FC<CodeBlockRendererProps> = ({ language, code }) => {
   const { userGeneralSetting } = useAuth();
   const [copied, setCopied] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [isOverflowing, setIsOverflowing] = useState(false);
+  const codeRef = useRef<HTMLPreElement>(null);
   const codeContent = code.replace(/\n$/, "");
   const lang = language.trim().toLowerCase();
   const isMermaid = lang === "mermaid" || lang === "mermaidjs";
@@ -46,6 +51,16 @@ export const CodeBlockRenderer: React.FC<CodeBlockRendererProps> = ({ language, 
     dynamicImportStyle();
   }, [resolvedTheme, isDarkTheme]);
 
+  useEffect(() => {
+    if (!codeRef.current) return;
+    const el = codeRef.current;
+    const check = () => setIsOverflowing(el.scrollHeight > el.clientHeight + 2);
+    check();
+    const observer = new ResizeObserver(check);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [codeContent, expanded]);
+
   const highlightedCode = useMemo(() => {
     try {
       const hllang = hljs.getLanguage(lang);
@@ -56,7 +71,7 @@ export const CodeBlockRenderer: React.FC<CodeBlockRendererProps> = ({ language, 
     return Object.assign(document.createElement("span"), { textContent: codeContent }).innerHTML;
   }, [lang, codeContent]);
 
-  const handleCopy = async () => {
+  const handleCopy = useCallback(async () => {
     try {
       if (navigator.clipboard && window.isSecureContext) {
         await navigator.clipboard.writeText(codeContent);
@@ -70,22 +85,51 @@ export const CodeBlockRenderer: React.FC<CodeBlockRendererProps> = ({ language, 
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
-  };
+  }, [codeContent]);
+
+  const toggleExpand = useCallback(() => {
+    setExpanded((prev) => !prev);
+  }, []);
 
   return (
-    <pre className="relative">
-      <div className="absolute right-2 leading-3 top-1.5 flex flex-row justify-end items-center gap-1 opacity-60 hover:opacity-80">
-        <span className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider select-none">{lang || "plaintext"}</span>
+    <div className="code-block-collapsible relative">
+      <pre
+        ref={codeRef}
+        className="relative"
+        style={expanded ? undefined : { maxHeight: MAX_HEIGHT, overflowY: "auto" }}
+      >
+        <div className="absolute right-2 leading-3 top-1.5 flex flex-row justify-end items-center gap-1 opacity-60 hover:opacity-80 z-10">
+          <span className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider select-none">{lang || "plaintext"}</span>
+          <button
+            onClick={handleCopy}
+            className={cn("rounded-md transition-all", "hover:bg-accent/50", copied ? "text-primary" : "text-muted-foreground")}
+            aria-label={copied ? "Copied" : "Copy code"}
+            title={copied ? "Copied!" : "Copy code"}
+          >
+            {copied ? <CheckIcon className="w-3 h-3" /> : <CopyIcon className="w-3 h-3" />}
+          </button>
+        </div>
+        <code className={`language-${lang}`} dangerouslySetInnerHTML={{ __html: highlightedCode }} />
+      </pre>
+      {(isOverflowing || expanded) && (
         <button
-          onClick={handleCopy}
-          className={cn("rounded-md transition-all", "hover:bg-accent/50", copied ? "text-primary" : "text-muted-foreground")}
-          aria-label={copied ? "Copied" : "Copy code"}
-          title={copied ? "Copied!" : "Copy code"}
+          onClick={toggleExpand}
+          className="code-block-expand-btn"
+          title={expanded ? "收起 Collapse" : "展开全部 Expand All"}
         >
-          {copied ? <CheckIcon className="w-3 h-3" /> : <CopyIcon className="w-3 h-3" />}
+          {expanded ? (
+            <>
+              <ChevronUpIcon className="w-3.5 h-3.5" />
+              <span>收起 Collapse</span>
+            </>
+          ) : (
+            <>
+              <ChevronDownIcon className="w-3.5 h-3.5" />
+              <span>展开全部 Expand All</span>
+            </>
+          )}
         </button>
-      </div>
-      <code className={`language-${lang}`} dangerouslySetInnerHTML={{ __html: highlightedCode }} />
-    </pre>
+      )}
+    </div>
   );
 };
