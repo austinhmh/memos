@@ -167,12 +167,22 @@ class BookmarkNodeView implements NodeView {
   };
 
   private handleCardClick = (e: MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    this.enterEditing();
+    const url = this.lastUrl;
+    if (url) {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
   };
 
-  private commitUrl(url: string) {
+  private normalizeUrl(url: string): string {
+    if (!url) return url;
+    if (!/^https?:\/\//i.test(url)) {
+      return "https://" + url;
+    }
+    return url;
+  }
+
+  private commitUrl(rawUrl: string) {
+    const url = this.normalizeUrl(rawUrl);
     const pos = this.getPos();
     const node = this.view.state.doc.nodeAt(pos);
     if (!node || node.type.name !== "bookmark") return;
@@ -280,11 +290,6 @@ class BookmarkNodeView implements NodeView {
     link.target = "_blank";
     link.rel = "noopener noreferrer";
     link.className = "bookmark-card-link";
-    link.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      this.enterEditing();
-    });
 
     const body = document.createElement("div");
     body.className = "bookmark-card-body";
@@ -346,11 +351,6 @@ class BookmarkNodeView implements NodeView {
     link.target = "_blank";
     link.rel = "noopener noreferrer";
     link.className = "bookmark-fallback-link";
-    link.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      this.enterEditing();
-    });
 
     const icon = document.createElement("span");
     icon.className = "bookmark-fallback-icon";
@@ -389,8 +389,6 @@ class BookmarkNodeView implements NodeView {
     const target = event.target as HTMLElement;
     if (target.closest(".bookmark-url-input")) return true;
     if (target.closest(".bookmark-edit-btn")) return true;
-    if (target.closest(".bookmark-card") && event.type === "mousedown") return true;
-    if (target.closest(".bookmark-card") && event.type === "click") return true;
     return false;
   }
 
