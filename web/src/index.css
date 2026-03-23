@@ -1108,6 +1108,7 @@
 .bookmark-node-wrapper {
   margin: 0.5em 0;
   position: relative;
+  overflow: hidden;
 }
 
 .bookmark-node-wrapper:hover .bookmark-edit-btn {
@@ -1116,8 +1117,8 @@
 
 .bookmark-edit-btn {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: 6px;
+  right: 6px;
   font-size: 0.75rem;
   padding: 2px 8px;
   border: 1px solid var(--border);
@@ -1193,6 +1194,8 @@
   padding: 10px 14px;
   text-decoration: none !important;
   color: inherit !important;
+  overflow: hidden;
+  min-width: 0;
 }
 
 .bookmark-tg-link::after {
