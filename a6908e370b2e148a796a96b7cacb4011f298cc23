@@ -1,0 +1,23 @@
+web/src/components/BlogEditor/plugins/BookmarkPlugin.ts
+  97e660e74fb8f950 170-173,176-185
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "a6908e370b2e148a796a96b7cacb4011f298cc23",
+  "prompts": {
+    "97e660e74fb8f950": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "dd865655-875f-4756-93c3-039bd807115a",
+        "model": "claude-4.6-opus-high-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 20,
+      "total_deletions": 22,
+      "accepted_lines": 14,
+      "overriden_lines": 0
+    }
+  }
+}
