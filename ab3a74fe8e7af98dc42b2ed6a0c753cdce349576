@@ -1,0 +1,27 @@
+web/src/components/BlogEditor/plugins/BookmarkPlugin.ts
+  97e660e74fb8f950 268,270-271,274,276-281,283-284,286-288,290,295,301,304-309,313,320,328-329,333-335,343,349,351-352,354-357,359-362,364
+web/src/index.css
+  97e660e74fb8f950 1174-1181,1185-1186,1189,1191-1193,1198,1202,1207-1213,1216-1217,1221-1222,1225-1226,1228,1236-1239,1242,1245,1251-1257,1260-1268,1271-1274,1277-1279,1283,1285,1288-1290,1293,1295
+.cursor/plans/telegram_style_bookmark_card.md
+  97e660e74fb8f950 1-101
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "ab3a74fe8e7af98dc42b2ed6a0c753cdce349576",
+  "prompts": {
+    "97e660e74fb8f950": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "dd865655-875f-4756-93c3-039bd807115a",
+        "model": "claude-4.6-opus-high-thinking"
+      },
+      "human_author": "austinhmh <22827728420@qq.com>",
+      "messages": [],
+      "total_additions": 221,
+      "total_deletions": 178,
+      "accepted_lines": 219,
+      "overriden_lines": 0
+    }
+  }
+}
