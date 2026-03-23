@@ -265,78 +265,74 @@ class BookmarkNodeView implements NodeView {
 
   private renderSkeletonCard() {
     this.cardElement.innerHTML = "";
-    this.cardElement.className = "bookmark-card bookmark-card-loading";
+    this.cardElement.className = "bookmark-card bookmark-card-telegram bookmark-card-loading";
+
+    const inner = document.createElement("div");
+    inner.className = "bookmark-tg-link";
 
     const body = document.createElement("div");
-    body.className = "bookmark-card-body";
+    body.className = "bookmark-tg-body";
 
-    const titleSkel = document.createElement("div");
-    titleSkel.className = "bookmark-skel bookmark-skel-title";
-    const descSkel = document.createElement("div");
-    descSkel.className = "bookmark-skel bookmark-skel-desc";
-    const domSkel = document.createElement("div");
-    domSkel.className = "bookmark-skel bookmark-skel-domain";
+    const s1 = document.createElement("div");
+    s1.className = "bookmark-tg-skel bookmark-tg-skel-site";
+    const s2 = document.createElement("div");
+    s2.className = "bookmark-tg-skel bookmark-tg-skel-title";
+    const s3 = document.createElement("div");
+    s3.className = "bookmark-tg-skel bookmark-tg-skel-desc";
 
-    body.append(titleSkel, descSkel, domSkel);
-    this.cardElement.appendChild(body);
+    body.append(s1, s2, s3);
+    inner.appendChild(body);
+
+    const thumbSkel = document.createElement("div");
+    thumbSkel.className = "bookmark-tg-thumb bookmark-tg-skel";
+    inner.appendChild(thumbSkel);
+
+    this.cardElement.appendChild(inner);
   }
 
   private renderCardWithData(url: string, data: URLMetadata) {
     this.cardElement.innerHTML = "";
-    this.cardElement.className = "bookmark-card";
+    this.cardElement.className = "bookmark-card bookmark-card-telegram";
 
     const link = document.createElement("a");
     link.href = url;
     link.target = "_blank";
     link.rel = "noopener noreferrer";
-    link.className = "bookmark-card-link";
+    link.className = "bookmark-tg-link";
 
     const body = document.createElement("div");
-    body.className = "bookmark-card-body";
+    body.className = "bookmark-tg-body";
+
+    const site = document.createElement("div");
+    site.className = "bookmark-tg-site";
+    site.textContent = extractDomain(url).toUpperCase();
+    body.appendChild(site);
 
     if (data.title) {
       const title = document.createElement("div");
-      title.className = "bookmark-card-title";
+      title.className = "bookmark-tg-title";
       title.textContent = data.title;
       body.appendChild(title);
     }
 
     if (data.description) {
       const desc = document.createElement("div");
-      desc.className = "bookmark-card-description";
+      desc.className = "bookmark-tg-desc";
       desc.textContent = data.description;
       body.appendChild(desc);
     }
 
-    const meta = document.createElement("div");
-    meta.className = "bookmark-card-meta";
-
-    if (data.favicon) {
-      const favicon = document.createElement("img");
-      favicon.src = data.favicon;
-      favicon.className = "bookmark-card-favicon";
-      favicon.alt = "";
-      favicon.onerror = () => { favicon.style.display = "none"; };
-      meta.appendChild(favicon);
-    }
-
-    const domain = document.createElement("span");
-    domain.className = "bookmark-card-domain";
-    domain.textContent = extractDomain(url);
-    meta.appendChild(domain);
-
-    body.appendChild(meta);
     link.appendChild(body);
 
     if (data.image) {
-      const imgWrap = document.createElement("div");
-      imgWrap.className = "bookmark-card-image";
+      const thumb = document.createElement("div");
+      thumb.className = "bookmark-tg-thumb";
       const img = document.createElement("img");
       img.src = data.image;
       img.alt = "";
-      img.onerror = () => { imgWrap.style.display = "none"; };
-      imgWrap.appendChild(img);
-      link.appendChild(imgWrap);
+      img.onerror = () => { thumb.style.display = "none"; };
+      thumb.appendChild(img);
+      link.appendChild(thumb);
     }
 
     this.cardElement.appendChild(link);
@@ -344,23 +340,28 @@ class BookmarkNodeView implements NodeView {
 
   private renderFallbackCard(url: string) {
     this.cardElement.innerHTML = "";
-    this.cardElement.className = "bookmark-card bookmark-card-fallback";
+    this.cardElement.className = "bookmark-card bookmark-card-telegram";
 
     const link = document.createElement("a");
     link.href = url;
     link.target = "_blank";
     link.rel = "noopener noreferrer";
-    link.className = "bookmark-fallback-link";
+    link.className = "bookmark-tg-link";
 
-    const icon = document.createElement("span");
-    icon.className = "bookmark-fallback-icon";
-    icon.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`;
+    const body = document.createElement("div");
+    body.className = "bookmark-tg-body";
 
-    const text = document.createElement("span");
-    text.className = "bookmark-fallback-text";
-    text.textContent = extractDomain(url);
+    const site = document.createElement("div");
+    site.className = "bookmark-tg-site";
+    site.textContent = extractDomain(url).toUpperCase();
+    body.appendChild(site);
 
-    link.append(icon, text);
+    const urlText = document.createElement("div");
+    urlText.className = "bookmark-tg-url";
+    urlText.textContent = url;
+    body.appendChild(urlText);
+
+    link.appendChild(body);
     this.cardElement.appendChild(link);
   }
 

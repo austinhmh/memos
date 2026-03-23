@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bookmark Card Design Preview</title>
+<style>
+:root{--bg:#0f1419;--card-bg:#1a1f2e;--border:#2a3040;--text:#e2e8f0;--text-muted:#8b95a5;--primary:#60a5fa;--shadow:rgba(0,0,0,0.3)}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);padding:32px;min-height:100vh}
+.header{text-align:center;margin-bottom:48px}
+.header h1{font-size:28px;font-weight:600;background:linear-gradient(135deg,#60a5fa,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:8px}
+.header p{color:var(--text-muted);font-size:14px}
+.designs{display:flex;flex-direction:column;gap:48px;max-width:720px;margin:0 auto}
+.design-section{position:relative}
+.design-label{display:flex;align-items:center;gap:10px;margin-bottom:16px}
+.badge{font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;letter-spacing:.5px}
+.badge-cur{background:#ef4444;color:#fff}.badge-a{background:#3b82f6;color:#fff}.badge-b{background:#8b5cf6;color:#fff}.badge-c{background:#10b981;color:#fff}
+.design-label h2{font-size:16px;font-weight:500}
+.design-desc{font-size:13px;color:var(--text-muted);margin-bottom:16px;line-height:1.6}
+.states{display:flex;flex-direction:column;gap:20px}
+.state-label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:6px}
+sup{font-size:10px;color:var(--primary)}
+
+/* CURRENT */
+.cur-card{border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.cur-card a{display:flex;text-decoration:none;color:inherit}
+.cur-card .body{flex:1;padding:12px 14px}
+.cur-card .t{font-size:14px;font-weight:500}
+.cur-card .d{font-size:12px;color:var(--text-muted);margin-top:4px}
+.cur-card .m{display:flex;align-items:center;gap:6px;margin-top:8px}
+.cur-card .m img{width:16px;height:16px;border-radius:2px}
+.cur-card .m span{font-size:12px;color:var(--text-muted)}
+.cur-fb{display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;color:var(--primary);text-decoration:none}
+.cur-fb svg{opacity:.5}
+
+/* A: Notion */
+.a-card{border:1px solid var(--border);border-radius:8px;overflow:hidden;transition:box-shadow .2s,border-color .2s;cursor:pointer}
+.a-card:hover{box-shadow:0 2px 12px var(--shadow);border-color:rgba(96,165,250,.25)}
+.a-card a{display:flex;text-decoration:none;color:inherit}
+.a-card .body{flex:1;min-width:0;padding:14px 16px;display:flex;flex-direction:column;justify-content:space-between}
+.a-card .t{font-size:14px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:color .15s}
+.a-card:hover .t{color:var(--primary)}
+.a-card .d{font-size:12px;color:var(--text-muted);margin-top:6px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.a-card .m{display:flex;align-items:center;gap:6px;margin-top:10px}
+.a-card .m img{width:16px;height:16px;border-radius:3px;object-fit:contain}
+.a-card .m span{font-size:12px;color:var(--text-muted)}
+.a-card .og{width:140px;flex-shrink:0;background:var(--card-bg)}
+.a-card .og img{width:100%;height:100%;object-fit:cover}
+.a-fb{display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px solid var(--border);border-radius:8px;text-decoration:none;color:var(--text);font-size:13px;transition:background .15s,border-color .15s}
+.a-fb:hover{background:rgba(96,165,250,.08);border-color:rgba(96,165,250,.2)}
+.a-fb .fav{width:16px;height:16px;border-radius:3px}
+.a-fb .url{flex:1;font-family:ui-monospace,monospace;font-size:12px;color:var(--primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.a-fb .arr{opacity:.4;font-size:12px}
+.skel{display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.skel .body{flex:1;padding:14px 16px}
+.bar{height:12px;border-radius:4px;background:linear-gradient(90deg,var(--card-bg) 25%,#253040 50%,var(--card-bg) 75%);background-size:200% 100%;animation:sh 1.5s ease-in-out infinite}
+.bar.w75{width:75%;margin-bottom:10px;height:14px}.bar.w100{width:100%;margin-bottom:8px}.bar.w40{width:40%}
+.skel .is{width:140px;flex-shrink:0;background:linear-gradient(90deg,var(--card-bg) 25%,#253040 50%,var(--card-bg) 75%);background-size:200% 100%;animation:sh 1.5s ease-in-out infinite}
+@keyframes sh{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.inp{display:flex;align-items:center;border:1px solid var(--primary);border-radius:8px;padding:10px 14px;gap:10px;background:var(--card-bg);box-shadow:0 0 0 3px rgba(96,165,250,.12)}
+.inp svg{color:var(--text-muted);opacity:.5;flex-shrink:0}
+.inp input{flex:1;border:none;background:transparent;color:var(--text);font-family:ui-monospace,monospace;font-size:13px;outline:none}
+
+/* B: Twitter */
+.b-card{border:1px solid var(--border);border-radius:12px;overflow:hidden;transition:box-shadow .2s,border-color .2s;cursor:pointer}
+.b-card:hover{box-shadow:0 4px 20px var(--shadow);border-color:rgba(96,165,250,.25)}
+.b-card a{display:flex;flex-direction:column;text-decoration:none;color:inherit}
+.b-card .ogi{width:100%;height:160px;background:var(--card-bg);overflow:hidden}
+.b-card .ogi img{width:100%;height:100%;object-fit:cover}
+.b-card .body{padding:14px 16px}
+.b-card .t{font-size:15px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.b-card:hover .t{color:var(--primary)}
+.b-card .d{font-size:13px;color:var(--text-muted);margin-top:6px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.b-card .m{display:flex;align-items:center;gap:6px;margin-top:8px}
+.b-card .m img{width:14px;height:14px;border-radius:2px}
+.b-card .m span{font-size:12px;color:var(--text-muted)}
+
+/* C: Telegram */
+.c-card{display:flex;border-left:3px solid var(--primary);background:rgba(96,165,250,.05);border-radius:0 8px 8px 0;overflow:hidden;transition:background .15s;cursor:pointer}
+.c-card:hover{background:rgba(96,165,250,.1)}
+.c-card a{display:flex;flex:1;text-decoration:none;color:inherit;padding:10px 14px;gap:12px}
+.c-card .body{flex:1;min-width:0}
+.c-card .s{font-size:11px;font-weight:600;color:var(--primary);text-transform:uppercase;letter-spacing:.3px;margin-bottom:2px}
+.c-card .t{font-size:14px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.c-card .d{font-size:12px;color:var(--text-muted);margin-top:3px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.c-card .th{width:60px;height:60px;border-radius:6px;overflow:hidden;flex-shrink:0;align-self:center}
+.c-card .th img{width:100%;height:100%;object-fit:cover}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>Bookmark 卡片设计方案对比</h1>
+  <p>以 GitHub 和百度为例 — 含成功态、加载态、Fallback 和输入框</p>
+</div>
+<div class="designs">
+
+  <!-- CURRENT -->
+  <div class="design-section">
+    <div class="design-label"><span class="badge badge-cur">当前</span><h2>现有实现</h2></div>
+    <div class="design-desc">当前 BookmarkPlugin 的样式 — 缺少 hover 效果、描述截断、OG 图片，fallback 太简陋</div>
+    <div class="states">
+      <div><div class="state-label">成功态</div>
+        <div class="cur-card"><a href="#"><div class="body"><div class="t">GitHub</div><div class="d">Where the world builds software</div><div class="m"><img src="https://github.githubassets.com/favicons/favicon.svg"/><span>github.com</span></div></div></a></div>
+      </div>
+      <div><div class="state-label">Fallback</div>
+        <a href="#" class="cur-fb"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg><span>www.baidu.com</span></a>
+      </div>
+    </div>
+  </div>
+
+  <!-- A: Notion -->
+  <div class="design-section">
+    <div class="design-label"><span class="badge badge-a">方案 A</span><h2>Notion 风格 <sup>推荐</sup></h2></div>
+    <div class="design-desc">标题 1 行截断 + 描述 2 行截断 + favicon + 域名 + 右侧 OG 图。hover 标题变蓝 + 阴影 + 边框发光。</div>
+    <div class="states">
+      <div><div class="state-label">成功态 (有 OG 图)</div>
+        <div class="a-card"><a href="#"><div class="body"><div class="t">GitHub: Let's build from here · GitHub</div><div class="d">GitHub is where over 100 million developers shape the future of software, together. Contribute to the open source community, manage your Git repositories...</div><div class="m"><img src="https://github.githubassets.com/favicons/favicon.svg"/><span>github.com</span></div></div><div class="og"><img src="https://github.githubassets.com/assets/github-logo-55c5b9a1fe52.png"/></div></a></div>
+      </div>
+      <div><div class="state-label">成功态 (无 OG 图)</div>
+        <div class="a-card"><a href="#"><div class="body"><div class="t">百度一下，你就知道</div><div class="d">全球领先的中文搜索引擎、致力于让网民更便捷地获取信息，找到所求。</div><div class="m"><img src="https://www.baidu.com/favicon.ico"/><span>www.baidu.com</span></div></div></a></div>
+      </div>
+      <div><div class="state-label">加载态 (骨架屏)</div>
+        <div class="skel"><div class="body"><div class="bar w75"></div><div class="bar w100"></div><div class="bar w40"></div></div><div class="is"></div></div>
+      </div>
+      <div><div class="state-label">Fallback (无元数据)</div>
+        <a href="#" class="a-fb"><img class="fav" src="https://www.baidu.com/favicon.ico"/><span class="url">https://www.baidu.com</span><span class="arr">↗</span></a>
+      </div>
+      <div><div class="state-label">输入框 (编辑态)</div>
+        <div class="inp"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg><input type="text" placeholder="输入链接地址，回车确认…" value="https://www.baidu.com"/></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- B: Twitter -->
+  <div class="design-section">
+    <div class="design-label"><span class="badge badge-b">方案 B</span><h2>Twitter/Slack 大图风格</h2></div>
+    <div class="design-desc">OG 图片全宽显示在顶部 (160px 高)，文字在下方。适合图片丰富的链接，占更多空间。</div>
+    <div class="states">
+      <div><div class="state-label">成功态</div>
+        <div class="b-card"><a href="#"><div class="ogi"><img src="https://github.githubassets.com/assets/github-logo-55c5b9a1fe52.png"/></div><div class="body"><div class="t">GitHub: Let's build from here · GitHub</div><div class="d">GitHub is where over 100 million developers shape the future of software, together.</div><div class="m"><img src="https://github.githubassets.com/favicons/favicon.svg"/><span>github.com</span></div></div></a></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- C: Telegram -->
+  <div class="design-section">
+    <div class="design-label"><span class="badge badge-c">方案 C</span><h2>Telegram 紧凑风格</h2></div>
+    <div class="design-desc">左侧蓝色竖线 + 浅蓝背景，站名大写在顶部，右侧小缩略图。最节省垂直空间。</div>
+    <div class="states">
+      <div><div class="state-label">成功态 (有图)</div>
+        <div class="c-card"><a href="#"><div class="body"><div class="s">GITHUB.COM</div><div class="t">GitHub: Let's build from here</div><div class="d">GitHub is where over 100 million developers shape the future of software, together.</div></div><div class="th"><img src="https://github.githubassets.com/assets/github-logo-55c5b9a1fe52.png"/></div></a></div>
+      </div>
+      <div><div class="state-label">成功态 (无图)</div>
+        <div class="c-card"><a href="#"><div class="body"><div class="s">BAIDU.COM</div><div class="t">百度一下，你就知道</div><div class="d">全球领先的中文搜索引擎、致力于让网民更便捷地获取信息，找到所求。</div></div></a></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

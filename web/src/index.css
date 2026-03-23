@@ -1171,187 +1171,128 @@
   opacity: 0.6;
 }
 
-.bookmark-card {
+/* Telegram-style bookmark card */
+.bookmark-card-telegram {
+  display: flex;
+  border-left: 3px solid var(--primary);
+  background: color-mix(in srgb, var(--primary) 5%, transparent);
+  border-radius: 0 8px 8px 0;
+  overflow: hidden;
+  transition: background 0.15s;
   cursor: pointer;
-  transition: box-shadow 0.2s, border-color 0.2s;
 }
 
-.bookmark-card-link {
+.bookmark-card-telegram:hover {
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+.bookmark-tg-link {
   display: flex;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  overflow: hidden;
+  flex: 1;
+  gap: 12px;
+  padding: 10px 14px;
   text-decoration: none !important;
   color: inherit !important;
-  transition: box-shadow 0.2s, border-color 0.2s;
 }
 
-.bookmark-card-link:hover {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-  border-color: color-mix(in srgb, var(--primary) 30%, var(--border));
-}
-
-.bookmark-card-link::after {
+.bookmark-tg-link::after {
   content: none !important;
 }
 
-.bookmark-card-body {
+.bookmark-tg-body {
   flex: 1;
   min-width: 0;
-  padding: 12px 14px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
 }
 
-.bookmark-card-title {
-  font-size: 0.875rem;
+.bookmark-tg-site {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--primary);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-bottom: 2px;
+}
+
+.bookmark-tg-title {
+  font-size: 14px;
   font-weight: 500;
   color: var(--foreground);
-  line-height: 1.3;
-  display: -webkit-box;
-  -webkit-line-clamp: 1;
-  -webkit-box-orient: vertical;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.bookmark-card-link:hover .bookmark-card-title {
-  color: var(--primary);
-}
-
-.bookmark-card-description {
-  font-size: 0.75rem;
+.bookmark-tg-desc {
+  font-size: 12px;
   color: var(--muted-foreground);
+  margin-top: 3px;
   line-height: 1.4;
-  margin-top: 4px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
-.bookmark-card-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 8px;
-}
-
-.bookmark-card-favicon {
-  width: 16px;
-  height: 16px;
-  border-radius: 2px;
-  object-fit: contain;
-  flex-shrink: 0;
-}
-
-.bookmark-card-domain {
-  font-size: 0.75rem;
-  color: var(--muted-foreground);
-  white-space: nowrap;
+.bookmark-tg-thumb {
+  width: 60px;
+  height: 60px;
+  border-radius: 6px;
   overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.bookmark-card-image {
-  width: 120px;
   flex-shrink: 0;
-  display: none;
+  align-self: center;
 }
 
-@media (min-width: 640px) {
-  .bookmark-card-image {
-    display: block;
-  }
-}
-
-.bookmark-card-image img {
+.bookmark-tg-thumb img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.bookmark-card-loading .bookmark-card-body {
-  padding: 12px 14px;
+.bookmark-tg-url {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  color: var(--primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.bookmark-skel {
-  border-radius: 4px;
-  background: var(--muted);
-  animation: bookmark-pulse 1.5s ease-in-out infinite;
+/* Skeleton shimmer */
+.bookmark-tg-skel {
+  border-radius: 3px;
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--primary) 8%, transparent) 25%,
+    color-mix(in srgb, var(--primary) 16%, transparent) 50%,
+    color-mix(in srgb, var(--primary) 8%, transparent) 75%);
+  background-size: 200% 100%;
+  animation: bookmark-tg-shimmer 1.5s ease-in-out infinite;
 }
 
-.bookmark-skel-title {
-  height: 14px;
-  width: 75%;
-  margin-bottom: 8px;
-}
-
-.bookmark-skel-desc {
-  height: 12px;
-  width: 100%;
+.bookmark-tg-skel-site {
+  height: 10px;
+  width: 30%;
   margin-bottom: 6px;
 }
 
-.bookmark-skel-domain {
+.bookmark-tg-skel-title {
+  height: 14px;
+  width: 70%;
+  margin-bottom: 6px;
+}
+
+.bookmark-tg-skel-desc {
   height: 12px;
-  width: 30%;
+  width: 50%;
 }
 
-@keyframes bookmark-pulse {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 0.7; }
+@keyframes bookmark-tg-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
-.bookmark-card-loading {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.bookmark-card-fallback {
-  display: block;
-}
-
-.bookmark-fallback-link {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  text-decoration: none !important;
-  color: var(--foreground) !important;
-  font-size: 0.875rem;
-  transition: background 0.15s;
-}
-
-.bookmark-fallback-link::after {
-  content: none !important;
-}
-
-.bookmark-fallback-link:hover {
-  background: var(--accent);
-}
-
-.bookmark-fallback-icon {
-  flex-shrink: 0;
-  opacity: 0.5;
-  display: flex;
-  align-items: center;
-}
-
-.bookmark-fallback-text {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-:root.has-bg-image .bookmark-card-link,
-:root.has-bg-image .bookmark-card-loading,
-:root.has-bg-image .bookmark-fallback-link,
+:root.has-bg-image .bookmark-card-telegram,
 :root.has-bg-image .bookmark-input-container {
-  background: color-mix(in oklch, var(--muted) 65%, transparent) !important;
+  background: color-mix(in oklch, var(--primary) 5%, transparent) !important;
   backdrop-filter: blur(8px);
 }
 
