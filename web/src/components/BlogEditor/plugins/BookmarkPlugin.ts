@@ -119,13 +119,13 @@ class BookmarkNodeView implements NodeView {
     activeNodeViews.add(this);
 
     const ps = bookmarkPluginKey.getState(view.state);
-    const editing = ps?.editingPos === this.getPos();
+    const editing = ps?.editingPos === this.getPos() || !this.lastUrl;
     this.render(this.lastUrl, editing);
   }
 
   syncEditingState() {
     const ps = bookmarkPluginKey.getState(this.view.state);
-    const editing = ps?.editingPos === this.getPos();
+    const editing = ps?.editingPos === this.getPos() || (!this.lastUrl && this.isEditing);
     if (editing !== this.isEditing) {
       this.render(this.lastUrl, editing);
     }
@@ -214,10 +214,10 @@ class BookmarkNodeView implements NodeView {
       this.cardElement.style.display = "none";
       this.editButton.style.display = "none";
       this.inputElement.value = url;
-      requestAnimationFrame(() => {
+      setTimeout(() => {
         this.inputElement.focus();
         if (url) this.inputElement.select();
-      });
+      }, 50);
     } else {
       this.inputContainer.style.display = "none";
       this.editButton.style.display = "";
@@ -371,7 +371,7 @@ class BookmarkNodeView implements NodeView {
     this.lastUrl = url;
 
     const ps = bookmarkPluginKey.getState(this.view.state);
-    const editing = ps?.editingPos === this.getPos();
+    const editing = ps?.editingPos === this.getPos() || (!url && this.isEditing);
     this.render(url, editing);
 
     return true;
