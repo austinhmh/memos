@@ -1,8 +1,10 @@
 package httpgetter
 
 import (
+	"context"
 	"errors"
 	"io"
+	"net/http"
 	"strings"
 )
 
@@ -14,11 +16,20 @@ type Image struct {
 }
 
 func GetImage(urlStr string) (*Image, error) {
-	if err := validateURL(urlStr); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
+	defer cancel()
+
+	validated, err := validateURLWithTarget(ctx, urlStr)
+	if err != nil {
 		return nil, err
 	}
 
-	response, err := httpClient.Get(urlStr)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, validated.url.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	response, err := newHTTPClient().Do(request)
 	if err != nil {
 		return nil, err
 	}

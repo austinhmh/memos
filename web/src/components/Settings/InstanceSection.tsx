@@ -106,6 +106,9 @@ const InstanceSection = () => {
             value={instanceGeneralSetting.additionalScript}
             onChange={(event) => updatePartialSetting({ additionalScript: event.target.value })}
           />
+          <p className="mt-2 text-sm text-muted-foreground">
+            Custom scripts are disabled at runtime for security reasons and will not be executed.
+          </p>
         </SettingRow>
       </SettingGroup>
 

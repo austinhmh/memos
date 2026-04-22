@@ -41,6 +41,17 @@ func convertStateToStore(state v1pb.State) store.RowStatus {
 	}
 }
 
+func normalizePageSize(pageSize int32) int {
+	limit := int(pageSize)
+	if limit <= 0 {
+		return DefaultPageSize
+	}
+	if limit > MaxPageSize {
+		return MaxPageSize
+	}
+	return limit
+}
+
 func getPageToken(limit int, offset int) (string, error) {
 	return marshalPageToken(&v1pb.PageToken{
 		Limit:  int32(limit),

@@ -37,7 +37,8 @@ func NewAuthenticator(store *store.Store, secret string) *Authenticator {
 }
 
 // AuthenticateByAccessTokenV2 validates a short-lived access token.
-// Returns claims without database query (stateless validation).
+// In addition to JWT validation, it checks the current database user state to
+// immediately revoke access for archived or deleted users.
 func (a *Authenticator) AuthenticateByAccessTokenV2(accessToken string) (*UserClaims, error) {
 	claims, err := ParseAccessTokenV2(accessToken, []byte(a.secret))
 	if err != nil {
@@ -47,6 +48,17 @@ func (a *Authenticator) AuthenticateByAccessTokenV2(accessToken string) (*UserCl
 	userID, err := util.ConvertStringToInt32(claims.Subject)
 	if err != nil {
 		return nil, errors.Wrap(err, "invalid user ID in token")
+	}
+
+	user, err := a.store.GetUser(context.Background(), &store.FindUser{ID: &userID})
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get user")
+	}
+	if user == nil {
+		return nil, errors.New("user not found")
+	}
+	if user.RowStatus == store.Archived {
+		return nil, errors.New("user is archived")
 	}
 
 	return &UserClaims{

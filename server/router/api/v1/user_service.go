@@ -105,13 +105,17 @@ func (s *APIV1Service) GetUser(ctx context.Context, request *v1pb.GetUserRequest
 
 	result := convertUserFromStore(user)
 
-	// For unauthenticated requests, redact sensitive fields
+	// For unauthenticated requests, redact sensitive fields.
+	// For authenticated non-admin users, also redact fields that should not be broadly enumerable.
 	currentUser, _ := s.fetchCurrentUser(ctx)
 	if currentUser == nil {
 		result.Role = v1pb.User_ROLE_UNSPECIFIED
 		result.Email = ""
 		result.CreateTime = nil
 		result.UpdateTime = nil
+	} else if currentUser.Role != store.RoleHost && currentUser.Role != store.RoleAdmin && currentUser.ID != user.ID {
+		result.Role = v1pb.User_ROLE_UNSPECIFIED
+		result.Email = ""
 	}
 
 	return result, nil
@@ -195,7 +199,7 @@ func (s *APIV1Service) CreateUser(ctx context.Context, request *v1pb.CreateUserR
 		if strings.Contains(errMsg, "UNIQUE constraint failed") ||
 			strings.Contains(errMsg, "duplicate key") ||
 			strings.Contains(errMsg, "Duplicate entry") {
-			return nil, status.Errorf(codes.AlreadyExists, "username already exists")
+			return nil, status.Errorf(codes.AlreadyExists, "user already exists")
 		}
 		return nil, status.Errorf(codes.Internal, "failed to create user")
 	}

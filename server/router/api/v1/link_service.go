@@ -13,7 +13,6 @@ import (
 const (
 	linkCacheMaxSize = 500
 	linkCacheTTL     = 24 * time.Hour
-	linkFetchTimeout = 5 * time.Second
 )
 
 type linkCacheEntry struct {
@@ -71,6 +70,15 @@ func (s *APIV1Service) RegisterLinkRoutes(echoServer *echo.Echo) {
 }
 
 func (s *APIV1Service) handleGetURLMetadata(c echo.Context) error {
+	ctx := c.Request().Context()
+	user, err := s.fetchCurrentUser(ctx)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to get current user"})
+	}
+	if user == nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "authentication required"})
+	}
+
 	targetURL := c.QueryParam("url")
 	if targetURL == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "url parameter is required"})

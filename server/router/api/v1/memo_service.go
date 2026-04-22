@@ -215,13 +215,10 @@ func (s *APIV1Service) ListMemos(ctx context.Context, request *v1pb.ListMemosReq
 		if err := unmarshalPageToken(request.PageToken, &pageToken); err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "invalid page token: %v", err)
 		}
-		limit = int(pageToken.Limit)
+		limit = normalizePageSize(pageToken.Limit)
 		offset = int(pageToken.Offset)
 	} else {
-		limit = int(request.PageSize)
-	}
-	if limit <= 0 {
-		limit = DefaultPageSize
+		limit = normalizePageSize(request.PageSize)
 	}
 	limitPlusOne := limit + 1
 	memoFind.Limit = &limitPlusOne
@@ -694,13 +691,33 @@ func (s *APIV1Service) ListMemoComments(ctx context.Context, request *v1pb.ListM
 
 	if len(memoRelations) == 0 {
 		response := &v1pb.ListMemoCommentsResponse{
-			Memos: []*v1pb.Memo{},
+			Memos:     []*v1pb.Memo{},
+			TotalSize: 0,
 		}
 		return response, nil
 	}
 
-	memoRelationIDs := make([]int32, 0, len(memoRelations))
-	for _, m := range memoRelations {
+	totalSize := len(memoRelations)
+	limit := normalizePageSize(request.PageSize)
+	offset := 0
+	if request.PageToken != "" {
+		var pageToken v1pb.PageToken
+		if err := unmarshalPageToken(request.PageToken, &pageToken); err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid page token: %v", err)
+		}
+		limit = normalizePageSize(pageToken.Limit)
+		offset = int(pageToken.Offset)
+	}
+	if offset < 0 || offset > len(memoRelations) {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid page token offset")
+	}
+	end := offset + limit
+	if end > len(memoRelations) {
+		end = len(memoRelations)
+	}
+	paginatedRelations := memoRelations[offset:end]
+	memoRelationIDs := make([]int32, 0, len(paginatedRelations))
+	for _, m := range paginatedRelations {
 		memoRelationIDs = append(memoRelationIDs, m.MemoID)
 	}
 	memos, err := s.Store.ListMemos(ctx, &store.FindMemo{IDList: memoRelationIDs})
@@ -750,8 +767,18 @@ func (s *APIV1Service) ListMemoComments(ctx context.Context, request *v1pb.ListM
 		memosResponse = append(memosResponse, memoMessage)
 	}
 
+	nextPageToken := ""
+	if end < len(memoRelations) {
+		nextPageToken, err = getPageToken(limit, end)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to get next page token: %v", err)
+		}
+	}
+
 	response := &v1pb.ListMemoCommentsResponse{
-		Memos: memosResponse,
+		Memos:         memosResponse,
+		NextPageToken: nextPageToken,
+		TotalSize:     int32(totalSize),
 	}
 	return response, nil
 }

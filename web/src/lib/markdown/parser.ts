@@ -13,7 +13,7 @@ export function createMarkdownParser(): MarkdownIt {
   if (cachedParser) return cachedParser;
 
   const md = new MarkdownIt("default", {
-    html: true,
+    html: false,
     breaks: false,
     linkify: true,
   });

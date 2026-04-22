@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pkg/errors"
@@ -28,6 +29,8 @@ import (
 const (
 	unmatchedUsernameAndPasswordError = "unmatched username and password"
 )
+
+var refreshTokenRotationMu sync.Map
 
 // GetCurrentUser returns the authenticated user's information.
 // Validates the access token and returns user details.
@@ -305,6 +308,17 @@ func (s *APIV1Service) RefreshToken(ctx context.Context, _ *v1pb.RefreshTokenReq
 		return nil, status.Errorf(codes.Unauthenticated, "refresh token not found")
 	}
 
+	refreshClaims, err := auth.ParseRefreshToken(refreshToken, []byte(s.Secret))
+	if err != nil {
+		slog.Warn("refresh token authentication failed", "error", err)
+		return nil, status.Errorf(codes.Unauthenticated, "invalid refresh token")
+	}
+
+	lockValue, _ := refreshTokenRotationMu.LoadOrStore(refreshClaims.TokenID, &sync.Mutex{})
+	rotationLock := lockValue.(*sync.Mutex)
+	rotationLock.Lock()
+	defer rotationLock.Unlock()
+
 	// Validate refresh token and get old token ID for rotation
 	authenticator := auth.NewAuthenticator(s.Store, s.Secret)
 	user, oldTokenID, err := authenticator.AuthenticateByRefreshToken(ctx, refreshToken)
@@ -314,14 +328,18 @@ func (s *APIV1Service) RefreshToken(ctx context.Context, _ *v1pb.RefreshTokenReq
 	}
 
 	// --- Refresh Token Rotation ---
-	// Generate new refresh token with fresh 30-day expiry (sliding window)
+	// Revoke old refresh token before issuing a replacement to minimize replay windows.
+	if err := s.Store.RemoveUserRefreshToken(ctx, user.ID, oldTokenID); err != nil {
+		slog.Warn("failed to remove old refresh token", "error", err, "userID", user.ID, "tokenID", oldTokenID)
+		return nil, status.Errorf(codes.Unauthenticated, "invalid refresh token")
+	}
+
 	newTokenID := util.GenUUID()
 	newRefreshToken, newRefreshExpiresAt, err := auth.GenerateRefreshToken(user.ID, newTokenID, []byte(s.Secret))
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to generate refresh token: %v", err)
 	}
 
-	// Store new refresh token (add before remove to handle race conditions)
 	clientInfo := s.extractClientInfo(ctx)
 	newRefreshTokenRecord := &storepb.RefreshTokensUserSetting_RefreshToken{
 		TokenId:    newTokenID,
@@ -330,23 +348,29 @@ func (s *APIV1Service) RefreshToken(ctx context.Context, _ *v1pb.RefreshTokenReq
 		ClientInfo: clientInfo,
 	}
 	if err := s.Store.AddUserRefreshToken(ctx, user.ID, newRefreshTokenRecord); err != nil {
+		// Best effort rollback to avoid logging the user out on storage failures.
+		rollbackRecord := &storepb.RefreshTokensUserSetting_RefreshToken{
+			TokenId:   oldTokenID,
+			ClientInfo: clientInfo,
+		}
+		if refreshClaims.ExpiresAt != nil {
+			rollbackRecord.ExpiresAt = timestamppb.New(refreshClaims.ExpiresAt.Time)
+		}
+		if refreshClaims.IssuedAt != nil {
+			rollbackRecord.CreatedAt = timestamppb.New(refreshClaims.IssuedAt.Time)
+		}
+		if rollbackErr := s.Store.AddUserRefreshToken(ctx, user.ID, rollbackRecord); rollbackErr != nil {
+			slog.Error("failed to rollback old refresh token after add failure", "error", rollbackErr, "userID", user.ID, "tokenID", oldTokenID)
+		}
 		return nil, status.Errorf(codes.Internal, "failed to store refresh token: %v", err)
 	}
 
-	// Remove old refresh token
-	if err := s.Store.RemoveUserRefreshToken(ctx, user.ID, oldTokenID); err != nil {
-		// Log but don't fail - old token will expire naturally
-		slog.Warn("failed to remove old refresh token", "error", err, "userID", user.ID, "tokenID", oldTokenID)
-	}
-
-	// Set new refresh token cookie
 	newRefreshCookie := s.buildRefreshTokenCookie(ctx, newRefreshToken, newRefreshExpiresAt)
 	if err := SetResponseHeader(ctx, "Set-Cookie", newRefreshCookie); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to set refresh token cookie: %v", err)
 	}
 	// --- End Rotation ---
 
-	// Generate new access token
 	accessToken, expiresAt, err := auth.GenerateAccessTokenV2(
 		user.ID,
 		user.Username,
@@ -388,14 +412,22 @@ func (*APIV1Service) buildRefreshTokenCookie(ctx context.Context, refreshToken s
 		attrs = append(attrs, "Expires="+expireTime.UTC().Format("Mon, 02 Jan 2006 15:04:05 GMT"))
 	}
 
-	// Try to determine if the request is HTTPS by checking the origin header
-	// Default to non-HTTPS (Lax SameSite) if metadata is not available
+	// Determine whether this request is served over HTTPS.
+	// Connect metadata may include Origin and/or X-Forwarded-Proto depending on the entrypoint.
 	isHTTPS := false
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
-		for _, v := range md.Get("origin") {
-			if strings.HasPrefix(v, "https://") {
+		for _, v := range md.Get("x-forwarded-proto") {
+			if strings.EqualFold(v, "https") {
 				isHTTPS = true
 				break
+			}
+		}
+		if !isHTTPS {
+			for _, v := range md.Get("origin") {
+				if strings.HasPrefix(v, "https://") {
+					isHTTPS = true
+					break
+				}
 			}
 		}
 	}
@@ -421,6 +453,9 @@ func (s *APIV1Service) fetchCurrentUser(ctx context.Context) (*store.User, error
 	}
 	if user == nil {
 		return nil, errors.Errorf("user %d not found", userID)
+	}
+	if user.RowStatus == store.Archived {
+		return nil, errors.New("user is archived")
 	}
 	return user, nil
 }

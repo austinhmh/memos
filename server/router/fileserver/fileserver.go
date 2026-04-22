@@ -145,7 +145,15 @@ func (s *FileServerService) serveAttachmentFile(c echo.Context) error {
 
 	// Set common headers
 	c.Response().Header().Set("Content-Type", contentType)
-	c.Response().Header().Set("Cache-Control", "public, max-age=3600")
+	cacheControl := "private, max-age=3600"
+	if attachment.MemoID != nil {
+		memo, memoErr := s.Store.GetMemo(ctx, &store.FindMemo{ID: attachment.MemoID})
+		if memoErr == nil && memo != nil && memo.Visibility == store.Public {
+			cacheControl = "public, max-age=3600"
+		}
+	}
+	c.Response().Header().Set("Cache-Control", cacheControl)
+	c.Response().Header().Set("Vary", "Authorization, Cookie")
 	// Prevent MIME-type sniffing which could lead to XSS
 	c.Response().Header().Set("X-Content-Type-Options", "nosniff")
 	// Defense-in-depth: prevent embedding in frames and restrict content loading
@@ -321,9 +329,9 @@ func (s *FileServerService) getCurrentUser(ctx context.Context, c echo.Context) 
 			if !strings.HasPrefix(token, auth.PersonalAccessTokenPrefix) {
 				claims, err := s.authenticator.AuthenticateByAccessTokenV2(token)
 				if err == nil && claims != nil {
-					// Get user from claims
+					// Get user from claims and enforce current account status.
 					user, err := s.Store.GetUser(ctx, &store.FindUser{ID: &claims.UserID})
-					if err == nil && user != nil {
+					if err == nil && user != nil && user.RowStatus != store.Archived {
 						return user, nil
 					}
 				}

@@ -2,6 +2,7 @@ package test
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -56,27 +57,33 @@ func TestAuthenticatorAccessTokenV2(t *testing.T) {
 		assert.Error(t, err)
 	})
 
-	t.Run("fails with wrong secret", func(t *testing.T) {
+	t.Run("fails with archived user", func(t *testing.T) {
 		ts := NewTestService(t)
 		defer ts.Cleanup()
 
 		user, err := ts.CreateRegularUser(ctx, "testuser")
 		require.NoError(t, err)
 
-		// Generate token with one secret
 		token, _, err := auth.GenerateAccessTokenV2(
 			user.ID,
 			user.Username,
 			string(user.Role),
 			string(user.RowStatus),
-			[]byte("secret-1"),
+			[]byte(ts.Secret),
 		)
 		require.NoError(t, err)
 
-		// Try to authenticate with different secret
-		authenticator := auth.NewAuthenticator(ts.Store, "secret-2")
+		archivedStatus := store.Archived
+		_, err = ts.Store.UpdateUser(ctx, &store.UpdateUser{
+			ID:        user.ID,
+			RowStatus: &archivedStatus,
+		})
+		require.NoError(t, err)
+
+		authenticator := auth.NewAuthenticator(ts.Store, ts.Secret)
 		_, err = authenticator.AuthenticateByAccessTokenV2(token)
 		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "archived")
 	})
 }
 
@@ -355,6 +362,51 @@ func TestAuthenticatorPAT(t *testing.T) {
 
 func TestStoreRefreshTokenMethods(t *testing.T) {
 	ctx := context.Background()
+
+	t.Run("concurrent rotation deletes single-use token once", func(t *testing.T) {
+		ts := NewTestService(t)
+		defer ts.Cleanup()
+
+		user, err := ts.CreateRegularUser(ctx, "concurrency-user")
+		require.NoError(t, err)
+
+		tokenID := util.GenUUID()
+		refreshTokenRecord := &storepb.RefreshTokensUserSetting_RefreshToken{
+			TokenId:   tokenID,
+			ExpiresAt: timestamppb.New(time.Now().Add(auth.RefreshTokenDuration)),
+			CreatedAt: timestamppb.Now(),
+		}
+		err = ts.Store.AddUserRefreshToken(ctx, user.ID, refreshTokenRecord)
+		require.NoError(t, err)
+
+		token, _, err := auth.GenerateRefreshToken(user.ID, tokenID, []byte(ts.Secret))
+		require.NoError(t, err)
+
+		authenticator := auth.NewAuthenticator(ts.Store, ts.Secret)
+		_, oldTokenID, err := authenticator.AuthenticateByRefreshToken(ctx, token)
+		require.NoError(t, err)
+		require.Equal(t, tokenID, oldTokenID)
+
+		var wg sync.WaitGroup
+		results := make(chan error, 2)
+		for range 2 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				results <- ts.Store.RemoveUserRefreshToken(context.Background(), user.ID, tokenID)
+			}()
+		}
+		wg.Wait()
+		close(results)
+
+		for err := range results {
+			assert.NoError(t, err)
+		}
+
+		tokens, err := ts.Store.GetUserRefreshTokens(ctx, user.ID)
+		require.NoError(t, err)
+		assert.Len(t, tokens, 0)
+	})
 
 	t.Run("adds and retrieves refresh token", func(t *testing.T) {
 		ts := NewTestService(t)
