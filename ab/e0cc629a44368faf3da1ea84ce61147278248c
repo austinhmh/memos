@@ -1,0 +1,51 @@
+web/src/lib/markdown/parser.ts
+  8bdd84e6ac1b85e8 16
+server/router/fileserver/fileserver.go
+  8bdd84e6ac1b85e8 148-156,332,334
+server/router/api/v1/auth_service.go
+  8bdd84e6ac1b85e8 9,33-34,311-321,331-336,351-364,415-416,419-420,425-432,457-459
+server/router/api/v1/memo_service.go
+  8bdd84e6ac1b85e8 218,221,694-695,700-720,770-777,779-781
+server/router/api/v1/attachment_service.go
+  8bdd84e6ac1b85e8 328
+server/router/api/v1/user_service.go
+  8bdd84e6ac1b85e8 108-109,116-118,202
+server/router/api/v1/common.go
+  8bdd84e6ac1b85e8 44-54
+server/router/api/v1/test/auth_test.go
+  8bdd84e6ac1b85e8 5,60,72,76-83,86,366-410
+web/src/components/Settings/InstanceSection.tsx
+  8bdd84e6ac1b85e8 109-111
+server/router/api/v1/connect_interceptors.go
+  8bdd84e6ac1b85e8 46-51
+web/src/App.tsx
+  8bdd84e6ac1b85e8 36-37,39-47,52
+plugin/httpgetter/html_meta.go
+  8bdd84e6ac1b85e8 4,11,20-62,64-87,89-147,158-167,171,185,188
+server/auth/authenticator.go
+  8bdd84e6ac1b85e8 40-41,53-61
+plugin/httpgetter/image.go
+  8bdd84e6ac1b85e8 4,7,19-28,32
+server/router/api/v1/link_service.go
+  8bdd84e6ac1b85e8 73-81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.2",
+  "base_commit_sha": "abe0cc629a44368faf3da1ea84ce61147278248c",
+  "prompts": {
+    "8bdd84e6ac1b85e8": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "b1dbc8a6-7a0d-42df-b869-61be513aafc9",
+        "model": "GLM-5"
+      },
+      "human_author": "austinhmh",
+      "messages": [],
+      "total_additions": 398,
+      "total_deletions": 179,
+      "accepted_lines": 369,
+      "overriden_lines": 0
+    }
+  }
+}
