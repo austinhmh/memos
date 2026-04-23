@@ -97,6 +97,11 @@ func (s *FileServerService) serveAttachmentFile(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusNotFound, "attachment not found")
 	}
 
+	// Set conservative cache headers before permission checks so denied responses
+	// are never cached as public content by intermediaries.
+	c.Response().Header().Set("Cache-Control", "private, no-store")
+	c.Response().Header().Set("Vary", "Authorization, Cookie")
+
 	// Check permissions - verify memo visibility if attachment belongs to a memo
 	if err := s.checkAttachmentPermission(ctx, c, attachment); err != nil {
 		return err

@@ -8,10 +8,37 @@ import (
 
 	apiv1 "github.com/usememos/memos/proto/gen/api/v1"
 	storepb "github.com/usememos/memos/proto/gen/store"
+	"github.com/usememos/memos/store"
 )
 
 func TestCreateUserRegistration(t *testing.T) {
 	ctx := context.Background()
+
+	t.Run("Archived user cannot call authenticated business APIs", func(t *testing.T) {
+		ts := NewTestService(t)
+		defer ts.Cleanup()
+
+		user, err := ts.CreateRegularUser(ctx, "archived-user")
+		require.NoError(t, err)
+		userCtx := ts.CreateUserContext(ctx, user.ID)
+
+		archivedStatus := store.Archived
+		_, err = ts.Store.UpdateUser(ctx, &store.UpdateUser{
+			ID:        user.ID,
+			RowStatus: &archivedStatus,
+		})
+		require.NoError(t, err)
+
+		_, err = ts.Service.CreateAttachment(userCtx, &apiv1.CreateAttachmentRequest{
+			Attachment: &apiv1.Attachment{
+				Filename: "blocked.txt",
+				Type:     "text/plain",
+				Content:  []byte("blocked"),
+			},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to get current user")
+	})
 
 	t.Run("CreateUser success when registration enabled", func(t *testing.T) {
 		ts := NewTestService(t)
