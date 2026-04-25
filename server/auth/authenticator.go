@@ -50,11 +50,19 @@ func (a *Authenticator) AuthenticateByAccessTokenV2(accessToken string) (*UserCl
 		return nil, errors.Wrap(err, "invalid user ID in token")
 	}
 
-	user, err := a.store.GetUser(context.Background(), &store.FindUser{ID: &userID})
+	normalStatus := store.Normal
+	user, err := a.store.GetUser(context.Background(), &store.FindUser{ID: &userID, RowStatus: &normalStatus})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get user")
 	}
 	if user == nil {
+		archivedUser, archivedErr := a.store.GetUser(context.Background(), &store.FindUser{ID: &userID})
+		if archivedErr != nil {
+			return nil, errors.Wrap(archivedErr, "failed to get user")
+		}
+		if archivedUser != nil && archivedUser.RowStatus == store.Archived {
+			return nil, errors.New("user is archived")
+		}
 		return nil, errors.New("user not found")
 	}
 	if user.RowStatus == store.Archived {
@@ -96,11 +104,19 @@ func (a *Authenticator) AuthenticateByRefreshToken(ctx context.Context, refreshT
 	}
 
 	// Get user
-	user, err := a.store.GetUser(ctx, &store.FindUser{ID: &userID})
+	normalStatus := store.Normal
+	user, err := a.store.GetUser(ctx, &store.FindUser{ID: &userID, RowStatus: &normalStatus})
 	if err != nil {
 		return nil, "", errors.Wrap(err, "failed to get user")
 	}
 	if user == nil {
+		archivedUser, archivedErr := a.store.GetUser(ctx, &store.FindUser{ID: &userID})
+		if archivedErr != nil {
+			return nil, "", errors.Wrap(archivedErr, "failed to get user")
+		}
+		if archivedUser != nil && archivedUser.RowStatus == store.Archived {
+			return nil, "", errors.New("user is archived")
+		}
 		return nil, "", errors.New("user not found")
 	}
 	if user.RowStatus == store.Archived {

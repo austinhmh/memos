@@ -3,6 +3,8 @@ package test
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -33,6 +35,18 @@ func TestFreshInstall(t *testing.T) {
 	require.Equal(t, currentSchemaVersion, instanceSetting.SchemaVersion)
 }
 
+func dockerSharedTempDir(t *testing.T) string {
+	t.Helper()
+	baseDir := filepath.Join(os.Getenv("HOME"), ".cache", "memos-test")
+	require.NoError(t, os.MkdirAll(baseDir, 0o700))
+	dataDir, err := os.MkdirTemp(baseDir, "migration-*")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = os.RemoveAll(dataDir)
+	})
+	return dataDir
+}
+
 // TestMigrationDataPersistence verifies that data created in the old version
 // is preserved and accessible after migration to the new version.
 func TestMigrationDataPersistence(t *testing.T) {
@@ -45,7 +59,7 @@ func TestMigrationDataPersistence(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	dataDir := t.TempDir()
+	dataDir := dockerSharedTempDir(t)
 
 	// 1. Start Old Memos container (Stable)
 	oldCfg := MemosContainerConfig{
@@ -115,7 +129,7 @@ func TestMigrationIdempotency(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	dataDir := t.TempDir()
+	dataDir := dockerSharedTempDir(t)
 
 	// 1. Initial Migration (Local version)
 	cfg := MemosContainerConfig{
@@ -221,7 +235,7 @@ func TestMigrationFromPreviousVersion_SQLite(t *testing.T) {
 	t.Parallel()
 	testMigration(t, "sqlite", func() (MemosContainerConfig, func()) {
 		// Create a temp directory for SQLite data that persists across container restarts
-		dataDir := t.TempDir()
+		dataDir := dockerSharedTempDir(t)
 		return MemosContainerConfig{
 			Driver:  "sqlite",
 			DataDir: dataDir,

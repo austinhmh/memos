@@ -8,9 +8,13 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	apiv1 "github.com/usememos/memos/proto/gen/api/v1"
+	"github.com/usememos/memos/store"
 )
 
 func TestListMemos(t *testing.T) {
@@ -253,6 +257,109 @@ func TestListMemos(t *testing.T) {
 	require.Equal(t, "👍", userTwoReaction.ReactionType)
 }
 
+func TestListMemosHidesPublicMemosFromArchivedUsers(t *testing.T) {
+	ctx := context.Background()
+	ts := NewTestService(t)
+	defer ts.Cleanup()
+
+	archivedUser, err := ts.CreateRegularUser(ctx, "archived-memo-owner")
+	require.NoError(t, err)
+	archivedUserCtx := ts.CreateUserContext(ctx, archivedUser.ID)
+	viewer, err := ts.CreateRegularUser(ctx, "archived-memo-viewer")
+	require.NoError(t, err)
+	viewerCtx := ts.CreateUserContext(ctx, viewer.ID)
+	publicMemo, err := ts.Service.CreateMemo(archivedUserCtx, &apiv1.CreateMemoRequest{
+		Memo: &apiv1.Memo{
+			Content:    "archived user public memo",
+			Visibility: apiv1.Visibility_PUBLIC,
+		},
+	})
+	require.NoError(t, err)
+	protectedMemo, err := ts.Service.CreateMemo(archivedUserCtx, &apiv1.CreateMemoRequest{
+		Memo: &apiv1.Memo{
+			Content:    "archived user protected memo",
+			Visibility: apiv1.Visibility_PROTECTED,
+		},
+	})
+	require.NoError(t, err)
+
+	archivedStatus := store.Archived
+	_, err = ts.Store.UpdateUser(ctx, &store.UpdateUser{ID: archivedUser.ID, RowStatus: &archivedStatus})
+	require.NoError(t, err)
+
+	anonymousList, err := ts.Service.ListMemos(ctx, &apiv1.ListMemosRequest{PageSize: 10})
+	require.NoError(t, err)
+	requireMemoNotListed(t, anonymousList.Memos, publicMemo.Name)
+	requireMemoNotListed(t, anonymousList.Memos, protectedMemo.Name)
+
+	viewerList, err := ts.Service.ListMemos(viewerCtx, &apiv1.ListMemosRequest{PageSize: 10})
+	require.NoError(t, err)
+	requireMemoNotListed(t, viewerList.Memos, publicMemo.Name)
+	requireMemoNotListed(t, viewerList.Memos, protectedMemo.Name)
+
+	_, err = ts.Service.GetMemo(ctx, &apiv1.GetMemoRequest{Name: publicMemo.Name})
+	require.Error(t, err)
+	require.Equal(t, codes.NotFound, status.Code(err))
+	_, err = ts.Service.GetMemo(viewerCtx, &apiv1.GetMemoRequest{Name: protectedMemo.Name})
+	require.Error(t, err)
+	require.Equal(t, codes.NotFound, status.Code(err))
+}
+
+func TestArchivedMemosRequireOwnerAndDoNotLeakPublicly(t *testing.T) {
+	ctx := context.Background()
+	ts := NewTestService(t)
+	defer ts.Cleanup()
+
+	owner, err := ts.CreateRegularUser(ctx, "archived-owner")
+	require.NoError(t, err)
+	ownerCtx := ts.CreateUserContext(ctx, owner.ID)
+	viewer, err := ts.CreateRegularUser(ctx, "archived-viewer")
+	require.NoError(t, err)
+	viewerCtx := ts.CreateUserContext(ctx, viewer.ID)
+
+	memo, err := ts.Service.CreateMemo(ownerCtx, &apiv1.CreateMemoRequest{Memo: &apiv1.Memo{Content: "archived public memo", Visibility: apiv1.Visibility_PUBLIC}})
+	require.NoError(t, err)
+	memoUID := memo.Name[len("memos/"):]
+	storeMemo, err := ts.Store.GetMemo(ctx, &store.FindMemo{UID: &memoUID})
+	require.NoError(t, err)
+	archivedStatus := store.Archived
+	require.NoError(t, ts.Store.UpdateMemo(ctx, &store.UpdateMemo{ID: storeMemo.ID, RowStatus: &archivedStatus}))
+
+	_, err = ts.Service.GetMemo(ctx, &apiv1.GetMemoRequest{Name: memo.Name})
+	require.Error(t, err)
+	require.Equal(t, codes.NotFound, status.Code(err))
+
+	anonymousList, err := ts.Service.ListMemos(ctx, &apiv1.ListMemosRequest{PageSize: 10, State: apiv1.State_ARCHIVED})
+	require.Error(t, err)
+	require.Equal(t, codes.Unauthenticated, status.Code(err))
+	require.Nil(t, anonymousList)
+
+	viewerList, err := ts.Service.ListMemos(viewerCtx, &apiv1.ListMemosRequest{PageSize: 10, State: apiv1.State_ARCHIVED})
+	require.NoError(t, err)
+	requireMemoNotListed(t, viewerList.Memos, memo.Name)
+
+	ownerList, err := ts.Service.ListMemos(ownerCtx, &apiv1.ListMemosRequest{PageSize: 10, State: apiv1.State_ARCHIVED})
+	require.NoError(t, err)
+	requireMemoListed(t, ownerList.Memos, memo.Name)
+}
+
+func requireMemoListed(t *testing.T, memos []*apiv1.Memo, memoName string) {
+	t.Helper()
+	for _, memo := range memos {
+		if memo.Name == memoName {
+			return
+		}
+	}
+	t.Fatalf("expected %s to be listed", memoName)
+}
+
+func requireMemoNotListed(t *testing.T, memos []*apiv1.Memo, memoName string) {
+	t.Helper()
+	for _, memo := range memos {
+		require.NotEqual(t, memoName, memo.Name)
+	}
+}
+
 // TestCreateMemoWithCustomTimestamps tests that custom timestamps can be set when creating memos and comments.
 // This addresses issue #5483: https://github.com/usememos/memos/issues/5483
 func TestCreateMemoWithCustomTimestamps(t *testing.T) {
@@ -366,4 +473,57 @@ func TestCreateMemoWithCustomTimestamps(t *testing.T) {
 	require.NotNil(t, memoWithoutTimestamps.CreateTime, "create_time should be auto-generated")
 	require.NotNil(t, memoWithoutTimestamps.UpdateTime, "update_time should be auto-generated")
 	require.True(t, time.Now().Unix()-memoWithoutTimestamps.CreateTime.AsTime().Unix() < 5, "create_time should be recent (within 5 seconds)")
+}
+
+func TestGetMemoCommentHidesInvisibleParent(t *testing.T) {
+	ctx := context.Background()
+	ts := NewTestService(t)
+	defer ts.Cleanup()
+
+	parentOwner, err := ts.CreateRegularUser(ctx, "comment-parent-owner")
+	require.NoError(t, err)
+	commenter, err := ts.CreateRegularUser(ctx, "comment-parent-commenter")
+	require.NoError(t, err)
+	ownerCtx := ts.CreateUserContext(ctx, parentOwner.ID)
+	commenterCtx := ts.CreateUserContext(ctx, commenter.ID)
+
+	parentMemo, err := ts.Service.CreateMemo(ownerCtx, &apiv1.CreateMemoRequest{
+		Memo: &apiv1.Memo{Content: "parent initially public", Visibility: apiv1.Visibility_PUBLIC},
+	})
+	require.NoError(t, err)
+	comment, err := ts.Service.CreateMemoComment(commenterCtx, &apiv1.CreateMemoCommentRequest{
+		Name: parentMemo.Name,
+		Comment: &apiv1.Memo{
+			Content:    "public comment should not leak hidden parent",
+			Visibility: apiv1.Visibility_PUBLIC,
+		},
+	})
+	require.NoError(t, err)
+
+	visibleComment, err := ts.Service.GetMemo(ctx, &apiv1.GetMemoRequest{Name: comment.Name})
+	require.NoError(t, err)
+	require.NotNil(t, visibleComment.Parent)
+	require.Equal(t, parentMemo.Name, *visibleComment.Parent)
+
+	privateParent, err := ts.Service.UpdateMemo(ownerCtx, &apiv1.UpdateMemoRequest{
+		Memo:       &apiv1.Memo{Name: parentMemo.Name, Visibility: apiv1.Visibility_PRIVATE},
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"visibility"}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, apiv1.Visibility_PRIVATE, privateParent.Visibility)
+
+	hiddenParentComment, err := ts.Service.GetMemo(ctx, &apiv1.GetMemoRequest{Name: comment.Name})
+	require.NoError(t, err)
+	require.Nil(t, hiddenParentComment.Parent)
+
+	archivedStatus := store.Archived
+	memoUID := parentMemo.Name[len("memos/"):]
+	storeParent, err := ts.Store.GetMemo(ctx, &store.FindMemo{UID: &memoUID})
+	require.NoError(t, err)
+	require.NotNil(t, storeParent)
+	require.NoError(t, ts.Store.UpdateMemo(ctx, &store.UpdateMemo{ID: storeParent.ID, RowStatus: &archivedStatus}))
+
+	archivedParentComment, err := ts.Service.GetMemo(ctx, &apiv1.GetMemoRequest{Name: comment.Name})
+	require.NoError(t, err)
+	require.Nil(t, archivedParentComment.Parent)
 }

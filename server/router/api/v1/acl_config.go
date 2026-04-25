@@ -1,12 +1,15 @@
 package v1
 
-import "strings"
+import (
+	"net/url"
+	"strings"
+)
 
 // PublicMethods defines API endpoints that don't require authentication.
 // All other endpoints require a valid session or access token.
 //
-// This is the SINGLE SOURCE OF TRUTH for public endpoints.
-// Both Connect interceptor and gRPC-Gateway interceptor use this map.
+// This is the source of truth for Connect/gRPC public endpoints.
+// The REST gateway mirrors this policy with exact HTTP method+path rules below.
 //
 // Format: Full gRPC procedure path as returned by req.Spec().Procedure (Connect)
 // or info.FullMethod (gRPC interceptor).
@@ -19,13 +22,11 @@ var PublicMethods = map[string]struct{}{
 	"/memos.api.v1.InstanceService/GetInstanceProfile": {},
 	"/memos.api.v1.InstanceService/GetInstanceSetting": {},
 
-	// User Service - public user profiles and stats
+	// User Service - public user profiles and aggregated stats
 	"/memos.api.v1.UserService/CreateUser":       {}, // Allow first user registration
 	"/memos.api.v1.UserService/GetUser":          {},
-	"/memos.api.v1.UserService/GetUserAvatar":    {},
 	"/memos.api.v1.UserService/GetUserStats":     {},
 	"/memos.api.v1.UserService/ListAllUserStats": {},
-	"/memos.api.v1.UserService/SearchUsers":      {},
 
 	// Identity Provider Service - SSO buttons on login page
 	"/memos.api.v1.IdentityProviderService/ListIdentityProviders": {},
@@ -49,59 +50,98 @@ var publicGatewayPaths = map[string]map[string]bool{
 	"POST": {
 		"/api/v1/auth/signin":  true,
 		"/api/v1/auth/refresh": true,
-		"/api/v1/users":       true, // CreateUser (first-time setup / open registration)
+		"/api/v1/users":        true, // CreateUser (first-time setup / open registration)
 	},
 	"GET": {
-		"/api/v1/instance/profile":    true,
-		"/api/v1/memos":               true,
-		"/api/v1/identity-providers":   true,
-		"/api/v1/users:stats":         true,
+		"/api/v1/instance/profile":   true,
+		"/api/v1/memos":              true,
+		"/api/v1/identity-providers": true,
+		"/api/v1/users:stats":        true,
 	},
-}
-
-// publicGatewayPrefixes matches paths that have dynamic segments.
-// IMPORTANT: These use prefix matching, so must not match sub-resources
-// like /api/v1/users/1/personalAccessTokens. The isPublicGatewayPath
-// function checks that the path has at most one segment after the prefix.
-var publicGatewayPrefixes = map[string][]string{
-	"GET": {
-		"/api/v1/users/",             // GetUser, GetUserAvatar, GetUserStats
-		"/api/v1/memos/",             // GetMemo, ListMemoComments
-		"/api/v1/instance/settings/", // GetInstanceSetting
-	},
-}
-
-// subResourceKeywords are path segments that indicate a sub-resource,
-// not a direct resource access. These should NOT be treated as public.
-var subResourceKeywords = []string{
-	"/personalAccessTokens", "/webhooks", "/notifications",
-	"/shortcuts", "/settings/",
 }
 
 // isPublicGatewayPath checks if an HTTP method+path is a public endpoint.
 func isPublicGatewayPath(method, path string) bool {
+	method = strings.ToUpper(method)
+	decoded := false
+	for range 5 {
+		if hasUnsafeGatewayPath(path) {
+			return false
+		}
+		parsedPath, err := url.PathUnescape(path)
+		if err != nil {
+			return false
+		}
+		if parsedPath == path {
+			break
+		}
+		decoded = true
+		path = parsedPath
+	}
+	if hasUnsafeGatewayPath(path) || containsEncodedPathSeparator(path) || (decoded && strings.Contains(path, "%")) {
+		return false
+	}
+	path = strings.TrimRight(path, "/")
+
 	if paths, ok := publicGatewayPaths[method]; ok {
 		if paths[path] {
 			return true
 		}
 	}
-	if prefixes, ok := publicGatewayPrefixes[method]; ok {
-		for _, prefix := range prefixes {
-			if len(path) > len(prefix) && path[:len(prefix)] == prefix {
-				// Check that the remaining path does not contain sub-resource keywords
-				remaining := path[len(prefix):]
-				isSubResource := false
-				for _, keyword := range subResourceKeywords {
-					if strings.Contains(remaining, keyword) {
-						isSubResource = true
-						break
-					}
-				}
-				if !isSubResource {
-					return true
-				}
-			}
+	if method != "GET" {
+		return false
+	}
+
+	segments := strings.Split(strings.TrimPrefix(path, "/"), "/")
+	if len(segments) < 3 || segments[0] != "api" || segments[1] != "v1" {
+		return false
+	}
+
+	switch segments[2] {
+	case "users":
+		return isPublicGatewayUserPath(segments)
+	case "memos":
+		return isPublicGatewayMemoPath(segments)
+	case "instance":
+		return len(segments) == 5 && segments[3] == "settings" && segments[4] != ""
+	default:
+		return false
+	}
+}
+
+func hasUnsafeGatewayPath(path string) bool {
+	if strings.Contains(path, "\\") || containsEncodedPathSeparator(path) {
+		return true
+	}
+	for _, segment := range strings.Split(path, "/") {
+		if segment == "." || segment == ".." {
+			return true
 		}
 	}
 	return false
+}
+
+func containsEncodedPathSeparator(path string) bool {
+	lowerPath := strings.ToLower(path)
+	return strings.Contains(lowerPath, "%2f") || strings.Contains(lowerPath, "%5c")
+}
+
+func isPublicGatewayUserPath(segments []string) bool {
+	if len(segments) != 4 {
+		return false
+	}
+	if segments[3] == "" {
+		return false
+	}
+	if strings.HasSuffix(segments[3], ":getStats") {
+		return strings.TrimSuffix(segments[3], ":getStats") != ""
+	}
+	return !strings.Contains(segments[3], ":")
+}
+
+func isPublicGatewayMemoPath(segments []string) bool {
+	if len(segments) == 4 {
+		return segments[3] != "" && !strings.Contains(segments[3], ":")
+	}
+	return len(segments) == 5 && segments[3] != "" && segments[4] == "comments"
 }

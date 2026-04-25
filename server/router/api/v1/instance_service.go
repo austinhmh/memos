@@ -270,16 +270,12 @@ func convertInstanceMemoRelatedSettingToStore(setting *v1pb.InstanceSetting_Memo
 	}
 }
 
-var ownerCache *v1pb.User
-
 func (s *APIV1Service) GetInstanceOwner(ctx context.Context) (*v1pb.User, error) {
-	if ownerCache != nil {
-		return ownerCache, nil
-	}
-
+	normalStatus := store.Normal
 	hostUserType := store.RoleHost
 	user, err := s.Store.GetUser(ctx, &store.FindUser{
-		Role: &hostUserType,
+		Role:      &hostUserType,
+		RowStatus: &normalStatus,
 	})
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to find owner")
@@ -288,6 +284,5 @@ func (s *APIV1Service) GetInstanceOwner(ctx context.Context) (*v1pb.User, error)
 		return nil, nil
 	}
 
-	ownerCache = convertUserFromStore(user)
-	return ownerCache, nil
+	return convertUserFromStore(user), nil
 }

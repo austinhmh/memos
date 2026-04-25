@@ -2,11 +2,14 @@ package test
 
 import (
 	"context"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	apiv1 "github.com/usememos/memos/proto/gen/api/v1"
+	"github.com/usememos/memos/store"
 )
 
 func TestDeleteMemoReaction(t *testing.T) {
@@ -191,4 +194,117 @@ func TestDeleteMemoReaction(t *testing.T) {
 		require.Contains(t, err.Error(), "permission denied")
 		require.NotContains(t, err.Error(), "not found")
 	})
+}
+
+func TestListMemoReactionsHidesArchivedCreator(t *testing.T) {
+	ctx := context.Background()
+	ts := NewTestService(t)
+	defer ts.Cleanup()
+
+	memoOwner, err := ts.CreateRegularUser(ctx, "reaction-memo-owner")
+	require.NoError(t, err)
+	memoOwnerCtx := ts.CreateUserContext(ctx, memoOwner.ID)
+	activeReactor, err := ts.CreateRegularUser(ctx, "active-reactor")
+	require.NoError(t, err)
+	activeReactorCtx := ts.CreateUserContext(ctx, activeReactor.ID)
+	archivedReactor, err := ts.CreateRegularUser(ctx, "archived-reactor")
+	require.NoError(t, err)
+	archivedReactorCtx := ts.CreateUserContext(ctx, archivedReactor.ID)
+
+	memo, err := ts.Service.CreateMemo(memoOwnerCtx, &apiv1.CreateMemoRequest{
+		Memo: &apiv1.Memo{Content: "reaction target", Visibility: apiv1.Visibility_PUBLIC},
+	})
+	require.NoError(t, err)
+
+	_, err = ts.Service.UpsertMemoReaction(activeReactorCtx, &apiv1.UpsertMemoReactionRequest{
+		Name:     memo.Name,
+		Reaction: &apiv1.Reaction{ContentId: memo.Name, ReactionType: "👍"},
+	})
+	require.NoError(t, err)
+	_, err = ts.Service.UpsertMemoReaction(archivedReactorCtx, &apiv1.UpsertMemoReactionRequest{
+		Name:     memo.Name,
+		Reaction: &apiv1.Reaction{ContentId: memo.Name, ReactionType: "❤️"},
+	})
+	require.NoError(t, err)
+
+	archivedStatus := store.Archived
+	_, err = ts.Store.UpdateUser(ctx, &store.UpdateUser{ID: archivedReactor.ID, RowStatus: &archivedStatus})
+	require.NoError(t, err)
+
+	list, err := ts.Service.ListMemoReactions(ctx, &apiv1.ListMemoReactionsRequest{Name: memo.Name})
+	require.NoError(t, err)
+	require.Len(t, list.Reactions, 1)
+	require.Equal(t, "users/"+strconv.Itoa(int(activeReactor.ID)), list.Reactions[0].Creator)
+
+	memoWithReactions, err := ts.Service.GetMemo(ctx, &apiv1.GetMemoRequest{Name: memo.Name})
+	require.NoError(t, err)
+	require.Len(t, memoWithReactions.Reactions, 1)
+	require.Equal(t, "👍", memoWithReactions.Reactions[0].ReactionType)
+}
+
+func TestDeleteMemoReactionRequiresMatchingMemoPath(t *testing.T) {
+	ctx := context.Background()
+	ts := NewTestService(t)
+	defer ts.Cleanup()
+
+	user, err := ts.CreateRegularUser(ctx, "reaction-path-user")
+	require.NoError(t, err)
+	userCtx := ts.CreateUserContext(ctx, user.ID)
+	memo, err := ts.Service.CreateMemo(userCtx, &apiv1.CreateMemoRequest{
+		Memo: &apiv1.Memo{Content: "reaction path target", Visibility: apiv1.Visibility_PUBLIC},
+	})
+	require.NoError(t, err)
+	otherMemo, err := ts.Service.CreateMemo(userCtx, &apiv1.CreateMemoRequest{
+		Memo: &apiv1.Memo{Content: "reaction wrong path", Visibility: apiv1.Visibility_PUBLIC},
+	})
+	require.NoError(t, err)
+	reaction, err := ts.Service.UpsertMemoReaction(userCtx, &apiv1.UpsertMemoReactionRequest{
+		Name:     memo.Name,
+		Reaction: &apiv1.Reaction{ContentId: memo.Name, ReactionType: "👍"},
+	})
+	require.NoError(t, err)
+
+	wrongMemoPath := strings.Replace(reaction.Name, memo.Name, otherMemo.Name, 1)
+	_, err = ts.Service.DeleteMemoReaction(userCtx, &apiv1.DeleteMemoReactionRequest{Name: wrongMemoPath})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "permission denied")
+
+	list, err := ts.Service.ListMemoReactions(ctx, &apiv1.ListMemoReactionsRequest{Name: memo.Name})
+	require.NoError(t, err)
+	require.Len(t, list.Reactions, 1)
+}
+
+func TestDeleteMemoReactionRejectsArchivedMemo(t *testing.T) {
+	ctx := context.Background()
+	ts := NewTestService(t)
+	defer ts.Cleanup()
+
+	user, err := ts.CreateRegularUser(ctx, "reaction-archived-memo-user")
+	require.NoError(t, err)
+	userCtx := ts.CreateUserContext(ctx, user.ID)
+	memo, err := ts.Service.CreateMemo(userCtx, &apiv1.CreateMemoRequest{
+		Memo: &apiv1.Memo{Content: "reaction archived target", Visibility: apiv1.Visibility_PUBLIC},
+	})
+	require.NoError(t, err)
+	reaction, err := ts.Service.UpsertMemoReaction(userCtx, &apiv1.UpsertMemoReactionRequest{
+		Name:     memo.Name,
+		Reaction: &apiv1.Reaction{ContentId: memo.Name, ReactionType: "👍"},
+	})
+	require.NoError(t, err)
+
+	memoUID := memo.Name[len("memos/"):]
+	storeMemo, err := ts.Store.GetMemo(ctx, &store.FindMemo{UID: &memoUID})
+	require.NoError(t, err)
+	require.NotNil(t, storeMemo)
+	archivedStatus := store.Archived
+	require.NoError(t, ts.Store.UpdateMemo(ctx, &store.UpdateMemo{ID: storeMemo.ID, RowStatus: &archivedStatus}))
+
+	_, err = ts.Service.DeleteMemoReaction(userCtx, &apiv1.DeleteMemoReactionRequest{Name: reaction.Name})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "permission denied")
+
+	contentID := memo.Name
+	storedReaction, err := ts.Store.GetReaction(ctx, &store.FindReaction{ContentID: &contentID})
+	require.NoError(t, err)
+	require.NotNil(t, storedReaction)
 }

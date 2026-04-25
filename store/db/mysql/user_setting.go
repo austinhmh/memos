@@ -18,6 +18,32 @@ func (d *DB) UpsertUserSetting(ctx context.Context, upsert *store.UserSetting) (
 	return upsert, nil
 }
 
+func (d *DB) InsertUserSettingIfNotExists(ctx context.Context, insert *store.UserSetting) (bool, error) {
+	stmt := "INSERT IGNORE INTO `user_setting` (`user_id`, `key`, `value`) VALUES (?, ?, ?)"
+	result, err := d.db.ExecContext(ctx, stmt, insert.UserID, insert.Key.String(), insert.Value)
+	if err != nil {
+		return false, err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return rowsAffected > 0, nil
+}
+
+func (d *DB) UpdateUserSettingValueIfMatched(ctx context.Context, update *store.UpdateUserSettingValueIfMatched) (bool, error) {
+	stmt := "UPDATE `user_setting` SET `value` = ? WHERE `user_id` = ? AND `key` = ? AND `value` = ?"
+	result, err := d.db.ExecContext(ctx, stmt, update.NewValue, update.UserID, update.Key.String(), update.OldValue)
+	if err != nil {
+		return false, err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return rowsAffected > 0, nil
+}
+
 func (d *DB) ListUserSettings(ctx context.Context, find *store.FindUserSetting) ([]*store.UserSetting, error) {
 	where, args := []string{"1 = 1"}, []any{}
 

@@ -115,6 +115,17 @@ func validatePassword(password string) error {
 
 // checkMemoVisibility checks if the current user has permission to view the memo.
 func (s *APIV1Service) checkMemoVisibility(ctx context.Context, memo *store.Memo) error {
+	if memo == nil || memo.RowStatus != store.Normal {
+		return status.Errorf(codes.NotFound, "memo not found")
+	}
+	normalUserStatus := store.Normal
+	creator, err := s.Store.GetUser(ctx, &store.FindUser{ID: &memo.CreatorID, RowStatus: &normalUserStatus})
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to get user")
+	}
+	if creator == nil {
+		return status.Errorf(codes.NotFound, "memo not found")
+	}
 	if memo.Visibility == store.Public {
 		return nil
 	}
@@ -126,6 +137,53 @@ func (s *APIV1Service) checkMemoVisibility(ctx context.Context, memo *store.Memo
 		return status.Errorf(codes.Unauthenticated, "user not authenticated")
 	}
 	if memo.Visibility == store.Private && memo.CreatorID != user.ID && !isSuperUser(user) {
+		return status.Errorf(codes.PermissionDenied, "permission denied")
+	}
+	return nil
+}
+
+func (s *APIV1Service) ensureAttachmentAccessible(ctx context.Context, attachment *store.Attachment, user *store.User) error {
+	if attachment == nil {
+		return status.Errorf(codes.NotFound, "attachment not found")
+	}
+	if attachment.MemoID != nil {
+		memo, err := s.Store.GetMemo(ctx, &store.FindMemo{ID: attachment.MemoID})
+		if err != nil {
+			return status.Errorf(codes.Internal, "failed to get attachment memo")
+		}
+		return s.checkMemoVisibility(ctx, memo)
+	}
+	if user == nil {
+		return status.Errorf(codes.Unauthenticated, "user not authenticated")
+	}
+	if attachment.CreatorID != user.ID && !isSuperUser(user) {
+		return status.Errorf(codes.PermissionDenied, "permission denied")
+	}
+	return nil
+}
+
+func (s *APIV1Service) ensureAttachmentCanMoveToMemo(ctx context.Context, attachment *store.Attachment, targetMemoID int32, user *store.User) error {
+	if attachment == nil || attachment.MemoID == nil || *attachment.MemoID == targetMemoID {
+		return nil
+	}
+	return s.ensureBoundAttachmentMutable(ctx, attachment, user)
+}
+
+func (s *APIV1Service) ensureBoundAttachmentMutable(ctx context.Context, attachment *store.Attachment, user *store.User) error {
+	if attachment == nil || attachment.MemoID == nil {
+		return nil
+	}
+	memo, err := s.Store.GetMemo(ctx, &store.FindMemo{ID: attachment.MemoID})
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to get attachment memo")
+	}
+	if memo == nil {
+		return status.Errorf(codes.NotFound, "attachment not found")
+	}
+	if user == nil {
+		return status.Errorf(codes.Unauthenticated, "user not authenticated")
+	}
+	if memo.CreatorID != user.ID && !isSuperUser(user) {
 		return status.Errorf(codes.PermissionDenied, "permission denied")
 	}
 	return nil

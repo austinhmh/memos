@@ -2,9 +2,12 @@ package store
 
 import (
 	"context"
+	"fmt"
+	"sync"
 
 	"github.com/pkg/errors"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	storepb "github.com/usememos/memos/proto/gen/store"
@@ -21,6 +24,28 @@ type FindUserSetting struct {
 	Key    storepb.UserSetting_Key
 }
 
+type UpdateUserSettingValueIfMatched struct {
+	UserID   int32
+	Key      storepb.UserSetting_Key
+	OldValue string
+	NewValue string
+}
+
+const userSettingCASRetries = 4
+
+var (
+	ErrRefreshTokenNotFound   = errors.New("refresh token not found")
+	ErrUserSettingCASConflict = errors.New("user setting CAS conflict")
+)
+
+func IsRefreshTokenNotFound(err error) bool {
+	return errors.Cause(err) == ErrRefreshTokenNotFound
+}
+
+func IsUserSettingCASConflict(err error) bool {
+	return errors.Cause(err) == ErrUserSettingCASConflict
+}
+
 // RefreshTokenQueryResult contains the result of querying a refresh token.
 type RefreshTokenQueryResult struct {
 	UserID       int32
@@ -32,6 +57,14 @@ type PATQueryResult struct {
 	UserID int32
 	User   *User
 	PAT    *storepb.PersonalAccessTokensUserSetting_PersonalAccessToken
+}
+
+var userSettingWriteMu sync.Map
+
+func getUserSettingWriteLock(userID int32, key storepb.UserSetting_Key) *sync.Mutex {
+	lockKey := fmt.Sprintf("%d-%s", userID, key.String())
+	lock, _ := userSettingWriteMu.LoadOrStore(lockKey, &sync.Mutex{})
+	return lock.(*sync.Mutex)
 }
 
 func (s *Store) UpsertUserSetting(ctx context.Context, upsert *storepb.UserSetting) (*storepb.UserSetting, error) {
@@ -53,6 +86,32 @@ func (s *Store) UpsertUserSetting(ctx context.Context, upsert *storepb.UserSetti
 	}
 	s.userSettingCache.Set(ctx, getUserSettingCacheKey(userSetting.UserId, userSetting.Key.String()), userSetting)
 	return userSetting, nil
+}
+
+func (s *Store) updateUserSettingValueIfMatched(ctx context.Context, update *UpdateUserSettingValueIfMatched) (bool, error) {
+	updated, err := s.driver.UpdateUserSettingValueIfMatched(ctx, update)
+	if err != nil {
+		return false, err
+	}
+	if updated {
+		s.userSettingCache.Delete(ctx, getUserSettingCacheKey(update.UserID, update.Key.String()))
+	}
+	return updated, nil
+}
+
+func (s *Store) insertUserSettingIfNotExists(ctx context.Context, userSetting *storepb.UserSetting) (bool, error) {
+	userSettingRaw, err := convertUserSettingToRaw(userSetting)
+	if err != nil {
+		return false, err
+	}
+	inserted, err := s.driver.InsertUserSettingIfNotExists(ctx, userSettingRaw)
+	if err != nil {
+		return false, err
+	}
+	if inserted {
+		s.userSettingCache.Delete(ctx, getUserSettingCacheKey(userSetting.UserId, userSetting.Key.String()))
+	}
+	return inserted, nil
 }
 
 func (s *Store) ListUserSettings(ctx context.Context, find *FindUserSetting) ([]*storepb.UserSetting, error) {
@@ -109,12 +168,22 @@ func (s *Store) GetUserByPATHash(ctx context.Context, tokenHash string) (*PATQue
 		return nil, err
 	}
 
-	// Fetch user info
-	user, err := s.GetUser(ctx, &FindUser{ID: &result.UserID})
+	// Fetch current normal user info from the database so archived users cannot
+	// continue using a PAT through stale in-memory user cache entries.
+	normalStatus := Normal
+	user, err := s.GetUser(ctx, &FindUser{ID: &result.UserID, RowStatus: &normalStatus})
 	if err != nil {
 		return nil, err
 	}
 	if user == nil {
+		archivedStatus := Archived
+		archivedUser, archivedErr := s.GetUser(ctx, &FindUser{ID: &result.UserID, RowStatus: &archivedStatus})
+		if archivedErr != nil {
+			return nil, archivedErr
+		}
+		if archivedUser != nil {
+			return nil, errors.New("user is archived")
+		}
 		return nil, errors.New("user not found for PAT")
 	}
 	result.User = user
@@ -134,19 +203,22 @@ func (s *Store) GetUserRefreshTokens(ctx context.Context, userID int32) ([]*stor
 	if userSetting == nil {
 		return []*storepb.RefreshTokensUserSetting_RefreshToken{}, nil
 	}
-	return userSetting.GetRefreshTokens().RefreshTokens, nil
+	return cloneRefreshTokens(userSetting.GetRefreshTokens().RefreshTokens), nil
 }
 
-// AddUserRefreshToken adds a new refresh token for the user.
-func (s *Store) AddUserRefreshToken(ctx context.Context, userID int32, token *storepb.RefreshTokensUserSetting_RefreshToken) error {
-	tokens, err := s.GetUserRefreshTokens(ctx, userID)
-	if err != nil {
-		return err
+func cloneRefreshTokens(tokens []*storepb.RefreshTokensUserSetting_RefreshToken) []*storepb.RefreshTokensUserSetting_RefreshToken {
+	clonedTokens := make([]*storepb.RefreshTokensUserSetting_RefreshToken, 0, len(tokens))
+	for _, token := range tokens {
+		if token == nil {
+			continue
+		}
+		clonedTokens = append(clonedTokens, proto.Clone(token).(*storepb.RefreshTokensUserSetting_RefreshToken))
 	}
+	return clonedTokens
+}
 
-	tokens = append(tokens, token)
-
-	_, err = s.UpsertUserSetting(ctx, &storepb.UserSetting{
+func newRefreshTokensUserSetting(userID int32, tokens []*storepb.RefreshTokensUserSetting_RefreshToken) *storepb.UserSetting {
+	return &storepb.UserSetting{
 		UserId: userID,
 		Key:    storepb.UserSetting_REFRESH_TOKENS,
 		Value: &storepb.UserSetting_RefreshTokens{
@@ -154,34 +226,131 @@ func (s *Store) AddUserRefreshToken(ctx context.Context, userID int32, token *st
 				RefreshTokens: tokens,
 			},
 		},
+	}
+}
+
+type refreshTokensMutation func(existingTokens []*storepb.RefreshTokensUserSetting_RefreshToken) ([]*storepb.RefreshTokensUserSetting_RefreshToken, error)
+
+func (s *Store) mutateUserRefreshTokens(ctx context.Context, userID int32, mutate refreshTokensMutation) error {
+	for range userSettingCASRetries {
+		userSetting, err := s.GetUserSetting(ctx, &FindUserSetting{
+			UserID: &userID,
+			Key:    storepb.UserSetting_REFRESH_TOKENS,
+		})
+		if err != nil {
+			return err
+		}
+
+		if userSetting == nil {
+			newTokens, err := mutate(nil)
+			if err != nil {
+				return err
+			}
+			inserted, err := s.insertUserSettingIfNotExists(ctx, newRefreshTokensUserSetting(userID, newTokens))
+			if err != nil {
+				return err
+			}
+			if inserted {
+				return nil
+			}
+			s.userSettingCache.Delete(ctx, getUserSettingCacheKey(userID, storepb.UserSetting_REFRESH_TOKENS.String()))
+			continue
+		}
+
+		existingRaw, err := convertUserSettingToRaw(userSetting)
+		if err != nil {
+			return err
+		}
+		newTokens, err := mutate(cloneRefreshTokens(userSetting.GetRefreshTokens().RefreshTokens))
+		if err != nil {
+			return err
+		}
+		updatedRaw, err := convertUserSettingToRaw(newRefreshTokensUserSetting(userID, newTokens))
+		if err != nil {
+			return err
+		}
+
+		updated, err := s.updateUserSettingValueIfMatched(ctx, &UpdateUserSettingValueIfMatched{
+			UserID:   userID,
+			Key:      storepb.UserSetting_REFRESH_TOKENS,
+			OldValue: existingRaw.Value,
+			NewValue: updatedRaw.Value,
+		})
+		if err != nil {
+			return err
+		}
+		if updated {
+			return nil
+		}
+
+		s.userSettingCache.Delete(ctx, getUserSettingCacheKey(userID, storepb.UserSetting_REFRESH_TOKENS.String()))
+	}
+
+	return ErrUserSettingCASConflict
+}
+
+// AddUserRefreshToken adds a new refresh token for the user.
+func (s *Store) AddUserRefreshToken(ctx context.Context, userID int32, token *storepb.RefreshTokensUserSetting_RefreshToken) error {
+	lock := getUserSettingWriteLock(userID, storepb.UserSetting_REFRESH_TOKENS)
+	lock.Lock()
+	defer lock.Unlock()
+
+	return s.mutateUserRefreshTokens(ctx, userID, func(existingTokens []*storepb.RefreshTokensUserSetting_RefreshToken) ([]*storepb.RefreshTokensUserSetting_RefreshToken, error) {
+		newTokens := cloneRefreshTokens(existingTokens)
+		if token != nil {
+			newTokens = append(newTokens, proto.Clone(token).(*storepb.RefreshTokensUserSetting_RefreshToken))
+		}
+		return newTokens, nil
 	})
-	return err
+}
+
+// RotateUserRefreshToken atomically consumes an existing refresh token and stores its replacement.
+func (s *Store) RotateUserRefreshToken(ctx context.Context, userID int32, oldTokenID string, newToken *storepb.RefreshTokensUserSetting_RefreshToken) error {
+	lock := getUserSettingWriteLock(userID, storepb.UserSetting_REFRESH_TOKENS)
+	lock.Lock()
+	defer lock.Unlock()
+
+	return s.mutateUserRefreshTokens(ctx, userID, func(existingTokens []*storepb.RefreshTokensUserSetting_RefreshToken) ([]*storepb.RefreshTokensUserSetting_RefreshToken, error) {
+		newTokens := make([]*storepb.RefreshTokensUserSetting_RefreshToken, 0, len(existingTokens))
+		removed := false
+		for _, token := range existingTokens {
+			if token.TokenId == oldTokenID {
+				removed = true
+				continue
+			}
+			newTokens = append(newTokens, token)
+		}
+		if !removed {
+			return nil, errors.Wrapf(ErrRefreshTokenNotFound, "refresh token %s", oldTokenID)
+		}
+		if newToken != nil {
+			newTokens = append(newTokens, proto.Clone(newToken).(*storepb.RefreshTokensUserSetting_RefreshToken))
+		}
+		return newTokens, nil
+	})
 }
 
 // RemoveUserRefreshToken removes a refresh token from the user.
 func (s *Store) RemoveUserRefreshToken(ctx context.Context, userID int32, tokenID string) error {
-	existingTokens, err := s.GetUserRefreshTokens(ctx, userID)
-	if err != nil {
-		return err
-	}
+	lock := getUserSettingWriteLock(userID, storepb.UserSetting_REFRESH_TOKENS)
+	lock.Lock()
+	defer lock.Unlock()
 
-	newTokens := make([]*storepb.RefreshTokensUserSetting_RefreshToken, 0, len(existingTokens))
-	for _, token := range existingTokens {
-		if token.TokenId != tokenID {
+	return s.mutateUserRefreshTokens(ctx, userID, func(existingTokens []*storepb.RefreshTokensUserSetting_RefreshToken) ([]*storepb.RefreshTokensUserSetting_RefreshToken, error) {
+		newTokens := make([]*storepb.RefreshTokensUserSetting_RefreshToken, 0, len(existingTokens))
+		removed := false
+		for _, token := range existingTokens {
+			if token.TokenId == tokenID {
+				removed = true
+				continue
+			}
 			newTokens = append(newTokens, token)
 		}
-	}
-
-	_, err = s.UpsertUserSetting(ctx, &storepb.UserSetting{
-		UserId: userID,
-		Key:    storepb.UserSetting_REFRESH_TOKENS,
-		Value: &storepb.UserSetting_RefreshTokens{
-			RefreshTokens: &storepb.RefreshTokensUserSetting{
-				RefreshTokens: newTokens,
-			},
-		},
+		if !removed {
+			return nil, errors.Wrapf(ErrRefreshTokenNotFound, "refresh token %s", tokenID)
+		}
+		return newTokens, nil
 	})
-	return err
 }
 
 // GetUserRefreshTokenByID returns a specific refresh token.
@@ -210,11 +379,26 @@ func (s *Store) GetUserPersonalAccessTokens(ctx context.Context, userID int32) (
 	if userSetting == nil {
 		return []*storepb.PersonalAccessTokensUserSetting_PersonalAccessToken{}, nil
 	}
-	return userSetting.GetPersonalAccessTokens().Tokens, nil
+	return clonePersonalAccessTokens(userSetting.GetPersonalAccessTokens().Tokens), nil
+}
+
+func clonePersonalAccessTokens(tokens []*storepb.PersonalAccessTokensUserSetting_PersonalAccessToken) []*storepb.PersonalAccessTokensUserSetting_PersonalAccessToken {
+	clonedTokens := make([]*storepb.PersonalAccessTokensUserSetting_PersonalAccessToken, 0, len(tokens))
+	for _, token := range tokens {
+		if token == nil {
+			continue
+		}
+		clonedTokens = append(clonedTokens, proto.Clone(token).(*storepb.PersonalAccessTokensUserSetting_PersonalAccessToken))
+	}
+	return clonedTokens
 }
 
 // AddUserPersonalAccessToken adds a new PAT for the user.
 func (s *Store) AddUserPersonalAccessToken(ctx context.Context, userID int32, token *storepb.PersonalAccessTokensUserSetting_PersonalAccessToken) error {
+	lock := getUserSettingWriteLock(userID, storepb.UserSetting_PERSONAL_ACCESS_TOKENS)
+	lock.Lock()
+	defer lock.Unlock()
+
 	tokens, err := s.GetUserPersonalAccessTokens(ctx, userID)
 	if err != nil {
 		return err
@@ -236,6 +420,10 @@ func (s *Store) AddUserPersonalAccessToken(ctx context.Context, userID int32, to
 
 // RemoveUserPersonalAccessToken removes a PAT from the user.
 func (s *Store) RemoveUserPersonalAccessToken(ctx context.Context, userID int32, tokenID string) error {
+	lock := getUserSettingWriteLock(userID, storepb.UserSetting_PERSONAL_ACCESS_TOKENS)
+	lock.Lock()
+	defer lock.Unlock()
+
 	existingTokens, err := s.GetUserPersonalAccessTokens(ctx, userID)
 	if err != nil {
 		return err
@@ -262,6 +450,10 @@ func (s *Store) RemoveUserPersonalAccessToken(ctx context.Context, userID int32,
 
 // UpdatePATLastUsed updates the last_used_at timestamp of a PAT.
 func (s *Store) UpdatePATLastUsed(ctx context.Context, userID int32, tokenID string, lastUsed *timestamppb.Timestamp) error {
+	lock := getUserSettingWriteLock(userID, storepb.UserSetting_PERSONAL_ACCESS_TOKENS)
+	lock.Lock()
+	defer lock.Unlock()
+
 	tokens, err := s.GetUserPersonalAccessTokens(ctx, userID)
 	if err != nil {
 		return err

@@ -25,7 +25,8 @@ func (s *APIV1Service) SetMemoAttachments(ctx context.Context, request *v1pb.Set
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid memo name: %v", err)
 	}
-	memo, err := s.Store.GetMemo(ctx, &store.FindMemo{UID: &memoUID})
+	normalStatus := store.Normal
+	memo, err := s.Store.GetMemo(ctx, &store.FindMemo{UID: &memoUID, RowStatus: &normalStatus, CreatorRowStatus: &normalStatus})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get memo")
 	}
@@ -42,35 +43,15 @@ func (s *APIV1Service) SetMemoAttachments(ctx context.Context, request *v1pb.Set
 		return nil, status.Errorf(codes.Internal, "failed to list attachments")
 	}
 
-	// Delete attachments that are not in the request.
-	for _, attachment := range attachments {
-		found := false
-		for _, requestAttachment := range request.Attachments {
-			requestAttachmentUID, err := ExtractAttachmentUIDFromName(requestAttachment.Name)
-			if err != nil {
-				return nil, status.Errorf(codes.InvalidArgument, "invalid attachment name: %v", err)
-			}
-			if attachment.UID == requestAttachmentUID {
-				found = true
-				break
-			}
-		}
-		if !found {
-			if err = s.Store.DeleteAttachment(ctx, &store.DeleteAttachment{
-				ID:     int32(attachment.ID),
-				MemoID: &memo.ID,
-			}); err != nil {
-				return nil, status.Errorf(codes.Internal, "failed to delete attachment")
-			}
-		}
-	}
-
-	slices.Reverse(request.Attachments)
-	// Update attachments' memo_id in the request.
-	for index, attachment := range request.Attachments {
-		attachmentUID, err := ExtractAttachmentUIDFromName(attachment.Name)
+	requestAttachmentByUID := map[string]*store.Attachment{}
+	requestAttachmentUIDs := []string{}
+	for _, requestAttachment := range request.Attachments {
+		attachmentUID, err := ExtractAttachmentUIDFromName(requestAttachment.Name)
 		if err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "invalid attachment name: %v", err)
+		}
+		if _, ok := requestAttachmentByUID[attachmentUID]; ok {
+			continue
 		}
 		tempAttachment, err := s.Store.GetAttachment(ctx, &store.FindAttachment{UID: &attachmentUID})
 		if err != nil {
@@ -82,11 +63,37 @@ func (s *APIV1Service) SetMemoAttachments(ctx context.Context, request *v1pb.Set
 		if tempAttachment.CreatorID != user.ID && !isSuperUser(user) {
 			return nil, status.Errorf(codes.PermissionDenied, "cannot attach resources owned by other users")
 		}
+		if err := s.ensureAttachmentCanMoveToMemo(ctx, tempAttachment, memo.ID, user); err != nil {
+			return nil, err
+		}
+		requestAttachmentByUID[attachmentUID] = tempAttachment
+		requestAttachmentUIDs = append(requestAttachmentUIDs, attachmentUID)
+	}
+
+	// Delete attachments that are not in the validated request.
+	for _, attachment := range attachments {
+		if _, found := requestAttachmentByUID[attachment.UID]; !found {
+			if err = s.Store.DeleteAttachment(ctx, &store.DeleteAttachment{
+				ID:     int32(attachment.ID),
+				MemoID: &memo.ID,
+			}); err != nil {
+				return nil, status.Errorf(codes.Internal, "failed to delete attachment")
+			}
+		}
+	}
+
+	slices.Reverse(requestAttachmentUIDs)
+	// Update attachments' memo_id in the request.
+	for index, attachmentUID := range requestAttachmentUIDs {
+		tempAttachment := requestAttachmentByUID[attachmentUID]
+		expectedMemoID := tempAttachment.MemoID
 		updatedTs := time.Now().Unix() + int64(index)
 		if err := s.Store.UpdateAttachment(ctx, &store.UpdateAttachment{
-			ID:        tempAttachment.ID,
-			MemoID:    &memo.ID,
-			UpdatedTs: &updatedTs,
+			ID:                 tempAttachment.ID,
+			MemoID:             &memo.ID,
+			UpdatedTs:          &updatedTs,
+			RequireMemoIDMatch: true,
+			ExpectedMemoID:     expectedMemoID,
 		}); err != nil {
 			return nil, status.Errorf(codes.Internal, "failed to update attachment: %v", err)
 		}

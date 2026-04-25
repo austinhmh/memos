@@ -47,6 +47,8 @@ type Driver interface {
 
 	// UserSetting model related methods.
 	UpsertUserSetting(ctx context.Context, upsert *UserSetting) (*UserSetting, error)
+	InsertUserSettingIfNotExists(ctx context.Context, insert *UserSetting) (bool, error)
+	UpdateUserSettingValueIfMatched(ctx context.Context, update *UpdateUserSettingValueIfMatched) (bool, error)
 	ListUserSettings(ctx context.Context, find *FindUserSetting) ([]*UserSetting, error)
 	GetUserByPATHash(ctx context.Context, tokenHash string) (*PATQueryResult, error)
 

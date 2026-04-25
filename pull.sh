@@ -78,12 +78,21 @@ fi
 # ── 步骤 4: 启动新容器 ───────────────────────────────
 echo ""
 echo "[ 4/4 ] 启动新容器 ..."
+INSTANCE_URL_ARGS=()
+EFFECTIVE_INSTANCE_URL="${MEMOS_INSTANCE_URL:-}"
+if [ "$LOCAL_ONLY" = true ] && [ -z "$EFFECTIVE_INSTANCE_URL" ]; then
+    EFFECTIVE_INSTANCE_URL="http://localhost:8081"
+fi
+if [ -n "$EFFECTIVE_INSTANCE_URL" ]; then
+    INSTANCE_URL_ARGS=(-e "MEMOS_INSTANCE_URL=$EFFECTIVE_INSTANCE_URL")
+fi
 docker run -d \
     --name "$CONTAINER_NAME" \
     -p 8081:5230 \
     -v "$DATA_DIR:/var/opt/memos" \
     -e MEMOS_MODE=prod \
     -e MEMOS_PORT=5230 \
+    "${INSTANCE_URL_ARGS[@]}" \
     --user root \
     --restart always \
     "$RUN_IMAGE"

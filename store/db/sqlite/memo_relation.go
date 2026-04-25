@@ -49,6 +49,18 @@ func (d *DB) ListMemoRelations(ctx context.Context, find *store.FindMemoRelation
 	if find.Type != nil {
 		where, args = append(where, "type = ?"), append(args, find.Type)
 	}
+	if find.MemoRowStatus != nil {
+		where, args = append(where, "memo_id IN (SELECT id FROM memo WHERE row_status = ?)"), append(args, *find.MemoRowStatus)
+	}
+	if find.MemoCreatorRowStatus != nil {
+		where, args = append(where, "memo_id IN (SELECT memo.id FROM memo LEFT JOIN user AS creator ON memo.creator_id = creator.id WHERE creator.row_status = ?)"), append(args, *find.MemoCreatorRowStatus)
+	}
+	if find.RelatedRowStatus != nil {
+		where, args = append(where, "related_memo_id IN (SELECT id FROM memo WHERE row_status = ?)"), append(args, *find.RelatedRowStatus)
+	}
+	if find.RelatedCreatorRowStatus != nil {
+		where, args = append(where, "related_memo_id IN (SELECT memo.id FROM memo LEFT JOIN user AS creator ON memo.creator_id = creator.id WHERE creator.row_status = ?)"), append(args, *find.RelatedCreatorRowStatus)
+	}
 	if find.MemoFilter != nil {
 		engine, err := filter.DefaultEngine()
 		if err != nil {

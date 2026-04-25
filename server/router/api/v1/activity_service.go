@@ -45,6 +45,9 @@ func (s *APIV1Service) ListActivities(ctx context.Context, request *v1pb.ListAct
 	for _, activity := range activities {
 		activityMessage, err := s.convertActivityFromStore(ctx, activity)
 		if err != nil {
+			if status.Code(err) == codes.NotFound || status.Code(err) == codes.PermissionDenied || status.Code(err) == codes.Unauthenticated {
+				continue
+			}
 			return nil, status.Errorf(codes.Internal, "failed to convert activity from store: %v", err)
 		}
 		activityMessages = append(activityMessages, activityMessage)
@@ -85,7 +88,7 @@ func (s *APIV1Service) GetActivity(ctx context.Context, request *v1pb.GetActivit
 
 	activityMessage, err := s.convertActivityFromStore(ctx, activity)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to convert activity from store: %v", err)
+		return nil, err
 	}
 	return activityMessage, nil
 }
@@ -96,7 +99,7 @@ func (s *APIV1Service) GetActivity(ctx context.Context, request *v1pb.GetActivit
 func (s *APIV1Service) convertActivityFromStore(ctx context.Context, activity *store.Activity) (*v1pb.Activity, error) {
 	payload, err := s.convertActivityPayloadFromStore(ctx, activity.Payload)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to convert activity payload from store: %v", err)
+		return nil, err
 	}
 
 	// Convert store activity type to proto enum
@@ -132,10 +135,12 @@ func (s *APIV1Service) convertActivityFromStore(ctx context.Context, activity *s
 func (s *APIV1Service) convertActivityPayloadFromStore(ctx context.Context, payload *storepb.ActivityPayload) (*v1pb.ActivityPayload, error) {
 	v2Payload := &v1pb.ActivityPayload{}
 	if payload.MemoComment != nil {
-		// Fetch the comment memo
+		normalStatus := store.Normal
 		memo, err := s.Store.GetMemo(ctx, &store.FindMemo{
-			ID:             &payload.MemoComment.MemoId,
-			ExcludeContent: true,
+			ID:               &payload.MemoComment.MemoId,
+			RowStatus:        &normalStatus,
+			CreatorRowStatus: &normalStatus,
+			ExcludeContent:   true,
 		})
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "failed to get memo: %v", err)
@@ -144,13 +149,20 @@ func (s *APIV1Service) convertActivityPayloadFromStore(ctx context.Context, payl
 			return nil, status.Errorf(codes.NotFound, "memo does not exist")
 		}
 
-		// Fetch the related memo (the one being commented on)
 		relatedMemo, err := s.Store.GetMemo(ctx, &store.FindMemo{
-			ID:             &payload.MemoComment.RelatedMemoId,
-			ExcludeContent: true,
+			ID:               &payload.MemoComment.RelatedMemoId,
+			RowStatus:        &normalStatus,
+			CreatorRowStatus: &normalStatus,
+			ExcludeContent:   true,
 		})
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "failed to get related memo: %v", err)
+		}
+		if relatedMemo == nil {
+			return nil, status.Errorf(codes.NotFound, "related memo does not exist")
+		}
+		if err := s.checkMemoVisibility(ctx, relatedMemo); err != nil {
+			return nil, err
 		}
 
 		v2Payload.Payload = &v1pb.ActivityPayload_MemoComment{

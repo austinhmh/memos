@@ -1,9 +1,11 @@
 FROM golang:1.25-alpine AS backend
 WORKDIR /backend-build
+COPY go.mod go.sum ./
+RUN GOMAXPROCS=2 GOMEMLIMIT=1024MiB go mod download
 COPY . .
-RUN go build -o memos ./cmd/memos
+RUN GOMAXPROCS=2 GOMEMLIMIT=1024MiB go build -p=1 -o memos ./cmd/memos
 
-FROM alpine:latest
+FROM alpine:3.21
 WORKDIR /usr/local/memos
 COPY --from=backend /backend-build/memos /usr/local/memos/
 EXPOSE 5230

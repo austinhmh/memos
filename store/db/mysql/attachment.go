@@ -216,25 +216,47 @@ func (d *DB) UpdateAttachment(ctx context.Context, update *store.UpdateAttachmen
 	}
 
 	args = append(args, update.ID)
-	stmt := "UPDATE `attachment` SET " + strings.Join(set, ", ") + " WHERE `id` = ?"
+	where := []string{"`id` = ?"}
+	if update.RequireMemoIDMatch {
+		if update.ExpectedMemoID == nil {
+			where = append(where, "`memo_id` IS NULL")
+		} else {
+			where = append(where, "`memo_id` = ?")
+			args = append(args, *update.ExpectedMemoID)
+		}
+	}
+	stmt := "UPDATE `attachment` SET " + strings.Join(set, ", ") + " WHERE " + strings.Join(where, " AND ")
 	result, err := d.db.ExecContext(ctx, stmt, args...)
 	if err != nil {
 		return err
 	}
-	if _, err := result.RowsAffected(); err != nil {
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
 		return err
+	}
+	if rowsAffected == 0 {
+		return errors.New("attachment not found")
 	}
 	return nil
 }
 
 func (d *DB) DeleteAttachment(ctx context.Context, delete *store.DeleteAttachment) error {
 	stmt := "DELETE FROM `attachment` WHERE `id` = ?"
-	result, err := d.db.ExecContext(ctx, stmt, delete.ID)
+	args := []any{delete.ID}
+	if delete.MemoID != nil {
+		stmt += " AND `memo_id` = ?"
+		args = append(args, *delete.MemoID)
+	}
+	result, err := d.db.ExecContext(ctx, stmt, args...)
 	if err != nil {
 		return err
 	}
-	if _, err := result.RowsAffected(); err != nil {
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
 		return err
+	}
+	if rowsAffected == 0 {
+		return errors.New("attachment not found")
 	}
 
 	return nil

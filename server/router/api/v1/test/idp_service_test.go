@@ -12,7 +12,6 @@ import (
 
 func TestCreateIdentityProvider(t *testing.T) {
 	ctx := context.Background()
-
 	t.Run("CreateIdentityProvider success", func(t *testing.T) {
 		ts := NewTestService(t)
 		defer ts.Cleanup()
@@ -35,9 +34,9 @@ func TestCreateIdentityProvider(t *testing.T) {
 						Oauth2Config: &v1pb.OAuth2Config{
 							ClientId:     "test-client-id",
 							ClientSecret: "test-client-secret",
-							AuthUrl:      "https://example.com/oauth/authorize",
-							TokenUrl:     "https://example.com/oauth/token",
-							UserInfoUrl:  "https://example.com/oauth/userinfo",
+							AuthUrl:      "http://8.8.8.8/oauth/authorize",
+							TokenUrl:     "http://8.8.8.8/oauth/token",
+							UserInfoUrl:  "http://8.8.8.8/oauth/userinfo",
 							Scopes:       []string{"openid", "profile", "email"},
 							FieldMapping: &v1pb.FieldMapping{
 								Identifier:  "id",
@@ -99,11 +98,28 @@ func TestCreateIdentityProvider(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "user not authenticated")
 	})
+
+	t.Run("CreateIdentityProvider rejects missing OAuth2 config", func(t *testing.T) {
+		ts := NewTestService(t)
+		defer ts.Cleanup()
+
+		hostUser, err := ts.CreateHostUser(ctx, "admin-missing-oauth")
+		require.NoError(t, err)
+		userCtx := ts.CreateUserContext(ctx, hostUser.ID)
+
+		_, err = ts.Service.CreateIdentityProvider(userCtx, &v1pb.CreateIdentityProviderRequest{
+			IdentityProvider: &v1pb.IdentityProvider{
+				Title: "Missing OAuth2 Provider",
+				Type:  v1pb.IdentityProvider_OAUTH2,
+			},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "config is required")
+	})
 }
 
 func TestListIdentityProviders(t *testing.T) {
 	ctx := context.Background()
-
 	t.Run("ListIdentityProviders empty", func(t *testing.T) {
 		ts := NewTestService(t)
 		defer ts.Cleanup()
@@ -134,10 +150,11 @@ func TestListIdentityProviders(t *testing.T) {
 				Config: &v1pb.IdentityProviderConfig{
 					Config: &v1pb.IdentityProviderConfig_Oauth2Config{
 						Oauth2Config: &v1pb.OAuth2Config{
-							ClientId:    "client1",
-							AuthUrl:     "https://example1.com/auth",
-							TokenUrl:    "https://example1.com/token",
-							UserInfoUrl: "https://example1.com/user",
+							ClientId:     "client1",
+							ClientSecret: "secret1",
+							AuthUrl:      "http://8.8.4.4/auth",
+							TokenUrl:     "http://8.8.4.4/token",
+							UserInfoUrl:  "http://8.8.4.4/user",
 							FieldMapping: &v1pb.FieldMapping{
 								Identifier: "id",
 							},
@@ -154,10 +171,11 @@ func TestListIdentityProviders(t *testing.T) {
 				Config: &v1pb.IdentityProviderConfig{
 					Config: &v1pb.IdentityProviderConfig_Oauth2Config{
 						Oauth2Config: &v1pb.OAuth2Config{
-							ClientId:    "client2",
-							AuthUrl:     "https://example2.com/auth",
-							TokenUrl:    "https://example2.com/token",
-							UserInfoUrl: "https://example2.com/user",
+							ClientId:     "client2",
+							ClientSecret: "secret2",
+							AuthUrl:      "http://1.1.1.1/auth",
+							TokenUrl:     "http://1.1.1.1/token",
+							UserInfoUrl:  "http://1.1.1.1/user",
 							FieldMapping: &v1pb.FieldMapping{
 								Identifier: "id",
 							},
@@ -179,16 +197,115 @@ func TestListIdentityProviders(t *testing.T) {
 		require.NotNil(t, resp)
 		require.Len(t, resp.IdentityProviders, 2)
 
-		// Verify response contains expected providers
+		// Verify response contains expected providers and only login-page-safe fields for anonymous callers
 		titles := []string{resp.IdentityProviders[0].Title, resp.IdentityProviders[1].Title}
 		require.Contains(t, titles, "Provider 1")
 		require.Contains(t, titles, "Provider 2")
+		for _, provider := range resp.IdentityProviders {
+			oauth2Config := provider.Config.GetOauth2Config()
+			require.NotNil(t, oauth2Config)
+			require.NotEmpty(t, oauth2Config.ClientId)
+			require.NotEmpty(t, oauth2Config.AuthUrl)
+			require.Empty(t, oauth2Config.ClientSecret)
+			require.Empty(t, oauth2Config.TokenUrl)
+			require.Empty(t, oauth2Config.UserInfoUrl)
+			require.Nil(t, oauth2Config.FieldMapping)
+			require.Empty(t, provider.IdentifierFilter)
+		}
+	})
+
+	t.Run("CreateIdentityProvider rejects internal OAuth endpoints", func(t *testing.T) {
+		ts := NewTestService(t)
+		defer ts.Cleanup()
+
+		hostUser, err := ts.CreateHostUser(ctx, "admin")
+		require.NoError(t, err)
+		userCtx := ts.CreateUserContext(ctx, hostUser.ID)
+
+		_, err = ts.Service.CreateIdentityProvider(userCtx, &v1pb.CreateIdentityProviderRequest{
+			IdentityProvider: &v1pb.IdentityProvider{
+				Title: "Internal SSRF Provider",
+				Type:  v1pb.IdentityProvider_OAUTH2,
+				Config: &v1pb.IdentityProviderConfig{
+					Config: &v1pb.IdentityProviderConfig_Oauth2Config{
+						Oauth2Config: &v1pb.OAuth2Config{
+							ClientId:     "client",
+							ClientSecret: "secret",
+							AuthUrl:      "http://8.8.8.8/auth",
+							TokenUrl:     "http://127.0.0.1:9999/token",
+							UserInfoUrl:  "http://127.0.0.1:9999/userinfo",
+							FieldMapping: &v1pb.FieldMapping{Identifier: "sub"},
+						},
+					},
+				},
+			},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid identity provider config")
+	})
+
+	t.Run("CreateIdentityProvider rejects nil field mapping", func(t *testing.T) {
+		ts := NewTestService(t)
+		defer ts.Cleanup()
+
+		hostUser, err := ts.CreateHostUser(ctx, "admin-missing-field-mapping")
+		require.NoError(t, err)
+		userCtx := ts.CreateUserContext(ctx, hostUser.ID)
+
+		_, err = ts.Service.CreateIdentityProvider(userCtx, &v1pb.CreateIdentityProviderRequest{
+			IdentityProvider: &v1pb.IdentityProvider{
+				Title: "Missing Field Mapping Provider",
+				Type:  v1pb.IdentityProvider_OAUTH2,
+				Config: &v1pb.IdentityProviderConfig{
+					Config: &v1pb.IdentityProviderConfig_Oauth2Config{
+						Oauth2Config: &v1pb.OAuth2Config{
+							ClientId:     "client",
+							ClientSecret: "secret",
+							AuthUrl:      "http://8.8.8.8/auth",
+							TokenUrl:     "http://8.8.8.8/token",
+							UserInfoUrl:  "http://8.8.8.8/userinfo",
+						},
+					},
+				},
+			},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "fieldMapping is required")
+	})
+
+	t.Run("CreateIdentityProvider rejects empty field mapping identifier", func(t *testing.T) {
+		ts := NewTestService(t)
+		defer ts.Cleanup()
+
+		hostUser, err := ts.CreateHostUser(ctx, "admin-empty-field-mapping")
+		require.NoError(t, err)
+		userCtx := ts.CreateUserContext(ctx, hostUser.ID)
+
+		_, err = ts.Service.CreateIdentityProvider(userCtx, &v1pb.CreateIdentityProviderRequest{
+			IdentityProvider: &v1pb.IdentityProvider{
+				Title: "Empty Field Mapping Provider",
+				Type:  v1pb.IdentityProvider_OAUTH2,
+				Config: &v1pb.IdentityProviderConfig{
+					Config: &v1pb.IdentityProviderConfig_Oauth2Config{
+						Oauth2Config: &v1pb.OAuth2Config{
+							ClientId:     "client",
+							ClientSecret: "secret",
+							AuthUrl:      "http://8.8.8.8/auth",
+							TokenUrl:     "http://8.8.8.8/token",
+							UserInfoUrl:  "http://8.8.8.8/userinfo",
+							FieldMapping: &v1pb.FieldMapping{},
+						},
+					},
+				},
+			},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "fieldMapping.identifier")
 	})
 }
 
 func TestGetIdentityProvider(t *testing.T) {
 	ctx := context.Background()
-
 	t.Run("GetIdentityProvider success", func(t *testing.T) {
 		ts := NewTestService(t)
 		defer ts.Cleanup()
@@ -210,9 +327,9 @@ func TestGetIdentityProvider(t *testing.T) {
 						Oauth2Config: &v1pb.OAuth2Config{
 							ClientId:     "test-client",
 							ClientSecret: "test-secret",
-							AuthUrl:      "https://example.com/auth",
-							TokenUrl:     "https://example.com/token",
-							UserInfoUrl:  "https://example.com/user",
+							AuthUrl:      "http://8.8.8.8/auth",
+							TokenUrl:     "http://8.8.8.8/token",
+							UserInfoUrl:  "http://8.8.8.8/user",
 							Scopes:       []string{"openid", "profile"},
 							FieldMapping: &v1pb.FieldMapping{
 								Identifier:  "id",
@@ -233,7 +350,7 @@ func TestGetIdentityProvider(t *testing.T) {
 			Name: created.Name,
 		}
 
-		// Test unauthenticated, should not contain client secret
+		// Test unauthenticated, should only contain login-page-safe fields
 		resp, err := ts.Service.GetIdentityProvider(ctx, getReq)
 		require.NoError(t, err)
 		require.NotNil(t, resp)
@@ -243,6 +360,11 @@ func TestGetIdentityProvider(t *testing.T) {
 		require.NotNil(t, resp.Config.GetOauth2Config())
 		require.Equal(t, "test-client", resp.Config.GetOauth2Config().ClientId)
 		require.Equal(t, "", resp.Config.GetOauth2Config().ClientSecret)
+		require.Equal(t, "http://8.8.8.8/auth", resp.Config.GetOauth2Config().AuthUrl)
+		require.Equal(t, "", resp.Config.GetOauth2Config().TokenUrl)
+		require.Equal(t, "", resp.Config.GetOauth2Config().UserInfoUrl)
+		require.Nil(t, resp.Config.GetOauth2Config().FieldMapping)
+		require.Equal(t, "", resp.IdentifierFilter)
 
 		// Test as host user, should contain client secret
 		respHostUser, err := ts.Service.GetIdentityProvider(userCtx, getReq)
@@ -285,7 +407,6 @@ func TestGetIdentityProvider(t *testing.T) {
 
 func TestUpdateIdentityProvider(t *testing.T) {
 	ctx := context.Background()
-
 	t.Run("UpdateIdentityProvider success", func(t *testing.T) {
 		ts := NewTestService(t)
 		defer ts.Cleanup()
@@ -306,10 +427,11 @@ func TestUpdateIdentityProvider(t *testing.T) {
 				Config: &v1pb.IdentityProviderConfig{
 					Config: &v1pb.IdentityProviderConfig_Oauth2Config{
 						Oauth2Config: &v1pb.OAuth2Config{
-							ClientId:    "original-client",
-							AuthUrl:     "https://original.com/auth",
-							TokenUrl:    "https://original.com/token",
-							UserInfoUrl: "https://original.com/user",
+							ClientId:     "original-client",
+							ClientSecret: "original-secret",
+							AuthUrl:      "http://1.0.0.1/auth",
+							TokenUrl:     "http://1.0.0.1/token",
+							UserInfoUrl:  "http://1.0.0.1/user",
 							FieldMapping: &v1pb.FieldMapping{
 								Identifier: "id",
 							},
@@ -334,9 +456,9 @@ func TestUpdateIdentityProvider(t *testing.T) {
 						Oauth2Config: &v1pb.OAuth2Config{
 							ClientId:     "updated-client",
 							ClientSecret: "updated-secret",
-							AuthUrl:      "https://updated.com/auth",
-							TokenUrl:     "https://updated.com/token",
-							UserInfoUrl:  "https://updated.com/user",
+							AuthUrl:      "http://9.9.9.9/auth",
+							TokenUrl:     "http://9.9.9.9/token",
+							UserInfoUrl:  "http://9.9.9.9/user",
 							Scopes:       []string{"openid", "profile", "email"},
 							FieldMapping: &v1pb.FieldMapping{
 								Identifier:  "sub",
@@ -409,11 +531,121 @@ func TestUpdateIdentityProvider(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid identity provider name")
 	})
+
+	t.Run("UpdateIdentityProvider rejects missing OAuth2 config", func(t *testing.T) {
+		ts := NewTestService(t)
+		defer ts.Cleanup()
+
+		hostUser, err := ts.CreateHostUser(ctx, "admin-missing-update-oauth")
+		require.NoError(t, err)
+		userCtx := ts.CreateUserContext(ctx, hostUser.ID)
+
+		_, err = ts.Service.UpdateIdentityProvider(userCtx, &v1pb.UpdateIdentityProviderRequest{
+			IdentityProvider: &v1pb.IdentityProvider{
+				Name: "identity-providers/1",
+				Type: v1pb.IdentityProvider_OAUTH2,
+			},
+			UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"config"}},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "config is required")
+	})
+
+	t.Run("UpdateIdentityProvider rejects nil field mapping", func(t *testing.T) {
+		ts := NewTestService(t)
+		defer ts.Cleanup()
+
+		hostUser, err := ts.CreateHostUser(ctx, "admin-update-missing-field-mapping")
+		require.NoError(t, err)
+		userCtx := ts.CreateUserContext(ctx, hostUser.ID)
+
+		_, err = ts.Service.UpdateIdentityProvider(userCtx, &v1pb.UpdateIdentityProviderRequest{
+			IdentityProvider: &v1pb.IdentityProvider{
+				Name: "identity-providers/1",
+				Type: v1pb.IdentityProvider_OAUTH2,
+				Config: &v1pb.IdentityProviderConfig{
+					Config: &v1pb.IdentityProviderConfig_Oauth2Config{
+						Oauth2Config: &v1pb.OAuth2Config{
+							ClientId:     "client",
+							ClientSecret: "secret",
+							AuthUrl:      "http://8.8.8.8/auth",
+							TokenUrl:     "http://8.8.8.8/token",
+							UserInfoUrl:  "http://8.8.8.8/userinfo",
+						},
+					},
+				},
+			},
+			UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"config"}},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "fieldMapping is required")
+	})
+
+	t.Run("UpdateIdentityProvider rejects empty field mapping identifier", func(t *testing.T) {
+		ts := NewTestService(t)
+		defer ts.Cleanup()
+
+		hostUser, err := ts.CreateHostUser(ctx, "admin-update-empty-field-mapping")
+		require.NoError(t, err)
+		userCtx := ts.CreateUserContext(ctx, hostUser.ID)
+
+		_, err = ts.Service.UpdateIdentityProvider(userCtx, &v1pb.UpdateIdentityProviderRequest{
+			IdentityProvider: &v1pb.IdentityProvider{
+				Name: "identity-providers/1",
+				Type: v1pb.IdentityProvider_OAUTH2,
+				Config: &v1pb.IdentityProviderConfig{
+					Config: &v1pb.IdentityProviderConfig_Oauth2Config{
+						Oauth2Config: &v1pb.OAuth2Config{
+							ClientId:     "client",
+							ClientSecret: "secret",
+							AuthUrl:      "http://8.8.8.8/auth",
+							TokenUrl:     "http://8.8.8.8/token",
+							UserInfoUrl:  "http://8.8.8.8/userinfo",
+							FieldMapping: &v1pb.FieldMapping{},
+						},
+					},
+				},
+			},
+			UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"config"}},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "fieldMapping.identifier")
+	})
+
+	t.Run("UpdateIdentityProvider rejects sensitive OAuth port", func(t *testing.T) {
+		ts := NewTestService(t)
+		defer ts.Cleanup()
+
+		hostUser, err := ts.CreateHostUser(ctx, "admin-update-sensitive-port")
+		require.NoError(t, err)
+		userCtx := ts.CreateUserContext(ctx, hostUser.ID)
+
+		_, err = ts.Service.UpdateIdentityProvider(userCtx, &v1pb.UpdateIdentityProviderRequest{
+			IdentityProvider: &v1pb.IdentityProvider{
+				Name: "identity-providers/1",
+				Type: v1pb.IdentityProvider_OAUTH2,
+				Config: &v1pb.IdentityProviderConfig{
+					Config: &v1pb.IdentityProviderConfig_Oauth2Config{
+						Oauth2Config: &v1pb.OAuth2Config{
+							ClientId:     "client",
+							ClientSecret: "secret",
+							AuthUrl:      "http://8.8.8.8/auth",
+							TokenUrl:     "http://8.8.8.8:22/token",
+							UserInfoUrl:  "http://8.8.8.8/userinfo",
+							FieldMapping: &v1pb.FieldMapping{Identifier: "sub"},
+						},
+					},
+				},
+			},
+			UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"config"}},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "unsupported port")
+	})
 }
 
 func TestDeleteIdentityProvider(t *testing.T) {
 	ctx := context.Background()
-
 	t.Run("DeleteIdentityProvider success", func(t *testing.T) {
 		ts := NewTestService(t)
 		defer ts.Cleanup()
@@ -433,10 +665,11 @@ func TestDeleteIdentityProvider(t *testing.T) {
 				Config: &v1pb.IdentityProviderConfig{
 					Config: &v1pb.IdentityProviderConfig_Oauth2Config{
 						Oauth2Config: &v1pb.OAuth2Config{
-							ClientId:    "client-to-delete",
-							AuthUrl:     "https://example.com/auth",
-							TokenUrl:    "https://example.com/token",
-							UserInfoUrl: "https://example.com/user",
+							ClientId:     "client-to-delete",
+							ClientSecret: "delete-secret",
+							AuthUrl:      "http://8.8.8.8/auth",
+							TokenUrl:     "http://8.8.8.8/token",
+							UserInfoUrl:  "http://8.8.8.8/user",
 							FieldMapping: &v1pb.FieldMapping{
 								Identifier: "id",
 							},
@@ -510,7 +743,6 @@ func TestDeleteIdentityProvider(t *testing.T) {
 
 func TestIdentityProviderPermissions(t *testing.T) {
 	ctx := context.Background()
-
 	t.Run("Only host users can create identity providers", func(t *testing.T) {
 		ts := NewTestService(t)
 		defer ts.Cleanup()

@@ -63,6 +63,8 @@ func TestAuthenticatorAccessTokenV2(t *testing.T) {
 
 		user, err := ts.CreateRegularUser(ctx, "testuser")
 		require.NoError(t, err)
+		_, err = ts.Store.GetUser(ctx, &store.FindUser{ID: &user.ID})
+		require.NoError(t, err)
 
 		token, _, err := auth.GenerateAccessTokenV2(
 			user.ID,
@@ -174,6 +176,8 @@ func TestAuthenticatorRefreshToken(t *testing.T) {
 		defer ts.Cleanup()
 
 		user, err := ts.CreateRegularUser(ctx, "testuser")
+		require.NoError(t, err)
+		_, err = ts.Store.GetUser(ctx, &store.FindUser{ID: &user.ID})
 		require.NoError(t, err)
 
 		// Create valid refresh token
@@ -329,8 +333,8 @@ func TestAuthenticatorPAT(t *testing.T) {
 
 		user, err := ts.CreateRegularUser(ctx, "testuser")
 		require.NoError(t, err)
-
-		// Generate and store PAT
+		_, err = ts.Store.GetUser(ctx, &store.FindUser{ID: &user.ID})
+		require.NoError(t, err)
 		token := auth.GeneratePersonalAccessToken()
 		tokenHash := auth.HashPersonalAccessToken(token)
 		tokenID := util.GenUUID()
@@ -393,19 +397,31 @@ func TestStoreRefreshTokenMethods(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				results <- ts.Store.RemoveUserRefreshToken(context.Background(), user.ID, tokenID)
+				replacement := &storepb.RefreshTokensUserSetting_RefreshToken{
+					TokenId:   util.GenUUID(),
+					ExpiresAt: timestamppb.New(time.Now().Add(auth.RefreshTokenDuration)),
+					CreatedAt: timestamppb.Now(),
+				}
+				results <- ts.Store.RotateUserRefreshToken(context.Background(), user.ID, tokenID, replacement)
 			}()
 		}
 		wg.Wait()
 		close(results)
 
+		successCount := 0
 		for err := range results {
-			assert.NoError(t, err)
+			if err != nil {
+				assert.Contains(t, err.Error(), "not found")
+				continue
+			}
+			successCount++
 		}
+		require.Equal(t, 1, successCount)
 
 		tokens, err := ts.Store.GetUserRefreshTokens(ctx, user.ID)
 		require.NoError(t, err)
-		assert.Len(t, tokens, 0)
+		assert.Len(t, tokens, 1)
+		assert.NotEqual(t, tokenID, tokens[0].TokenId)
 	})
 
 	t.Run("adds and retrieves refresh token", func(t *testing.T) {
@@ -476,6 +492,8 @@ func TestStoreRefreshTokenMethods(t *testing.T) {
 		// Remove token
 		err = ts.Store.RemoveUserRefreshToken(ctx, user.ID, tokenID)
 		require.NoError(t, err)
+		err = ts.Store.RemoveUserRefreshToken(ctx, user.ID, tokenID)
+		require.Error(t, err)
 
 		// Verify removal
 		tokens, err := ts.Store.GetUserRefreshTokens(ctx, user.ID)
@@ -518,12 +536,70 @@ func TestStoreRefreshTokenMethods(t *testing.T) {
 		// Remove one token
 		err = ts.Store.RemoveUserRefreshToken(ctx, user.ID, tokenID1)
 		require.NoError(t, err)
+		err = ts.Store.RemoveUserRefreshToken(ctx, user.ID, tokenID1)
+		require.Error(t, err)
 
 		// Verify only one token remains
 		tokens, err = ts.Store.GetUserRefreshTokens(ctx, user.ID)
 		require.NoError(t, err)
 		assert.Len(t, tokens, 1)
 		assert.Equal(t, tokenID2, tokens[0].TokenId)
+	})
+
+	t.Run("concurrent different token rotations preserve all new tokens and remove old tokens", func(t *testing.T) {
+		ts := NewTestService(t)
+		defer ts.Cleanup()
+
+		user, err := ts.CreateRegularUser(ctx, "multi-device-user")
+		require.NoError(t, err)
+
+		oldTokenIDs := []string{util.GenUUID(), util.GenUUID()}
+		for _, tokenID := range oldTokenIDs {
+			err = ts.Store.AddUserRefreshToken(ctx, user.ID, &storepb.RefreshTokensUserSetting_RefreshToken{
+				TokenId:   tokenID,
+				ExpiresAt: timestamppb.New(time.Now().Add(auth.RefreshTokenDuration)),
+				CreatedAt: timestamppb.Now(),
+			})
+			require.NoError(t, err)
+		}
+
+		newTokenIDs := []string{util.GenUUID(), util.GenUUID()}
+		var wg sync.WaitGroup
+		errs := make(chan error, 2)
+		for i := range oldTokenIDs {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				if err := ts.Store.RemoveUserRefreshToken(context.Background(), user.ID, oldTokenIDs[i]); err != nil {
+					errs <- err
+					return
+				}
+				errs <- ts.Store.AddUserRefreshToken(context.Background(), user.ID, &storepb.RefreshTokensUserSetting_RefreshToken{
+					TokenId:   newTokenIDs[i],
+					ExpiresAt: timestamppb.New(time.Now().Add(auth.RefreshTokenDuration)),
+					CreatedAt: timestamppb.Now(),
+				})
+			}(i)
+		}
+		wg.Wait()
+		close(errs)
+		for err := range errs {
+			require.NoError(t, err)
+		}
+
+		tokens, err := ts.Store.GetUserRefreshTokens(ctx, user.ID)
+		require.NoError(t, err)
+		require.Len(t, tokens, 2)
+		seen := map[string]bool{}
+		for _, token := range tokens {
+			seen[token.TokenId] = true
+		}
+		for _, oldTokenID := range oldTokenIDs {
+			require.False(t, seen[oldTokenID])
+		}
+		for _, newTokenID := range newTokenIDs {
+			require.True(t, seen[newTokenID])
+		}
 	})
 }
 

@@ -123,8 +123,14 @@ fi
 # ── 步骤 4: 打标签 ───────────────────────────────────
 echo ""
 echo "[ 4/5 ] 打标签 ..."
+if docker image inspect "$IMAGE_NAME:$VERSION_TAG" &>/dev/null; then
+    docker rmi -f "$IMAGE_NAME:$VERSION_TAG" >/dev/null
+fi
 docker tag "memos:$VERSION_TAG" "$IMAGE_NAME:$VERSION_TAG"
 if [ "$VERSION_TAG" != "latest" ]; then
+    if docker image inspect "$IMAGE_NAME:latest" &>/dev/null; then
+        docker rmi -f "$IMAGE_NAME:latest" >/dev/null
+    fi
     docker tag "memos:$VERSION_TAG" "$IMAGE_NAME:latest"
 fi
 echo "  memos:$VERSION_TAG"

@@ -12,7 +12,6 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 
 	"github.com/usememos/memos/internal/profile"
-	"github.com/usememos/memos/internal/util"
 	"github.com/usememos/memos/store"
 )
 
@@ -36,37 +35,27 @@ func (*FrontendService) Serve(_ context.Context, e *echo.Echo) {
 
 	skipper := func(c echo.Context) bool {
 		requestPath := c.Request().URL.Path
-		// Skip API routes.
-		if util.HasPrefixes(requestPath, "/api", "/memos.api.v1") {
+		if isNativeRoute(requestPath) {
 			return true
 		}
-		// Missing asset requests should return 404 instead of falling back to index.html.
-		if strings.HasPrefix(requestPath, "/assets/") {
-			assetPath := strings.TrimPrefix(pathpkg.Clean(requestPath), "/")
-			file, err := frontendFS.Open(assetPath)
-			if err != nil {
-				return true
-			}
-			_ = file.Close()
+		cleanPath := strings.TrimPrefix(pathpkg.Clean(requestPath), "/")
+		if cleanPath == "." {
+			cleanPath = "index.html"
 		}
-		// For index.html and root path, set no-cache headers to prevent browser caching
-		// This prevents sensitive data from being accessible via browser back button after logout
-		if requestPath == "/" || requestPath == "/index.html" {
-			c.Response().Header().Set(echo.HeaderCacheControl, "no-cache, no-store, must-revalidate")
-			c.Response().Header().Set("Pragma", "no-cache")
-			c.Response().Header().Set("Expires", "0")
-			c.Response().Header().Set("X-Frame-Options", "DENY")
-			c.Response().Header().Set("X-Content-Type-Options", "nosniff")
-			c.Response().Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
-			c.Response().Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; font-src 'self'; object-src 'none'; frame-ancestors 'none'")
+		file, err := frontendFS.Open(cleanPath)
+		if err == nil {
+			_ = file.Close()
+			if cleanPath == "index.html" {
+				setIndexHeaders(c)
+			} else {
+				c.Response().Header().Set(echo.HeaderCacheControl, "public, max-age=3600, immutable")
+			}
 			return false
 		}
-		// Set Cache-Control header for static assets.
-		// Since Vite generates content-hashed filenames (e.g., index-BtVjejZf.js),
-		// we can cache aggressively but use immutable to prevent revalidation checks.
-		// For frequently redeployed instances, use shorter max-age (1 hour) to avoid
-		// serving stale assets after redeployment.
-		c.Response().Header().Set(echo.HeaderCacheControl, "public, max-age=3600, immutable") // 1 hour
+		if pathpkg.Ext(cleanPath) != "" {
+			return true
+		}
+		setIndexHeaders(c)
 		return false
 	}
 
@@ -76,6 +65,22 @@ func (*FrontendService) Serve(_ context.Context, e *echo.Echo) {
 		HTML5:      true, // Enable fallback to index.html
 		Skipper:    skipper,
 	}))
+}
+
+func isNativeRoute(requestPath string) bool {
+	return requestPath == "/api" || strings.HasPrefix(requestPath, "/api/") ||
+		strings.HasPrefix(requestPath, "/memos.api.v1.") ||
+		requestPath == "/file" || strings.HasPrefix(requestPath, "/file/")
+}
+
+func setIndexHeaders(c echo.Context) {
+	c.Response().Header().Set(echo.HeaderCacheControl, "no-cache, no-store, must-revalidate")
+	c.Response().Header().Set("Pragma", "no-cache")
+	c.Response().Header().Set("Expires", "0")
+	c.Response().Header().Set("X-Frame-Options", "DENY")
+	c.Response().Header().Set("X-Content-Type-Options", "nosniff")
+	c.Response().Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+	c.Response().Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; font-src 'self'; object-src 'none'; frame-ancestors 'none'")
 }
 
 func getFileSystem(path string) http.FileSystem {

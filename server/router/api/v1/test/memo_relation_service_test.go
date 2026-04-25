@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	apiv1 "github.com/usememos/memos/proto/gen/api/v1"
+	"github.com/usememos/memos/store"
 )
 
 func TestSetMemoRelations(t *testing.T) {
@@ -166,4 +167,63 @@ func TestSetMemoRelations(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "not found")
 	})
+}
+
+func TestSetMemoRelationsRejectsInvisibleRelatedMemoAndPreservesExistingRelations(t *testing.T) {
+	ctx := context.Background()
+	ts := NewTestService(t)
+	defer ts.Cleanup()
+
+	owner, err := ts.CreateRegularUser(ctx, "relation-owner")
+	require.NoError(t, err)
+	ownerCtx := ts.CreateUserContext(ctx, owner.ID)
+	other, err := ts.CreateRegularUser(ctx, "relation-private-owner")
+	require.NoError(t, err)
+	otherCtx := ts.CreateUserContext(ctx, other.ID)
+
+	sourceMemo, err := ts.Service.CreateMemo(ownerCtx, &apiv1.CreateMemoRequest{
+		Memo: &apiv1.Memo{Content: "source memo", Visibility: apiv1.Visibility_PRIVATE},
+	})
+	require.NoError(t, err)
+	visibleRelatedMemo, err := ts.Service.CreateMemo(ownerCtx, &apiv1.CreateMemoRequest{
+		Memo: &apiv1.Memo{Content: "visible related memo", Visibility: apiv1.Visibility_PRIVATE},
+	})
+	require.NoError(t, err)
+	privateRelatedMemo, err := ts.Service.CreateMemo(otherCtx, &apiv1.CreateMemoRequest{
+		Memo: &apiv1.Memo{Content: "other private related memo", Visibility: apiv1.Visibility_PRIVATE},
+	})
+	require.NoError(t, err)
+
+	_, err = ts.Service.SetMemoRelations(ownerCtx, &apiv1.SetMemoRelationsRequest{
+		Name: sourceMemo.Name,
+		Relations: []*apiv1.MemoRelation{{
+			RelatedMemo: &apiv1.MemoRelation_Memo{Name: visibleRelatedMemo.Name},
+			Type:        apiv1.MemoRelation_REFERENCE,
+		}},
+	})
+	require.NoError(t, err)
+
+	_, err = ts.Service.SetMemoRelations(ownerCtx, &apiv1.SetMemoRelationsRequest{
+		Name: sourceMemo.Name,
+		Relations: []*apiv1.MemoRelation{{
+			RelatedMemo: &apiv1.MemoRelation_Memo{Name: privateRelatedMemo.Name},
+			Type:        apiv1.MemoRelation_REFERENCE,
+		}},
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "related memo not found")
+
+	sourceMemoUID := sourceMemo.Name[len("memos/"):]
+	visibleRelatedMemoUID := visibleRelatedMemo.Name[len("memos/"):]
+	sourceStoreMemo, err := ts.Store.GetMemo(ctx, &store.FindMemo{UID: &sourceMemoUID})
+	require.NoError(t, err)
+	require.NotNil(t, sourceStoreMemo)
+	visibleRelatedStoreMemo, err := ts.Store.GetMemo(ctx, &store.FindMemo{UID: &visibleRelatedMemoUID})
+	require.NoError(t, err)
+	require.NotNil(t, visibleRelatedStoreMemo)
+
+	relations, err := ts.Store.ListMemoRelations(ctx, &store.FindMemoRelation{MemoID: &sourceStoreMemo.ID})
+	require.NoError(t, err)
+	require.Len(t, relations, 1)
+	require.Equal(t, visibleRelatedStoreMemo.ID, relations[0].RelatedMemoID)
 }

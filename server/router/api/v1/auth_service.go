@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"regexp"
 	"strings"
 	"sync"
@@ -31,6 +32,19 @@ const (
 )
 
 var refreshTokenRotationMu sync.Map
+
+func isUnauthenticatedRefreshTokenError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := err.Error()
+	return strings.Contains(message, "invalid refresh token") ||
+		strings.Contains(message, "invalid user ID in token") ||
+		strings.Contains(message, "refresh token revoked") ||
+		strings.Contains(message, "refresh token expired") ||
+		strings.Contains(message, "user is archived") ||
+		strings.Contains(message, "user not found")
+}
 
 // GetCurrentUser returns the authenticated user's information.
 // Validates the access token and returns user details.
@@ -114,7 +128,8 @@ func (s *APIV1Service) SignIn(ctx context.Context, request *v1pb.SignInRequest) 
 		if identityProvider.Type == storepb.IdentityProvider_OAUTH2 {
 			oauth2IdentityProvider, err := oauth2.NewIdentityProvider(identityProvider.Config.GetOauth2Config())
 			if err != nil {
-				return nil, status.Errorf(codes.Internal, "failed to create oauth2 identity provider, error: %v", err)
+				slog.Warn("invalid oauth2 identity provider configuration", "idpID", identityProvider.Id, "error", err)
+				return nil, status.Errorf(codes.InvalidArgument, "identity provider is misconfigured")
 			}
 			// Pass code_verifier for PKCE support (empty string if not provided for backward compatibility)
 			token, err := oauth2IdentityProvider.ExchangeToken(ctx, ssoCredentials.RedirectUri, ssoCredentials.Code, ssoCredentials.CodeVerifier)
@@ -223,7 +238,7 @@ func (s *APIV1Service) doSignIn(ctx context.Context, user *store.User) (string, 
 		ClientInfo: clientInfo,
 	}
 	if err := s.Store.AddUserRefreshToken(ctx, user.ID, refreshTokenRecord); err != nil {
-		slog.Error("failed to store refresh token", "error", err)
+		return "", time.Time{}, status.Errorf(codes.Internal, "failed to store refresh token: %v", err)
 	}
 
 	// Set refresh token cookie
@@ -253,22 +268,21 @@ func (s *APIV1Service) doSignIn(ctx context.Context, user *store.User) (string, 
 // Authentication: Required (access token).
 // Returns: Empty response on success.
 func (s *APIV1Service) SignOut(ctx context.Context, _ *v1pb.SignOutRequest) (*emptypb.Empty, error) {
-	// Get user from access token claims
-	claims := auth.GetUserClaims(ctx)
-	if claims != nil {
-		// Revoke refresh token if we can identify it
-		refreshToken := ""
-		if md, ok := metadata.FromIncomingContext(ctx); ok {
-			if cookies := md.Get("cookie"); len(cookies) > 0 {
-				refreshToken = auth.ExtractRefreshTokenFromCookie(cookies[0])
-			}
+	currentUser, err := s.fetchCurrentUser(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get current user: %v", err)
+	}
+
+	refreshToken := ""
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if cookies := md.Get("cookie"); len(cookies) > 0 {
+			refreshToken = auth.ExtractRefreshTokenFromCookie(cookies[0])
 		}
-		if refreshToken != "" {
-			refreshClaims, err := auth.ParseRefreshToken(refreshToken, []byte(s.Secret))
-			if err == nil {
-				// Remove refresh token from user_setting by token_id
-				_ = s.Store.RemoveUserRefreshToken(ctx, claims.UserID, refreshClaims.TokenID)
-			}
+	}
+	if currentUser != nil && refreshToken != "" {
+		refreshClaims, err := auth.ParseRefreshToken(refreshToken, []byte(s.Secret))
+		if err == nil {
+			_ = s.Store.RemoveUserRefreshToken(ctx, currentUser.ID, refreshClaims.TokenID)
 		}
 	}
 
@@ -317,23 +331,23 @@ func (s *APIV1Service) RefreshToken(ctx context.Context, _ *v1pb.RefreshTokenReq
 	lockValue, _ := refreshTokenRotationMu.LoadOrStore(refreshClaims.TokenID, &sync.Mutex{})
 	rotationLock := lockValue.(*sync.Mutex)
 	rotationLock.Lock()
-	defer rotationLock.Unlock()
+	defer func() {
+		rotationLock.Unlock()
+		refreshTokenRotationMu.Delete(refreshClaims.TokenID)
+	}()
 
 	// Validate refresh token and get old token ID for rotation
 	authenticator := auth.NewAuthenticator(s.Store, s.Secret)
 	user, oldTokenID, err := authenticator.AuthenticateByRefreshToken(ctx, refreshToken)
 	if err != nil {
 		slog.Warn("refresh token authentication failed", "error", err)
-		return nil, status.Errorf(codes.Unauthenticated, "invalid refresh token")
+		if isUnauthenticatedRefreshTokenError(err) {
+			return nil, status.Errorf(codes.Unauthenticated, "invalid refresh token")
+		}
+		return nil, status.Errorf(codes.Internal, "failed to authenticate refresh token")
 	}
 
 	// --- Refresh Token Rotation ---
-	// Revoke old refresh token before issuing a replacement to minimize replay windows.
-	if err := s.Store.RemoveUserRefreshToken(ctx, user.ID, oldTokenID); err != nil {
-		slog.Warn("failed to remove old refresh token", "error", err, "userID", user.ID, "tokenID", oldTokenID)
-		return nil, status.Errorf(codes.Unauthenticated, "invalid refresh token")
-	}
-
 	newTokenID := util.GenUUID()
 	newRefreshToken, newRefreshExpiresAt, err := auth.GenerateRefreshToken(user.ID, newTokenID, []byte(s.Secret))
 	if err != nil {
@@ -347,22 +361,15 @@ func (s *APIV1Service) RefreshToken(ctx context.Context, _ *v1pb.RefreshTokenReq
 		CreatedAt:  timestamppb.Now(),
 		ClientInfo: clientInfo,
 	}
-	if err := s.Store.AddUserRefreshToken(ctx, user.ID, newRefreshTokenRecord); err != nil {
-		// Best effort rollback to avoid logging the user out on storage failures.
-		rollbackRecord := &storepb.RefreshTokensUserSetting_RefreshToken{
-			TokenId:   oldTokenID,
-			ClientInfo: clientInfo,
+	if err := s.Store.RotateUserRefreshToken(ctx, user.ID, oldTokenID, newRefreshTokenRecord); err != nil {
+		slog.Warn("failed to rotate refresh token", "error", err, "userID", user.ID, "tokenID", oldTokenID)
+		if store.IsRefreshTokenNotFound(err) {
+			return nil, status.Errorf(codes.Unauthenticated, "invalid refresh token")
 		}
-		if refreshClaims.ExpiresAt != nil {
-			rollbackRecord.ExpiresAt = timestamppb.New(refreshClaims.ExpiresAt.Time)
+		if store.IsUserSettingCASConflict(err) {
+			return nil, status.Errorf(codes.Aborted, "refresh token rotation conflict")
 		}
-		if refreshClaims.IssuedAt != nil {
-			rollbackRecord.CreatedAt = timestamppb.New(refreshClaims.IssuedAt.Time)
-		}
-		if rollbackErr := s.Store.AddUserRefreshToken(ctx, user.ID, rollbackRecord); rollbackErr != nil {
-			slog.Error("failed to rollback old refresh token after add failure", "error", rollbackErr, "userID", user.ID, "tokenID", oldTokenID)
-		}
-		return nil, status.Errorf(codes.Internal, "failed to store refresh token: %v", err)
+		return nil, status.Errorf(codes.Internal, "failed to rotate refresh token")
 	}
 
 	newRefreshCookie := s.buildRefreshTokenCookie(ctx, newRefreshToken, newRefreshExpiresAt)
@@ -398,7 +405,7 @@ func (s *APIV1Service) clearAuthCookies(ctx context.Context) error {
 	return nil
 }
 
-func (*APIV1Service) buildRefreshTokenCookie(ctx context.Context, refreshToken string, expireTime time.Time) string {
+func (s *APIV1Service) buildRefreshTokenCookie(ctx context.Context, refreshToken string, expireTime time.Time) string {
 	attrs := []string{
 		fmt.Sprintf("%s=%s", auth.RefreshTokenCookieName, refreshToken),
 		"Path=/",
@@ -412,27 +419,8 @@ func (*APIV1Service) buildRefreshTokenCookie(ctx context.Context, refreshToken s
 		attrs = append(attrs, "Expires="+expireTime.UTC().Format("Mon, 02 Jan 2006 15:04:05 GMT"))
 	}
 
-	// Determine whether this request is served over HTTPS.
-	// Connect metadata may include Origin and/or X-Forwarded-Proto depending on the entrypoint.
-	isHTTPS := false
-	if md, ok := metadata.FromIncomingContext(ctx); ok {
-		for _, v := range md.Get("x-forwarded-proto") {
-			if strings.EqualFold(v, "https") {
-				isHTTPS = true
-				break
-			}
-		}
-		if !isHTTPS {
-			for _, v := range md.Get("origin") {
-				if strings.HasPrefix(v, "https://") {
-					isHTTPS = true
-					break
-				}
-			}
-		}
-	}
-
-	if isHTTPS {
+	secureCookie := s.shouldUseSecureRefreshCookie()
+	if secureCookie {
 		attrs = append(attrs, "SameSite=Lax", "Secure")
 	} else {
 		attrs = append(attrs, "SameSite=Lax")
@@ -440,18 +428,54 @@ func (*APIV1Service) buildRefreshTokenCookie(ctx context.Context, refreshToken s
 	return strings.Join(attrs, "; ")
 }
 
+func (s *APIV1Service) shouldUseSecureRefreshCookie() bool {
+	if s.Profile == nil {
+		return true
+	}
+	instanceURL := strings.TrimSpace(s.Profile.InstanceURL)
+	lowerInstanceURL := strings.ToLower(instanceURL)
+	if strings.HasPrefix(lowerInstanceURL, "https://") {
+		return true
+	}
+	if strings.HasPrefix(lowerInstanceURL, "http://") && isLocalHTTPInstanceURL(instanceURL) {
+		return false
+	}
+	if s.Profile.IsDev() && instanceURL == "" {
+		return false
+	}
+	return true
+}
+
+func isLocalHTTPInstanceURL(instanceURL string) bool {
+	parsed, err := url.Parse(instanceURL)
+	if err != nil {
+		return false
+	}
+	hostname := strings.ToLower(parsed.Hostname())
+	return hostname == "localhost" || hostname == "127.0.0.1" || hostname == "::1"
+}
+
 func (s *APIV1Service) fetchCurrentUser(ctx context.Context) (*store.User, error) {
 	userID := auth.GetUserID(ctx)
 	if userID == 0 {
 		return nil, nil
 	}
+	normalStatus := store.Normal
 	user, err := s.Store.GetUser(ctx, &store.FindUser{
-		ID: &userID,
+		ID:        &userID,
+		RowStatus: &normalStatus,
 	})
 	if err != nil {
 		return nil, err
 	}
 	if user == nil {
+		archivedUser, archivedErr := s.Store.GetUser(ctx, &store.FindUser{ID: &userID})
+		if archivedErr != nil {
+			return nil, archivedErr
+		}
+		if archivedUser != nil && archivedUser.RowStatus == store.Archived {
+			return nil, errors.New("user is archived")
+		}
 		return nil, errors.Errorf("user %d not found", userID)
 	}
 	if user.RowStatus == store.Archived {

@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1pb "github.com/usememos/memos/proto/gen/api/v1"
@@ -41,9 +43,24 @@ func (s *APIV1Service) convertMemoFromStore(ctx context.Context, memo *store.Mem
 		memoMessage.Location = convertLocationFromStore(memo.Payload.Location)
 	}
 
+	normalStatus := store.Normal
 	if memo.ParentUID != nil {
-		parentName := fmt.Sprintf("%s%s", MemoNamePrefix, *memo.ParentUID)
-		memoMessage.Parent = &parentName
+		parentMemo, err := s.Store.GetMemo(ctx, &store.FindMemo{
+			UID:              memo.ParentUID,
+			RowStatus:        &normalStatus,
+			CreatorRowStatus: &normalStatus,
+		})
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to get parent memo")
+		}
+		if parentMemo != nil {
+			if err := s.checkMemoVisibility(ctx, parentMemo); err == nil {
+				parentName := fmt.Sprintf("%s%s", MemoNamePrefix, *memo.ParentUID)
+				memoMessage.Parent = &parentName
+			} else if status.Code(err) != codes.NotFound && status.Code(err) != codes.PermissionDenied && status.Code(err) != codes.Unauthenticated {
+				return nil, err
+			}
+		}
 	}
 
 	memoMessage.Reactions = []*v1pb.Reaction{}
@@ -53,11 +70,15 @@ func (s *APIV1Service) convertMemoFromStore(ctx context.Context, memo *store.Mem
 		memoMessage.Reactions = append(memoMessage.Reactions, reactionResponse)
 	}
 
-	listMemoRelationsResponse, err := s.ListMemoRelations(ctx, &v1pb.ListMemoRelationsRequest{Name: name})
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to list memo relations")
+	if memo.RowStatus == store.Normal {
+		listMemoRelationsResponse, err := s.ListMemoRelations(ctx, &v1pb.ListMemoRelationsRequest{Name: name})
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to list memo relations")
+		}
+		memoMessage.Relations = listMemoRelationsResponse.Relations
+	} else {
+		memoMessage.Relations = []*v1pb.MemoRelation{}
 	}
-	memoMessage.Relations = listMemoRelationsResponse.Relations
 
 	memoMessage.Attachments = []*v1pb.Attachment{}
 

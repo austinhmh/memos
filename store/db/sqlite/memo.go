@@ -93,6 +93,9 @@ func (d *DB) ListMemos(ctx context.Context, find *store.FindMemo) ([]*store.Memo
 	if v := find.RowStatus; v != nil {
 		where, args = append(where, "`memo`.`row_status` = ?"), append(args, *v)
 	}
+	if v := find.CreatorRowStatus; v != nil {
+		where, args = append(where, "`creator`.`row_status` = ?"), append(args, *v)
+	}
 	if v := find.VisibilityList; len(v) != 0 {
 		placeholder := []string{}
 		for _, visibility := range v {
@@ -139,6 +142,7 @@ func (d *DB) ListMemos(ctx context.Context, find *store.FindMemo) ([]*store.Memo
 	query := "SELECT " + strings.Join(fields, ", ") + "FROM `memo` " +
 		"LEFT JOIN `memo_relation` ON `memo`.`id` = `memo_relation`.`memo_id` AND `memo_relation`.`type` = \"COMMENT\" " +
 		"LEFT JOIN `memo` AS `parent_memo` ON `memo_relation`.`related_memo_id` = `parent_memo`.`id` " +
+		"LEFT JOIN `user` AS `creator` ON `memo`.`creator_id` = `creator`.`id` " +
 		"WHERE " + strings.Join(where, " AND ") + " " +
 		"ORDER BY " + strings.Join(orderBy, ", ")
 	if find.Limit != nil {

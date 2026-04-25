@@ -114,24 +114,29 @@ func (s *APIV1Service) CreateAttachment(ctx context.Context, request *v1pb.Creat
 	create.Size = int64(size)
 	create.Blob = request.Attachment.Content
 
-	if err := SaveAttachmentBlob(ctx, s.Profile, s.Store, create); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to save attachment blob: %v", err)
-	}
-
 	if request.Attachment.Memo != nil {
 		memoUID, err := ExtractMemoUIDFromName(*request.Attachment.Memo)
 		if err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "invalid memo name: %v", err)
 		}
-		memo, err := s.Store.GetMemo(ctx, &store.FindMemo{UID: &memoUID})
+		normalStatus := store.Normal
+		memo, err := s.Store.GetMemo(ctx, &store.FindMemo{UID: &memoUID, RowStatus: &normalStatus, CreatorRowStatus: &normalStatus})
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "failed to find memo: %v", err)
 		}
 		if memo == nil {
 			return nil, status.Errorf(codes.NotFound, "memo not found: %s", *request.Attachment.Memo)
 		}
+		if memo.CreatorID != user.ID && !isSuperUser(user) {
+			return nil, status.Errorf(codes.PermissionDenied, "permission denied")
+		}
 		create.MemoID = &memo.ID
 	}
+
+	if err := SaveAttachmentBlob(ctx, s.Profile, s.Store, create); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to save attachment blob: %v", err)
+	}
+
 	attachment, err := s.Store.CreateAttachment(ctx, create)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to create attachment: %v", err)
@@ -190,6 +195,12 @@ func (s *APIV1Service) ListAttachments(ctx context.Context, request *v1pb.ListAt
 	response := &v1pb.ListAttachmentsResponse{}
 
 	for _, attachment := range attachments {
+		if err := s.ensureAttachmentAccessible(ctx, attachment, user); err != nil {
+			if status.Code(err) == codes.NotFound || status.Code(err) == codes.PermissionDenied || status.Code(err) == codes.Unauthenticated {
+				continue
+			}
+			return nil, err
+		}
 		response.Attachments = append(response.Attachments, convertAttachmentFromStore(attachment))
 	}
 
@@ -227,8 +238,8 @@ func (s *APIV1Service) GetAttachment(ctx context.Context, request *v1pb.GetAttac
 		return nil, status.Errorf(codes.NotFound, "attachment not found")
 	}
 
-	if attachment.CreatorID != user.ID && !isSuperUser(user) {
-		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
+	if err := s.ensureAttachmentAccessible(ctx, attachment, user); err != nil {
+		return nil, err
 	}
 
 	return convertAttachmentFromStore(attachment), nil
@@ -255,8 +266,15 @@ func (s *APIV1Service) UpdateAttachment(ctx context.Context, request *v1pb.Updat
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get attachment: %v", err)
 	}
+	if attachment == nil {
+		return nil, status.Errorf(codes.NotFound, "attachment not found")
+	}
 
-	if attachment.CreatorID != user.ID && !isSuperUser(user) {
+	if attachment.MemoID != nil {
+		if err := s.ensureBoundAttachmentMutable(ctx, attachment, user); err != nil {
+			return nil, err
+		}
+	} else if attachment.CreatorID != user.ID && !isSuperUser(user) {
 		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
 	}
 
@@ -264,6 +282,10 @@ func (s *APIV1Service) UpdateAttachment(ctx context.Context, request *v1pb.Updat
 	update := &store.UpdateAttachment{
 		ID:        attachment.ID,
 		UpdatedTs: &currentTs,
+	}
+	if attachment.MemoID != nil {
+		update.RequireMemoIDMatch = true
+		update.ExpectedMemoID = attachment.MemoID
 	}
 	for _, field := range request.UpdateMask.Paths {
 		if field == "filename" {
@@ -295,8 +317,7 @@ func (s *APIV1Service) DeleteAttachment(ctx context.Context, request *v1pb.Delet
 		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
 	}
 	attachment, err := s.Store.GetAttachment(ctx, &store.FindAttachment{
-		UID:       &attachmentUID,
-		CreatorID: &user.ID,
+		UID: &attachmentUID,
 	})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to find attachment: %v", err)
@@ -304,10 +325,26 @@ func (s *APIV1Service) DeleteAttachment(ctx context.Context, request *v1pb.Delet
 	if attachment == nil {
 		return nil, status.Errorf(codes.NotFound, "attachment not found")
 	}
+	if attachment.MemoID != nil {
+		memo, err := s.Store.GetMemo(ctx, &store.FindMemo{ID: attachment.MemoID})
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to get attachment memo")
+		}
+		if memo == nil {
+			return nil, status.Errorf(codes.NotFound, "attachment not found")
+		}
+		if memo.CreatorID != user.ID && !isSuperUser(user) {
+			return nil, status.Errorf(codes.PermissionDenied, "permission denied")
+		}
+	} else if attachment.CreatorID != user.ID && !isSuperUser(user) {
+		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
+	}
 	// Delete the attachment from the database.
-	if err := s.Store.DeleteAttachment(ctx, &store.DeleteAttachment{
-		ID: attachment.ID,
-	}); err != nil {
+	deleteAttachment := &store.DeleteAttachment{ID: attachment.ID}
+	if attachment.MemoID != nil {
+		deleteAttachment.MemoID = attachment.MemoID
+	}
+	if err := s.Store.DeleteAttachment(ctx, deleteAttachment); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to delete attachment: %v", err)
 	}
 	return &emptypb.Empty{}, nil
@@ -340,7 +377,7 @@ func SaveAttachmentBlob(ctx context.Context, profile *profile.Profile, stores *s
 	}
 
 	if instanceStorageSetting.StorageType == storepb.InstanceStorageSetting_LOCAL {
-		filepathTemplate := "assets/{timestamp}_{filename}"
+		filepathTemplate := "assets/{timestamp}_{uuid}_{filename}"
 		if instanceStorageSetting.FilepathTemplate != "" {
 			filepathTemplate = instanceStorageSetting.FilepathTemplate
 		}
@@ -353,18 +390,28 @@ func SaveAttachmentBlob(ctx context.Context, profile *profile.Profile, stores *s
 		internalPath = filepath.ToSlash(internalPath)
 
 		// Ensure the directory exists.
-		osPath := filepath.FromSlash(internalPath)
-		if !filepath.IsAbs(osPath) {
-			osPath = filepath.Join(profile.Data, osPath)
+		osPath, err := util.SafeJoinUnderBase(profile.Data, internalPath)
+		if err != nil {
+			return errors.Wrap(err, "unsafe attachment path")
 		}
 		dir := filepath.Dir(osPath)
 		if err = os.MkdirAll(dir, 0750); err != nil {
 			return errors.Wrap(err, "Failed to create directory")
 		}
+		if err := util.EnsureParentWithinBase(profile.Data, osPath); err != nil {
+			return errors.Wrap(err, "unsafe attachment parent path")
+		}
 
-		// Write the blob to the file.
-		if err := os.WriteFile(osPath, create.Blob, 0644); err != nil {
+		file, err := os.OpenFile(osPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+		if err != nil {
+			return errors.Wrap(err, "Failed to create file")
+		}
+		defer file.Close()
+		if _, err := file.Write(create.Blob); err != nil {
 			return errors.Wrap(err, "Failed to write file")
+		}
+		if err := file.Close(); err != nil {
+			return errors.Wrap(err, "Failed to close file")
 		}
 		create.Reference = internalPath
 		create.Blob = nil
@@ -380,6 +427,9 @@ func SaveAttachmentBlob(ctx context.Context, profile *profile.Profile, stores *s
 		}
 
 		filepathTemplate := instanceStorageSetting.FilepathTemplate
+		if filepathTemplate == "" {
+			filepathTemplate = "assets/{timestamp}_{uuid}_{filename}"
+		}
 		if !strings.Contains(filepathTemplate, "{filename}") {
 			filepathTemplate = filepath.Join(filepathTemplate, "{filename}")
 		}
@@ -388,19 +438,15 @@ func SaveAttachmentBlob(ctx context.Context, profile *profile.Profile, stores *s
 		if err != nil {
 			return errors.Wrap(err, "Failed to upload via s3 client")
 		}
-		presignURL, err := s3Client.PresignGetObject(ctx, key)
-		if err != nil {
-			return errors.Wrap(err, "Failed to presign via s3 client")
-		}
 
-		create.Reference = presignURL
+		create.Reference = key
 		create.Blob = nil
 		create.StorageType = storepb.AttachmentStorageType_S3
 		create.Payload = &storepb.AttachmentPayload{
 			Payload: &storepb.AttachmentPayload_S3Object_{
 				S3Object: &storepb.AttachmentPayload_S3Object{
-					Key:               key,
-					LastPresignedTime: timestamppb.New(time.Now()),
+					S3Config: s3Config,
+					Key:      key,
 				},
 			},
 		}
@@ -412,9 +458,12 @@ func SaveAttachmentBlob(ctx context.Context, profile *profile.Profile, stores *s
 func (s *APIV1Service) GetAttachmentBlob(attachment *store.Attachment) ([]byte, error) {
 	// For local storage, read the file from the local disk.
 	if attachment.StorageType == storepb.AttachmentStorageType_LOCAL {
-		attachmentPath := filepath.FromSlash(attachment.Reference)
-		if !filepath.IsAbs(attachmentPath) {
-			attachmentPath = filepath.Join(s.Profile.Data, attachmentPath)
+		attachmentPath, err := util.SafeJoinUnderBase(s.Profile.Data, attachment.Reference)
+		if err != nil {
+			return nil, errors.Wrap(err, "unsafe attachment path")
+		}
+		if err := util.EnsurePathWithinBase(s.Profile.Data, attachmentPath); err != nil {
+			return nil, errors.Wrap(err, "unsafe attachment path")
 		}
 
 		file, err := os.Open(attachmentPath)

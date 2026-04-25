@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"connectrpc.com/connect"
@@ -38,6 +39,8 @@ type APIV1Service struct {
 	thumbnailSemaphore *semaphore.Weighted
 	// signInLimiter rate limits sign-in attempts to prevent brute force
 	signInLimiter *RateLimiter
+	// createUserMu serializes first-user registration to avoid concurrent HOST bootstrap races.
+	createUserMu sync.Mutex
 }
 
 func NewAPIV1Service(secret string, profile *profile.Profile, store *store.Store) *APIV1Service {
@@ -63,26 +66,18 @@ func (s *APIV1Service) RegisterGateway(ctx context.Context, echoServer *echo.Ech
 		return func(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
 			ctx := r.Context()
 
-			// Get the RPC method name from context (set by grpc-gateway after routing)
-			rpcMethod, ok := runtime.RPCMethod(ctx)
-
 			// Extract credentials from HTTP headers
 			authHeader := r.Header.Get("Authorization")
 
 			result := authenticator.Authenticate(ctx, authHeader)
 
-		// Enforce authentication for non-public methods.
-		// Check RPC method name first; fall back to HTTP path matching for gateway routes.
-		isPublic := false
-		if ok {
-			isPublic = IsPublicMethod(rpcMethod)
-		} else {
-			isPublic = isPublicGatewayPath(r.Method, r.URL.Path)
-		}
-		if result == nil && !isPublic {
-			http.Error(w, `{"code": 16, "message": "authentication required"}`, http.StatusUnauthorized)
-			return
-		}
+			// Enforce authentication using exact HTTP method+path allowlist.
+			// runtime.RPCMethod(ctx) is not populated reliably at this middleware point.
+			isPublic := isPublicGatewayPath(r.Method, r.URL.Path)
+			if result == nil && !isPublic {
+				http.Error(w, `{"code": 16, "message": "authentication required"}`, http.StatusUnauthorized)
+				return
+			}
 
 			// Set context based on auth result (may be nil for public endpoints)
 			if result != nil {
@@ -104,6 +99,8 @@ func (s *APIV1Service) RegisterGateway(ctx context.Context, echoServer *echo.Ech
 	// Create gRPC-Gateway mux with auth middleware.
 	gwMux := runtime.NewServeMux(
 		runtime.WithMiddlewares(gatewayAuthMiddleware),
+		runtime.WithIncomingHeaderMatcher(gatewayIncomingHeaderMatcher),
+		runtime.WithOutgoingHeaderMatcher(gatewayOutgoingHeaderMatcher),
 	)
 	if err := v1pb.RegisterInstanceServiceHandlerServer(ctx, gwMux, s); err != nil {
 		return err
@@ -131,9 +128,9 @@ func (s *APIV1Service) RegisterGateway(ctx context.Context, echoServer *echo.Ech
 	}
 	gwGroup := echoServer.Group("")
 	gwGroup.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowOriginFunc: s.corsAllowOrigin,
+		AllowOriginFunc:  s.corsAllowOrigin,
 		AllowMethods:     []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions},
-		AllowHeaders:     []string{"Authorization", "Content-Type"},
+		AllowHeaders:     []string{"Authorization", "Content-Type", "Cookie", "Origin"},
 		AllowCredentials: true,
 	}))
 	handler := echo.WrapHandler(gwMux)
@@ -157,7 +154,7 @@ func (s *APIV1Service) RegisterGateway(ctx context.Context, echoServer *echo.Ech
 	// In dev mode, allow all origins for local development.
 	// In production, restrict allowed origins.
 	corsHandler := middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowOriginFunc: s.corsAllowOrigin,
+		AllowOriginFunc:  s.corsAllowOrigin,
 		AllowMethods:     []string{http.MethodGet, http.MethodPost, http.MethodOptions},
 		AllowHeaders:     []string{"Authorization", "Content-Type", "Connect-Protocol-Version", "Connect-Timeout-Ms"},
 		AllowCredentials: true,
@@ -166,6 +163,23 @@ func (s *APIV1Service) RegisterGateway(ctx context.Context, echoServer *echo.Ech
 	connectGroup.Any("/memos.api.v1.*", echo.WrapHandler(connectMux))
 
 	return nil
+}
+
+func gatewayIncomingHeaderMatcher(key string) (string, bool) {
+	switch strings.ToLower(key) {
+	case "cookie":
+		return "cookie", true
+	case "user-agent":
+		return "user-agent", true
+	}
+	return "", false
+}
+
+func gatewayOutgoingHeaderMatcher(key string) (string, bool) {
+	if strings.EqualFold(key, "set-cookie") {
+		return "Set-Cookie", true
+	}
+	return "", false
 }
 
 func (s *APIV1Service) corsAllowOrigin(origin string) (bool, error) {

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	storepb "github.com/usememos/memos/proto/gen/store"
@@ -156,11 +157,58 @@ func TestUserSettingRefreshTokens(t *testing.T) {
 	// Remove token
 	err = ts.RemoveUserRefreshToken(ctx, user.ID, "token-1")
 	require.NoError(t, err)
+	err = ts.RemoveUserRefreshToken(ctx, user.ID, "token-1")
+	require.Error(t, err)
 
 	tokens, err = ts.GetUserRefreshTokens(ctx, user.ID)
 	require.NoError(t, err)
 	require.Len(t, tokens, 1)
 	require.Equal(t, "token-2", tokens[0].TokenId)
+
+	ts.Close()
+}
+
+func TestRefreshTokenStaleWritersCannotOverwriteRotation(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ts := NewTestingStore(ctx, t)
+	user, err := createTestingHostUser(ctx, ts)
+	require.NoError(t, err)
+
+	oldToken := &storepb.RefreshTokensUserSetting_RefreshToken{TokenId: "token-old"}
+	require.NoError(t, ts.AddUserRefreshToken(ctx, user.ID, oldToken))
+
+	rawSettings, err := ts.GetDriver().ListUserSettings(ctx, &store.FindUserSetting{
+		UserID: &user.ID,
+		Key:    storepb.UserSetting_REFRESH_TOKENS,
+	})
+	require.NoError(t, err)
+	require.Len(t, rawSettings, 1)
+	staleValue := rawSettings[0].Value
+
+	newToken := &storepb.RefreshTokensUserSetting_RefreshToken{TokenId: "token-new"}
+	require.NoError(t, ts.RotateUserRefreshToken(ctx, user.ID, oldToken.TokenId, newToken))
+
+	staleWriterValue, err := protojson.Marshal(&storepb.RefreshTokensUserSetting{
+		RefreshTokens: []*storepb.RefreshTokensUserSetting_RefreshToken{
+			oldToken,
+			{TokenId: "token-stale-add"},
+		},
+	})
+	require.NoError(t, err)
+	updated, err := ts.GetDriver().UpdateUserSettingValueIfMatched(ctx, &store.UpdateUserSettingValueIfMatched{
+		UserID:   user.ID,
+		Key:      storepb.UserSetting_REFRESH_TOKENS,
+		OldValue: staleValue,
+		NewValue: string(staleWriterValue),
+	})
+	require.NoError(t, err)
+	require.False(t, updated)
+
+	tokens, err := ts.GetUserRefreshTokens(ctx, user.ID)
+	require.NoError(t, err)
+	require.Len(t, tokens, 1)
+	require.Equal(t, newToken.TokenId, tokens[0].TokenId)
 
 	ts.Close()
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	v1pb "github.com/usememos/memos/proto/gen/api/v1"
+	"github.com/usememos/memos/store"
 )
 
 func TestGetInstanceProfile(t *testing.T) {
@@ -61,6 +62,16 @@ func TestGetInstanceProfile(t *testing.T) {
 		// User name should be "users/{id}" format where id is the user's ID
 		expectedOwnerName := fmt.Sprintf("users/%d", hostUser.ID)
 		require.Equal(t, expectedOwnerName, resp.Owner)
+		resp, err = ts.Service.GetInstanceProfile(ctx, &v1pb.GetInstanceProfileRequest{})
+		require.NoError(t, err)
+
+		archivedStatus := store.Archived
+		_, err = ts.Store.UpdateUser(ctx, &store.UpdateUser{ID: hostUser.ID, RowStatus: &archivedStatus})
+		require.NoError(t, err)
+
+		resp, err = ts.Service.GetInstanceProfile(ctx, &v1pb.GetInstanceProfileRequest{})
+		require.NoError(t, err)
+		require.Empty(t, resp.Owner)
 	})
 }
 

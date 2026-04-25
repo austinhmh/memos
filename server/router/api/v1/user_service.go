@@ -44,6 +44,10 @@ func (s *APIV1Service) ListUsers(ctx context.Context, request *v1pb.ListUsersReq
 	}
 
 	userFind := &store.FindUser{}
+	if !request.ShowDeleted {
+		normalStatus := store.Normal
+		userFind.RowStatus = &normalStatus
+	}
 
 	if request.Filter != "" {
 		username, err := extractUsernameFromFilter(request.Filter)
@@ -79,6 +83,7 @@ func (s *APIV1Service) GetUser(ctx context.Context, request *v1pb.GetUserRequest
 		return nil, status.Errorf(codes.InvalidArgument, "invalid user name: %s", request.Name)
 	}
 
+	normalStatus := store.Normal
 	var user *store.User
 	var err error
 
@@ -87,43 +92,54 @@ func (s *APIV1Service) GetUser(ctx context.Context, request *v1pb.GetUserRequest
 		// It's a numeric ID
 		userID32 := int32(userID)
 		user, err = s.Store.GetUser(ctx, &store.FindUser{
-			ID: &userID32,
+			ID:        &userID32,
+			RowStatus: &normalStatus,
 		})
 	} else {
 		// It's a username
 		user, err = s.Store.GetUser(ctx, &store.FindUser{
-			Username: &identifier,
+			Username:  &identifier,
+			RowStatus: &normalStatus,
 		})
 	}
 
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get user")
 	}
-	if user == nil {
+	if user == nil || user.RowStatus == store.Archived {
 		return nil, status.Errorf(codes.NotFound, "user not found")
 	}
 
-	result := convertUserFromStore(user)
-
-	// For unauthenticated requests, redact sensitive fields.
-	// For authenticated non-admin users, also redact fields that should not be broadly enumerable.
 	currentUser, _ := s.fetchCurrentUser(ctx)
-	if currentUser == nil {
-		result.Role = v1pb.User_ROLE_UNSPECIFIED
-		result.Email = ""
-		result.CreateTime = nil
-		result.UpdateTime = nil
-	} else if currentUser.Role != store.RoleHost && currentUser.Role != store.RoleAdmin && currentUser.ID != user.ID {
-		result.Role = v1pb.User_ROLE_UNSPECIFIED
-		result.Email = ""
+	return redactUserForViewer(convertUserFromStore(user), currentUser, user.ID), nil
+}
+
+func redactUserForViewer(user *v1pb.User, viewer *store.User, targetUserID int32) *v1pb.User {
+	if user == nil {
+		return nil
+	}
+	if viewer != nil && (isSuperUser(viewer) || viewer.ID == targetUserID) {
+		return user
 	}
 
-	return result, nil
+	user.Role = v1pb.User_ROLE_UNSPECIFIED
+	user.Email = ""
+	user.State = v1pb.State_STATE_UNSPECIFIED
+	user.CreateTime = nil
+	user.UpdateTime = nil
+	return user
 }
 
 func (s *APIV1Service) CreateUser(ctx context.Context, request *v1pb.CreateUserRequest) (*v1pb.User, error) {
+	if request == nil || request.User == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "user is required")
+	}
+
 	// Get current user (might be nil for unauthenticated requests)
 	currentUser, _ := s.fetchCurrentUser(ctx)
+
+	s.createUserMu.Lock()
+	defer s.createUserMu.Unlock()
 
 	// Check if there are any existing users (for first-time setup detection)
 	limitOne := 1
@@ -202,6 +218,37 @@ func (s *APIV1Service) CreateUser(ctx context.Context, request *v1pb.CreateUserR
 			return nil, status.Errorf(codes.AlreadyExists, "user already exists")
 		}
 		return nil, status.Errorf(codes.Internal, "failed to create user")
+	}
+
+	if roleToAssign == store.RoleHost {
+		hostRole := store.RoleHost
+		normalStatus := store.Normal
+		hosts, err := s.Store.ListUsers(ctx, &store.FindUser{Role: &hostRole, RowStatus: &normalStatus})
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to reconcile first host: %v", err)
+		}
+		canonicalHostID := user.ID
+		for _, host := range hosts {
+			if host.ID < canonicalHostID {
+				canonicalHostID = host.ID
+			}
+		}
+		for _, host := range hosts {
+			if host.ID == canonicalHostID {
+				continue
+			}
+			role := store.RoleUser
+			updatedHost, updateErr := s.Store.UpdateUser(ctx, &store.UpdateUser{
+				ID:   host.ID,
+				Role: &role,
+			})
+			if updateErr != nil {
+				return nil, status.Errorf(codes.Internal, "failed to demote non-canonical bootstrap host: %v", updateErr)
+			}
+			if updatedHost.ID == user.ID {
+				user = updatedHost
+			}
+		}
 	}
 
 	return convertUserFromStore(user), nil
@@ -297,6 +344,17 @@ func (s *APIV1Service) UpdateUser(ctx context.Context, request *v1pb.UpdateUserR
 			if role == store.RoleHost {
 				return nil, status.Errorf(codes.PermissionDenied, "cannot assign HOST role")
 			}
+			if user.Role == store.RoleHost {
+				normalStatus := store.Normal
+				hostRole := store.RoleHost
+				hosts, err := s.Store.ListUsers(ctx, &store.FindUser{Role: &hostRole, RowStatus: &normalStatus})
+				if err != nil {
+					return nil, status.Errorf(codes.Internal, "failed to list HOST users: %v", err)
+				}
+				if len(hosts) <= 1 {
+					return nil, status.Errorf(codes.FailedPrecondition, "cannot remove the last HOST user")
+				}
+			}
 			update.Role = &role
 		case "password":
 			if err := validatePassword(request.User.Password); err != nil {
@@ -317,6 +375,20 @@ func (s *APIV1Service) UpdateUser(ctx context.Context, request *v1pb.UpdateUserR
 				return nil, status.Errorf(codes.PermissionDenied, "cannot modify HOST user state")
 			}
 			rowStatus := convertStateToStore(request.User.State)
+			if user.Role == store.RoleHost && rowStatus == store.Archived {
+				if currentUser.ID == user.ID {
+					return nil, status.Errorf(codes.FailedPrecondition, "cannot archive yourself as HOST")
+				}
+				normalStatus := store.Normal
+				hostRole := store.RoleHost
+				hosts, err := s.Store.ListUsers(ctx, &store.FindUser{Role: &hostRole, RowStatus: &normalStatus})
+				if err != nil {
+					return nil, status.Errorf(codes.Internal, "failed to list HOST users: %v", err)
+				}
+				if len(hosts) <= 1 {
+					return nil, status.Errorf(codes.FailedPrecondition, "cannot archive the last HOST user")
+				}
+			}
 			update.RowStatus = &rowStatus
 		default:
 			return nil, status.Errorf(codes.InvalidArgument, "invalid update path: %s", field)
@@ -591,13 +663,13 @@ func (s *APIV1Service) ListPersonalAccessTokens(ctx context.Context, request *v1
 		return nil, status.Errorf(codes.InvalidArgument, "invalid user name: %v", err)
 	}
 
-	// Verify permission
-	claims := auth.GetUserClaims(ctx)
-	if claims == nil || claims.UserID != userID {
-		currentUser, _ := s.fetchCurrentUser(ctx)
-		if currentUser == nil || (currentUser.ID != userID && currentUser.Role != store.RoleHost && currentUser.Role != store.RoleAdmin) {
-			return nil, status.Errorf(codes.PermissionDenied, "permission denied")
-		}
+	// Verify permission against the current database user, not only token claims.
+	currentUser, err := s.fetchCurrentUser(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get current user: %v", err)
+	}
+	if currentUser == nil || (currentUser.ID != userID && currentUser.Role != store.RoleHost && currentUser.Role != store.RoleAdmin) {
+		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
 	}
 
 	tokens, err := s.Store.GetUserPersonalAccessTokens(ctx, userID)
@@ -645,13 +717,13 @@ func (s *APIV1Service) CreatePersonalAccessToken(ctx context.Context, request *v
 		return nil, status.Errorf(codes.InvalidArgument, "invalid user name: %v", err)
 	}
 
-	// Verify permission
-	claims := auth.GetUserClaims(ctx)
-	if claims == nil || claims.UserID != userID {
-		currentUser, _ := s.fetchCurrentUser(ctx)
-		if currentUser == nil || currentUser.ID != userID {
-			return nil, status.Errorf(codes.PermissionDenied, "permission denied")
-		}
+	// Verify permission against the current database user, not only token claims.
+	currentUser, err := s.fetchCurrentUser(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get current user: %v", err)
+	}
+	if currentUser == nil || currentUser.ID != userID {
+		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
 	}
 
 	// Generate PAT
@@ -713,13 +785,13 @@ func (s *APIV1Service) DeletePersonalAccessToken(ctx context.Context, request *v
 	}
 	tokenID := parts[3]
 
-	// Verify permission
-	claims := auth.GetUserClaims(ctx)
-	if claims == nil || claims.UserID != userID {
-		currentUser, _ := s.fetchCurrentUser(ctx)
-		if currentUser == nil || currentUser.ID != userID {
-			return nil, status.Errorf(codes.PermissionDenied, "permission denied")
-		}
+	// Verify permission against the current database user, not only token claims.
+	currentUser, err := s.fetchCurrentUser(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get current user: %v", err)
+	}
+	if currentUser == nil || currentUser.ID != userID {
+		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
 	}
 
 	if err := s.Store.RemoveUserPersonalAccessToken(ctx, userID, tokenID); err != nil {

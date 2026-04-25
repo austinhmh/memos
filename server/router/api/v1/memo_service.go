@@ -161,12 +161,23 @@ func (s *APIV1Service) ListMemos(ctx context.Context, request *v1pb.ListMemosReq
 		// Exclude comments by default.
 		ExcludeComments: true,
 	}
+
+	currentUser, err := s.fetchCurrentUser(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get user")
+	}
+
 	if request.State == v1pb.State_ARCHIVED {
+		if currentUser == nil {
+			return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
+		}
 		state := store.Archived
 		memoFind.RowStatus = &state
 	} else {
 		state := store.Normal
 		memoFind.RowStatus = &state
+		normalUserStatus := store.Normal
+		memoFind.CreatorRowStatus = &normalUserStatus
 	}
 
 	// Parse order_by field (replaces the old sort and direction fields)
@@ -186,17 +197,17 @@ func (s *APIV1Service) ListMemos(ctx context.Context, request *v1pb.ListMemosReq
 		memoFind.Filters = append(memoFind.Filters, request.Filter)
 	}
 
-	currentUser, err := s.fetchCurrentUser(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get user")
-	}
 	if currentUser == nil {
 		memoFind.VisibilityList = []store.Visibility{store.Public}
 	} else {
 		if memoFind.CreatorID == nil {
-			filter := fmt.Sprintf(`creator_id == %d || visibility in ["PUBLIC", "PROTECTED"]`, currentUser.ID)
-			memoFind.Filters = append(memoFind.Filters, filter)
-		} else if *memoFind.CreatorID != currentUser.ID {
+			if request.State == v1pb.State_ARCHIVED {
+				memoFind.CreatorID = &currentUser.ID
+			} else {
+				filter := fmt.Sprintf(`creator_id == %d || visibility in ["PUBLIC", "PROTECTED"]`, currentUser.ID)
+				memoFind.Filters = append(memoFind.Filters, filter)
+			}
+		} else if *memoFind.CreatorID != currentUser.ID && request.State != v1pb.State_ARCHIVED {
 			memoFind.VisibilityList = []store.Visibility{store.Public, store.Protected}
 		}
 	}
@@ -258,7 +269,8 @@ func (s *APIV1Service) ListMemos(ctx context.Context, request *v1pb.ListMemosReq
 	}
 
 	// REACTIONS
-	reactions, err := s.Store.ListReactions(ctx, &store.FindReaction{ContentIDList: contentIDs})
+	normalStatus := store.Normal
+	reactions, err := s.Store.ListReactions(ctx, &store.FindReaction{ContentIDList: contentIDs, CreatorRowStatus: &normalStatus})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to list reactions")
 	}
@@ -300,8 +312,11 @@ func (s *APIV1Service) GetMemo(ctx context.Context, request *v1pb.GetMemoRequest
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid memo name: %v", err)
 	}
+	normalStatus := store.Normal
 	memo, err := s.Store.GetMemo(ctx, &store.FindMemo{
-		UID: &memoUID,
+		UID:              &memoUID,
+		RowStatus:        &normalStatus,
+		CreatorRowStatus: &normalStatus,
 	})
 	if err != nil {
 		return nil, err
@@ -309,22 +324,11 @@ func (s *APIV1Service) GetMemo(ctx context.Context, request *v1pb.GetMemoRequest
 	if memo == nil {
 		return nil, status.Errorf(codes.NotFound, "memo not found")
 	}
-	if memo.Visibility != store.Public {
-		user, err := s.fetchCurrentUser(ctx)
-		if err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to get user")
-		}
-		if user == nil {
-			return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
-		}
-		if memo.Visibility == store.Private && memo.CreatorID != user.ID {
-			return nil, status.Errorf(codes.PermissionDenied, "permission denied")
-		}
+	if err := s.checkMemoVisibility(ctx, memo); err != nil {
+		return nil, err
 	}
 
-	reactions, err := s.Store.ListReactions(ctx, &store.FindReaction{
-		ContentID: &request.Name,
-	})
+	reactions, err := s.Store.ListReactions(ctx, &store.FindReaction{ContentID: &request.Name, CreatorRowStatus: &normalStatus})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to list reactions")
 	}
@@ -474,8 +478,10 @@ func (s *APIV1Service) UpdateMemo(ctx context.Context, request *v1pb.UpdateMemoR
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get memo")
 	}
+	normalStatus := store.Normal
 	reactions, err := s.Store.ListReactions(ctx, &store.FindReaction{
-		ContentID: &request.Memo.Name,
+		ContentID:        &request.Memo.Name,
+		CreatorRowStatus: &normalStatus,
 	})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to list reactions")
@@ -526,9 +532,8 @@ func (s *APIV1Service) DeleteMemo(ctx context.Context, request *v1pb.DeleteMemoR
 		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
 	}
 
-	reactions, err := s.Store.ListReactions(ctx, &store.FindReaction{
-		ContentID: &request.Name,
-	})
+	normalStatus := store.Normal
+	reactions, err := s.Store.ListReactions(ctx, &store.FindReaction{ContentID: &request.Name, CreatorRowStatus: &normalStatus})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to list reactions")
 	}
@@ -572,7 +577,8 @@ func (s *APIV1Service) CreateMemoComment(ctx context.Context, request *v1pb.Crea
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid memo name: %v", err)
 	}
-	relatedMemo, err := s.Store.GetMemo(ctx, &store.FindMemo{UID: &memoUID})
+	normalStatus := store.Normal
+	relatedMemo, err := s.Store.GetMemo(ctx, &store.FindMemo{UID: &memoUID, RowStatus: &normalStatus, CreatorRowStatus: &normalStatus})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get memo")
 	}
@@ -588,8 +594,8 @@ func (s *APIV1Service) CreateMemoComment(ctx context.Context, request *v1pb.Crea
 	if user == nil {
 		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
 	}
-	if relatedMemo.Visibility == store.Private && relatedMemo.CreatorID != user.ID && !isSuperUser(user) {
-		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
+	if err := s.checkMemoVisibility(ctx, relatedMemo); err != nil {
+		return nil, err
 	}
 
 	// Create the memo comment first.
@@ -658,7 +664,8 @@ func (s *APIV1Service) ListMemoComments(ctx context.Context, request *v1pb.ListM
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid memo name: %v", err)
 	}
-	memo, err := s.Store.GetMemo(ctx, &store.FindMemo{UID: &memoUID})
+	normalStatus := store.Normal
+	memo, err := s.Store.GetMemo(ctx, &store.FindMemo{UID: &memoUID, RowStatus: &normalStatus, CreatorRowStatus: &normalStatus})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get memo")
 	}
@@ -681,9 +688,13 @@ func (s *APIV1Service) ListMemoComments(ctx context.Context, request *v1pb.ListM
 	}
 	memoRelationComment := store.MemoRelationComment
 	memoRelations, err := s.Store.ListMemoRelations(ctx, &store.FindMemoRelation{
-		RelatedMemoID: &memo.ID,
-		Type:          &memoRelationComment,
-		MemoFilter:    &memoFilter,
+		RelatedMemoID:           &memo.ID,
+		Type:                    &memoRelationComment,
+		MemoFilter:              &memoFilter,
+		MemoRowStatus:           &normalStatus,
+		MemoCreatorRowStatus:    &normalStatus,
+		RelatedRowStatus:        &normalStatus,
+		RelatedCreatorRowStatus: &normalStatus,
 	})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to list memo relations")
@@ -720,7 +731,7 @@ func (s *APIV1Service) ListMemoComments(ctx context.Context, request *v1pb.ListM
 	for _, m := range paginatedRelations {
 		memoRelationIDs = append(memoRelationIDs, m.MemoID)
 	}
-	memos, err := s.Store.ListMemos(ctx, &store.FindMemo{IDList: memoRelationIDs})
+	memos, err := s.Store.ListMemos(ctx, &store.FindMemo{IDList: memoRelationIDs, RowStatus: &normalStatus, CreatorRowStatus: &normalStatus})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to list memos")
 	}
@@ -735,7 +746,7 @@ func (s *APIV1Service) ListMemoComments(ctx context.Context, request *v1pb.ListM
 		contentIDs = append(contentIDs, memoName)
 		memoIDsForAttachments = append(memoIDsForAttachments, memo.ID)
 	}
-	reactions, err := s.Store.ListReactions(ctx, &store.FindReaction{ContentIDList: contentIDs})
+	reactions, err := s.Store.ListReactions(ctx, &store.FindReaction{ContentIDList: contentIDs, CreatorRowStatus: &normalStatus})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to list reactions")
 	}

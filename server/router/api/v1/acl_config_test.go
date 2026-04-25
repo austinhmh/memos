@@ -18,15 +18,14 @@ func TestPublicMethodsArePublic(t *testing.T) {
 		// User Service
 		"/memos.api.v1.UserService/CreateUser",
 		"/memos.api.v1.UserService/GetUser",
-		"/memos.api.v1.UserService/GetUserAvatar",
 		"/memos.api.v1.UserService/GetUserStats",
 		"/memos.api.v1.UserService/ListAllUserStats",
-		"/memos.api.v1.UserService/SearchUsers",
 		// Identity Provider Service
 		"/memos.api.v1.IdentityProviderService/ListIdentityProviders",
 		// Memo Service
 		"/memos.api.v1.MemoService/GetMemo",
 		"/memos.api.v1.MemoService/ListMemos",
+		"/memos.api.v1.MemoService/ListMemoComments",
 	}
 
 	for _, method := range publicMethods {

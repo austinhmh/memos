@@ -85,15 +85,21 @@ func (s *FileServerService) serveAttachmentFile(c echo.Context) error {
 	uid := c.Param("uid")
 	thumbnail := c.QueryParam("thumbnail") == "true"
 
-	// Get attachment from database
+	// Set conservative cache headers before every early return on this sensitive path.
+	c.Response().Header().Set("Cache-Control", "private, no-store")
+	c.Response().Header().Set("Vary", "Authorization, Cookie")
+
+	// Get attachment metadata from database before permission checks.
 	attachment, err := s.Store.GetAttachment(ctx, &store.FindAttachment{
-		UID:     &uid,
-		GetBlob: true,
+		UID: &uid,
 	})
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get attachment").SetInternal(err)
 	}
 	if attachment == nil {
+		return echo.NewHTTPError(http.StatusNotFound, "attachment not found")
+	}
+	if requestedFilename := c.Param("filename"); requestedFilename != attachment.Filename {
 		return echo.NewHTTPError(http.StatusNotFound, "attachment not found")
 	}
 
@@ -150,14 +156,7 @@ func (s *FileServerService) serveAttachmentFile(c echo.Context) error {
 
 	// Set common headers
 	c.Response().Header().Set("Content-Type", contentType)
-	cacheControl := "private, max-age=3600"
-	if attachment.MemoID != nil {
-		memo, memoErr := s.Store.GetMemo(ctx, &store.FindMemo{ID: attachment.MemoID})
-		if memoErr == nil && memo != nil && memo.Visibility == store.Public {
-			cacheControl = "public, max-age=3600"
-		}
-	}
-	c.Response().Header().Set("Cache-Control", cacheControl)
+	c.Response().Header().Set("Cache-Control", "private, no-store")
 	c.Response().Header().Set("Vary", "Authorization, Cookie")
 	// Prevent MIME-type sniffing which could lead to XSS
 	c.Response().Header().Set("X-Content-Type-Options", "nosniff")
@@ -252,13 +251,14 @@ func (s *FileServerService) serveUserAvatar(c echo.Context) error {
 
 // getUserByIdentifier finds a user by either ID or username.
 func (s *FileServerService) getUserByIdentifier(ctx context.Context, identifier string) (*store.User, error) {
+	normalStatus := store.Normal
 	// Try to parse as ID first
 	if userID, err := util.ConvertStringToInt32(identifier); err == nil {
-		return s.Store.GetUser(ctx, &store.FindUser{ID: &userID})
+		return s.Store.GetUser(ctx, &store.FindUser{ID: &userID, RowStatus: &normalStatus})
 	}
 
 	// Otherwise, treat as username
-	return s.Store.GetUser(ctx, &store.FindUser{Username: &identifier})
+	return s.Store.GetUser(ctx, &store.FindUser{Username: &identifier, RowStatus: &normalStatus})
 }
 
 // extractImageInfo extracts image type and base64 data from a data URI.
@@ -289,8 +289,11 @@ func (s *FileServerService) checkAttachmentPermission(ctx context.Context, c ech
 	}
 
 	// Check memo visibility
+	normalStatus := store.Normal
 	memo, err := s.Store.GetMemo(ctx, &store.FindMemo{
-		ID: attachment.MemoID,
+		ID:               attachment.MemoID,
+		RowStatus:        &normalStatus,
+		CreatorRowStatus: &normalStatus,
 	})
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to find memo").SetInternal(err)
@@ -313,8 +316,8 @@ func (s *FileServerService) checkAttachmentPermission(ctx context.Context, c ech
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized access")
 	}
 
-	// Private memos can only be accessed by the creator
-	if memo.Visibility == store.Private && user.ID != attachment.CreatorID {
+	// Private memos can only be accessed by the memo creator or a superuser
+	if memo.Visibility == store.Private && memo.CreatorID != user.ID && user.Role != store.RoleHost && user.Role != store.RoleAdmin {
 		return echo.NewHTTPError(http.StatusForbidden, "forbidden access")
 	}
 
@@ -335,8 +338,9 @@ func (s *FileServerService) getCurrentUser(ctx context.Context, c echo.Context) 
 				claims, err := s.authenticator.AuthenticateByAccessTokenV2(token)
 				if err == nil && claims != nil {
 					// Get user from claims and enforce current account status.
-					user, err := s.Store.GetUser(ctx, &store.FindUser{ID: &claims.UserID})
-					if err == nil && user != nil && user.RowStatus != store.Archived {
+					normalStatus := store.Normal
+					user, err := s.Store.GetUser(ctx, &store.FindUser{ID: &claims.UserID, RowStatus: &normalStatus})
+					if err == nil && user != nil {
 						return user, nil
 					}
 				}
@@ -387,9 +391,12 @@ func (*FileServerService) isImageType(mimeType string) bool {
 func (s *FileServerService) getAttachmentReader(attachment *store.Attachment) (io.ReadCloser, error) {
 	// For local storage, read the file from the local disk.
 	if attachment.StorageType == storepb.AttachmentStorageType_LOCAL {
-		attachmentPath := filepath.FromSlash(attachment.Reference)
-		if !filepath.IsAbs(attachmentPath) {
-			attachmentPath = filepath.Join(s.Profile.Data, attachmentPath)
+		attachmentPath, err := util.SafeJoinUnderBase(s.Profile.Data, attachment.Reference)
+		if err != nil {
+			return nil, errors.Wrap(err, "unsafe attachment path")
+		}
+		if err := util.EnsurePathWithinBase(s.Profile.Data, attachmentPath); err != nil {
+			return nil, errors.Wrap(err, "unsafe attachment path")
 		}
 
 		file, err := os.Open(attachmentPath)
@@ -437,7 +444,17 @@ func (s *FileServerService) getAttachmentReader(attachment *store.Attachment) (i
 		}
 		return reader, nil
 	}
-	// For database storage, return the blob from the database.
+	// For database storage, fetch the blob only when requested.
+	if attachment.StorageType == storepb.AttachmentStorageType_ATTACHMENT_STORAGE_TYPE_UNSPECIFIED {
+		attachmentWithBlob, err := s.Store.GetAttachment(context.Background(), &store.FindAttachment{ID: &attachment.ID, GetBlob: true})
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to get attachment blob")
+		}
+		if attachmentWithBlob == nil {
+			return nil, errors.New("attachment not found")
+		}
+		return io.NopCloser(bytes.NewReader(attachmentWithBlob.Blob)), nil
+	}
 	return io.NopCloser(bytes.NewReader(attachment.Blob)), nil
 }
 
@@ -445,9 +462,12 @@ func (s *FileServerService) getAttachmentReader(attachment *store.Attachment) (i
 func (s *FileServerService) getAttachmentBlob(attachment *store.Attachment) ([]byte, error) {
 	// For local storage, read the file from the local disk.
 	if attachment.StorageType == storepb.AttachmentStorageType_LOCAL {
-		attachmentPath := filepath.FromSlash(attachment.Reference)
-		if !filepath.IsAbs(attachmentPath) {
-			attachmentPath = filepath.Join(s.Profile.Data, attachmentPath)
+		attachmentPath, err := util.SafeJoinUnderBase(s.Profile.Data, attachment.Reference)
+		if err != nil {
+			return nil, errors.Wrap(err, "unsafe attachment path")
+		}
+		if err := util.EnsurePathWithinBase(s.Profile.Data, attachmentPath); err != nil {
+			return nil, errors.Wrap(err, "unsafe attachment path")
 		}
 
 		file, err := os.Open(attachmentPath)
@@ -500,7 +520,17 @@ func (s *FileServerService) getAttachmentBlob(attachment *store.Attachment) ([]b
 		}
 		return blob, nil
 	}
-	// For database storage, return the blob from the database.
+	// For database storage, fetch the blob only after permission checks pass.
+	if attachment.StorageType == storepb.AttachmentStorageType_ATTACHMENT_STORAGE_TYPE_UNSPECIFIED {
+		attachmentWithBlob, err := s.Store.GetAttachment(context.Background(), &store.FindAttachment{ID: &attachment.ID, GetBlob: true})
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to get attachment blob")
+		}
+		if attachmentWithBlob == nil {
+			return nil, errors.New("attachment not found")
+		}
+		return attachmentWithBlob.Blob, nil
+	}
 	return attachment.Blob, nil
 }
 

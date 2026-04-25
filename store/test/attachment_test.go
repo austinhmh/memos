@@ -64,6 +64,56 @@ func TestAttachmentStore(t *testing.T) {
 	ts.Close()
 }
 
+func TestDeleteAttachmentRequiresMatchingMemoID(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ts := NewTestingStore(ctx, t)
+	defer ts.Close()
+
+	user, err := createTestingHostUser(ctx, ts)
+	require.NoError(t, err)
+	firstMemo, err := ts.CreateMemo(ctx, &store.Memo{
+		UID:        "delete-attachment-first-memo",
+		CreatorID:  user.ID,
+		Content:    "first memo",
+		Visibility: store.Private,
+	})
+	require.NoError(t, err)
+	secondMemo, err := ts.CreateMemo(ctx, &store.Memo{
+		UID:        "delete-attachment-second-memo",
+		CreatorID:  user.ID,
+		Content:    "second memo",
+		Visibility: store.Private,
+	})
+	require.NoError(t, err)
+
+	attachment, err := ts.CreateAttachment(ctx, &store.Attachment{
+		UID:       shortuuid.New(),
+		CreatorID: user.ID,
+		Filename:  "scoped-delete.txt",
+		Blob:      []byte("scoped"),
+		Type:      "text/plain",
+		Size:      6,
+		MemoID:    &firstMemo.ID,
+	})
+	require.NoError(t, err)
+
+	err = ts.DeleteAttachment(ctx, &store.DeleteAttachment{ID: attachment.ID, MemoID: &secondMemo.ID})
+	require.ErrorContains(t, err, "attachment not found")
+
+	remaining, err := ts.GetAttachment(ctx, &store.FindAttachment{ID: &attachment.ID})
+	require.NoError(t, err)
+	require.NotNil(t, remaining)
+	require.Equal(t, firstMemo.ID, *remaining.MemoID)
+
+	err = ts.DeleteAttachment(ctx, &store.DeleteAttachment{ID: attachment.ID, MemoID: &firstMemo.ID})
+	require.NoError(t, err)
+
+	remaining, err = ts.GetAttachment(ctx, &store.FindAttachment{ID: &attachment.ID})
+	require.NoError(t, err)
+	require.Nil(t, remaining)
+}
+
 func TestAttachmentStoreWithFilter(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

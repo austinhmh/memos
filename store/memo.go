@@ -62,8 +62,9 @@ type FindMemo struct {
 	UIDList []string
 
 	// Standard fields
-	RowStatus *RowStatus
-	CreatorID *int32
+	RowStatus        *RowStatus
+	CreatorID        *int32
+	CreatorRowStatus *RowStatus
 
 	// Domain specific fields
 	VisibilityList  []Visibility

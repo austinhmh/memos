@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	apiv1 "github.com/usememos/memos/proto/gen/api/v1"
+	"github.com/usememos/memos/store"
 )
 
 func TestSetMemoAttachments(t *testing.T) {
@@ -146,21 +147,41 @@ func TestSetMemoAttachments(t *testing.T) {
 		require.Contains(t, err.Error(), "not authenticated")
 	})
 
-	t.Run("SetMemoAttachments memo not found", func(t *testing.T) {
+	t.Run("SetMemoAttachments archived memo not found and leaves attachments unchanged", func(t *testing.T) {
 		ts := NewTestService(t)
 		defer ts.Cleanup()
 
-		// Create user
-		user, err := ts.CreateRegularUser(ctx, "user")
+		user, err := ts.CreateRegularUser(ctx, "archived-memo-attachment-owner")
 		require.NoError(t, err)
 		userCtx := ts.CreateUserContext(ctx, user.ID)
 
-		// Try to set attachments on non-existent memo - should fail
+		memo, err := ts.Service.CreateMemo(userCtx, &apiv1.CreateMemoRequest{
+			Memo: &apiv1.Memo{Content: "archived memo", Visibility: apiv1.Visibility_PRIVATE},
+		})
+		require.NoError(t, err)
+		attachment, err := ts.Service.CreateAttachment(userCtx, &apiv1.CreateAttachmentRequest{
+			Attachment: &apiv1.Attachment{Filename: "archived.txt", Size: 8, Type: "text/plain", Content: []byte("archived")},
+		})
+		require.NoError(t, err)
+		attachmentUID := stringFromAttachmentName(t, attachment.Name)
+
+		memoUID := memo.Name[len("memos/"):]
+		storeMemo, err := ts.Store.GetMemo(ctx, &store.FindMemo{UID: &memoUID})
+		require.NoError(t, err)
+		require.NotNil(t, storeMemo)
+		archivedStatus := store.Archived
+		require.NoError(t, ts.Store.UpdateMemo(ctx, &store.UpdateMemo{ID: storeMemo.ID, RowStatus: &archivedStatus}))
+
 		_, err = ts.Service.SetMemoAttachments(userCtx, &apiv1.SetMemoAttachmentsRequest{
-			Name:        "memos/nonexistent-uid-12345",
-			Attachments: []*apiv1.Attachment{},
+			Name:        memo.Name,
+			Attachments: []*apiv1.Attachment{{Name: attachment.Name}},
 		})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "not found")
+
+		storedAttachment, err := ts.Store.GetAttachment(ctx, &store.FindAttachment{UID: &attachmentUID})
+		require.NoError(t, err)
+		require.NotNil(t, storedAttachment)
+		require.Nil(t, storedAttachment.MemoID)
 	})
 }

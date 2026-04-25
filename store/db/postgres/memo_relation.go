@@ -47,7 +47,19 @@ func (d *DB) ListMemoRelations(ctx context.Context, find *store.FindMemoRelation
 		where, args = append(where, "related_memo_id = "+placeholder(len(args)+1)), append(args, find.RelatedMemoID)
 	}
 	if find.Type != nil {
-		where, args = append(where, "type = "+placeholder(len(args)+1)), append(args, find.Type)
+		where, args = append(where, "type = "+placeholder(len(args)+1)), append(args, *find.Type)
+	}
+	if find.MemoRowStatus != nil {
+		where, args = append(where, "memo_id IN (SELECT id FROM memo WHERE row_status = "+placeholder(len(args)+1)+")"), append(args, *find.MemoRowStatus)
+	}
+	if find.MemoCreatorRowStatus != nil {
+		where, args = append(where, "memo_id IN (SELECT memo.id FROM memo LEFT JOIN \"user\" AS creator ON memo.creator_id = creator.id WHERE creator.row_status = "+placeholder(len(args)+1)+")"), append(args, *find.MemoCreatorRowStatus)
+	}
+	if find.RelatedRowStatus != nil {
+		where, args = append(where, "related_memo_id IN (SELECT id FROM memo WHERE row_status = "+placeholder(len(args)+1)+")"), append(args, *find.RelatedRowStatus)
+	}
+	if find.RelatedCreatorRowStatus != nil {
+		where, args = append(where, "related_memo_id IN (SELECT memo.id FROM memo LEFT JOIN \"user\" AS creator ON memo.creator_id = creator.id WHERE creator.row_status = "+placeholder(len(args)+1)+")"), append(args, *find.RelatedCreatorRowStatus)
 	}
 	if find.MemoFilter != nil {
 		engine, err := filter.DefaultEngine()

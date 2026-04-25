@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -24,11 +25,63 @@ func TestNewIdentityProvider(t *testing.T) {
 		containsErr string
 	}{
 		{
+			name:        "nil config",
+			config:      nil,
+			containsErr: "oauth2 config is required",
+		},
+		{
+			name: "nil field mapping",
+			config: &storepb.OAuth2Config{
+				ClientId:     "test-client-id",
+				ClientSecret: "test-client-secret",
+				AuthUrl:      "https://example.com/oauth/authorize",
+				TokenUrl:     "https://example.com/token",
+				UserInfoUrl:  "https://example.com/api/user",
+			},
+			containsErr: "fieldMapping is required",
+		},
+		{
+			name: "internal authUrl rejected",
+			config: &storepb.OAuth2Config{
+				ClientId:     "test-client-id",
+				ClientSecret: "test-client-secret",
+				AuthUrl:      "http://127.0.0.1/oauth/authorize",
+				TokenUrl:     "https://example.com/token",
+				UserInfoUrl:  "https://example.com/api/user",
+				FieldMapping: &storepb.FieldMapping{Identifier: "login"},
+			},
+			containsErr: `invalid authUrl`,
+		},
+		{
+			name: "unsupported authUrl scheme rejected",
+			config: &storepb.OAuth2Config{
+				ClientId:     "test-client-id",
+				ClientSecret: "test-client-secret",
+				AuthUrl:      "javascript:alert(1)",
+				TokenUrl:     "https://example.com/token",
+				UserInfoUrl:  "https://example.com/api/user",
+				FieldMapping: &storepb.FieldMapping{Identifier: "login"},
+			},
+			containsErr: `invalid authUrl`,
+		},
+		{
+			name: "internal userInfoUrl rejected",
+			config: &storepb.OAuth2Config{
+				ClientId:     "test-client-id",
+				ClientSecret: "test-client-secret",
+				AuthUrl:      "http://8.8.8.8/oauth/authorize",
+				TokenUrl:     "http://8.8.8.8/token",
+				UserInfoUrl:  "http://127.0.0.1/internal",
+				FieldMapping: &storepb.FieldMapping{Identifier: "login"},
+			},
+			containsErr: `invalid userInfoUrl`,
+		},
+		{
 			name: "no tokenUrl",
 			config: &storepb.OAuth2Config{
 				ClientId:     "test-client-id",
 				ClientSecret: "test-client-secret",
-				AuthUrl:      "",
+				AuthUrl:      "https://example.com/oauth/authorize",
 				TokenUrl:     "",
 				UserInfoUrl:  "https://example.com/api/user",
 				FieldMapping: &storepb.FieldMapping{
@@ -42,7 +95,7 @@ func TestNewIdentityProvider(t *testing.T) {
 			config: &storepb.OAuth2Config{
 				ClientId:     "test-client-id",
 				ClientSecret: "test-client-secret",
-				AuthUrl:      "",
+				AuthUrl:      "https://example.com/oauth/authorize",
 				TokenUrl:     "https://example.com/token",
 				UserInfoUrl:  "",
 				FieldMapping: &storepb.FieldMapping{
@@ -56,7 +109,7 @@ func TestNewIdentityProvider(t *testing.T) {
 			config: &storepb.OAuth2Config{
 				ClientId:     "test-client-id",
 				ClientSecret: "test-client-secret",
-				AuthUrl:      "",
+				AuthUrl:      "https://example.com/oauth/authorize",
 				TokenUrl:     "https://example.com/token",
 				UserInfoUrl:  "https://example.com/api/user",
 				FieldMapping: &storepb.FieldMapping{
@@ -109,6 +162,90 @@ func newMockServer(t *testing.T, code, accessToken string, userinfo []byte) *htt
 	return s
 }
 
+func TestValidateExternalURLRejectsPrivateAddresses(t *testing.T) {
+	for _, rawURL := range []string{
+		"http://127.0.0.1/token",
+		"http://[::1]/token",
+		"http://10.0.0.1/token",
+		"http://172.16.0.1/token",
+		"http://192.168.0.1/token",
+		"http://169.254.169.254/latest/meta-data",
+		"http://203.0.113.10/token",
+		"http://0.0.0.1/token",
+		"http://240.0.0.1/token",
+		"http://255.255.255.255/token",
+		"http://[::ffff:127.0.0.1]/token",
+		"http://[::ffff:169.254.169.254]/token",
+		"http://[64:ff9b::a9fe:a9fe]/token",
+		"http://[2001::1]/token",
+		"http://[2001:db8::1]/token",
+		"http://[2002:7f00:1::]/token",
+	} {
+		t.Run(rawURL, func(t *testing.T) {
+			err := validateExternalURL(context.Background(), rawURL)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "internal")
+		})
+	}
+}
+
+func TestValidateExternalURLRejectsInvalidOrSensitivePorts(t *testing.T) {
+	for _, rawURL := range []string{
+		"http://1.1.1.1:22/token",
+		"http://1.1.1.1:25/token",
+		"http://1.1.1.1:65535/token",
+		"http://1.1.1.1:0/token",
+		"http://1.1.1.1:abc/token",
+	} {
+		t.Run(rawURL, func(t *testing.T) {
+			err := validateExternalURL(context.Background(), rawURL)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "port")
+		})
+	}
+}
+
+func TestValidateExternalURLAllowsDefaultWebPorts(t *testing.T) {
+	for _, rawURL := range []string{
+		"http://1.1.1.1/token",
+		"http://1.1.1.1:80/token",
+		"https://1.1.1.1:443/token",
+	} {
+		t.Run(rawURL, func(t *testing.T) {
+			require.NoError(t, validateExternalURL(context.Background(), rawURL))
+		})
+	}
+}
+
+func TestNewSafeTransportRejectsPrivateDialTargetAndDisablesProxy(t *testing.T) {
+	transport := newSafeTransport()
+	require.Nil(t, transport.Proxy)
+
+	conn, err := transport.DialContext(context.Background(), "tcp", net.JoinHostPort("127.0.0.1", "80"))
+	require.Error(t, err)
+	require.Nil(t, conn)
+	assert.ErrorContains(t, err, "internal")
+}
+
+func TestHTTPClientRejectsInternalRedirect(t *testing.T) {
+	previousValidator := validateExternalURLFunc
+	validateExternalURLFunc = func(_ context.Context, rawURL string) error {
+		if rawURL == "http://127.0.0.1/internal" {
+			return errInternalIP
+		}
+		return nil
+	}
+	defer func() {
+		validateExternalURLFunc = previousValidator
+	}()
+
+	redirectURL, err := url.Parse("http://127.0.0.1/internal")
+	require.NoError(t, err)
+	err = newHTTPClient().CheckRedirect(&http.Request{URL: redirectURL}, nil)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "redirect to internal IP")
+}
+
 func TestIdentityProvider(t *testing.T) {
 	ctx := context.Background()
 
@@ -130,11 +267,20 @@ func TestIdentityProvider(t *testing.T) {
 	require.NoError(t, err)
 
 	s := newMockServer(t, testCode, testAccessToken, userInfo)
+	previousValidator := validateExternalURLFunc
+	previousHTTPClientFactory := newHTTPClient
+	validateExternalURLFunc = func(context.Context, string) error { return nil }
+	newHTTPClient = func() *http.Client { return s.Client() }
+	defer func() {
+		validateExternalURLFunc = previousValidator
+		newHTTPClient = previousHTTPClientFactory
+	}()
 
 	oauth2, err := NewIdentityProvider(
 		&storepb.OAuth2Config{
 			ClientId:     testClientID,
 			ClientSecret: "test-client-secret",
+			AuthUrl:      fmt.Sprintf("%s/oauth2/authorize", s.URL),
 			TokenUrl:     fmt.Sprintf("%s/oauth2/token", s.URL),
 			UserInfoUrl:  fmt.Sprintf("%s/oauth2/userinfo", s.URL),
 			FieldMapping: &storepb.FieldMapping{

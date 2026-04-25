@@ -20,10 +20,14 @@ type MemoRelation struct {
 }
 
 type FindMemoRelation struct {
-	MemoID        *int32
-	RelatedMemoID *int32
-	Type          *MemoRelationType
-	MemoFilter    *string
+	MemoID                  *int32
+	RelatedMemoID           *int32
+	Type                    *MemoRelationType
+	MemoFilter              *string
+	MemoRowStatus           *RowStatus
+	MemoCreatorRowStatus    *RowStatus
+	RelatedRowStatus        *RowStatus
+	RelatedCreatorRowStatus *RowStatus
 }
 
 type DeleteMemoRelation struct {

@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/pkg/errors"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	"github.com/usememos/memos/plugin/idp/oauth2"
 	v1pb "github.com/usememos/memos/proto/gen/api/v1"
 	storepb "github.com/usememos/memos/proto/gen/store"
 	"github.com/usememos/memos/store"
@@ -23,6 +25,13 @@ func (s *APIV1Service) CreateIdentityProvider(ctx context.Context, request *v1pb
 	}
 	if currentUser.Role != store.RoleHost {
 		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
+	}
+
+	if request == nil || request.IdentityProvider == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "identity_provider is required")
+	}
+	if err := validateIdentityProviderConfig(request.IdentityProvider.Type, request.IdentityProvider.Config); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid identity provider config: %v", err)
 	}
 
 	identityProvider, err := s.Store.CreateIdentityProvider(ctx, convertIdentityProviderToStore(request.IdentityProvider))
@@ -94,6 +103,9 @@ func (s *APIV1Service) UpdateIdentityProvider(ctx context.Context, request *v1pb
 		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
 	}
 
+	if request == nil || request.IdentityProvider == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "identity_provider is required")
+	}
 	if request.UpdateMask == nil || len(request.UpdateMask.Paths) == 0 {
 		return nil, status.Errorf(codes.InvalidArgument, "update_mask is required")
 	}
@@ -113,6 +125,9 @@ func (s *APIV1Service) UpdateIdentityProvider(ctx context.Context, request *v1pb
 		case "identifier_filter":
 			update.IdentifierFilter = &request.IdentityProvider.IdentifierFilter
 		case "config":
+			if err := validateIdentityProviderConfig(request.IdentityProvider.Type, request.IdentityProvider.Config); err != nil {
+				return nil, status.Errorf(codes.InvalidArgument, "invalid identity provider config: %v", err)
+			}
 			update.Config = convertIdentityProviderConfigToStore(request.IdentityProvider.Type, request.IdentityProvider.Config)
 		default:
 			// Ignore unsupported fields
@@ -167,22 +182,26 @@ func convertIdentityProviderFromStore(identityProvider *storepb.IdentityProvider
 	}
 	if identityProvider.Type == storepb.IdentityProvider_OAUTH2 {
 		oauth2Config := identityProvider.Config.GetOauth2Config()
+		apiOAuth2Config := &v1pb.OAuth2Config{}
+		if oauth2Config != nil {
+			apiOAuth2Config.ClientId = oauth2Config.ClientId
+			apiOAuth2Config.ClientSecret = oauth2Config.ClientSecret
+			apiOAuth2Config.AuthUrl = oauth2Config.AuthUrl
+			apiOAuth2Config.TokenUrl = oauth2Config.TokenUrl
+			apiOAuth2Config.UserInfoUrl = oauth2Config.UserInfoUrl
+			apiOAuth2Config.Scopes = oauth2Config.Scopes
+			if oauth2Config.FieldMapping != nil {
+				apiOAuth2Config.FieldMapping = &v1pb.FieldMapping{
+					Identifier:  oauth2Config.FieldMapping.Identifier,
+					DisplayName: oauth2Config.FieldMapping.DisplayName,
+					Email:       oauth2Config.FieldMapping.Email,
+					AvatarUrl:   oauth2Config.FieldMapping.AvatarUrl,
+				}
+			}
+		}
 		temp.Config = &v1pb.IdentityProviderConfig{
 			Config: &v1pb.IdentityProviderConfig_Oauth2Config{
-				Oauth2Config: &v1pb.OAuth2Config{
-					ClientId:     oauth2Config.ClientId,
-					ClientSecret: oauth2Config.ClientSecret,
-					AuthUrl:      oauth2Config.AuthUrl,
-					TokenUrl:     oauth2Config.TokenUrl,
-					UserInfoUrl:  oauth2Config.UserInfoUrl,
-					Scopes:       oauth2Config.Scopes,
-					FieldMapping: &v1pb.FieldMapping{
-						Identifier:  oauth2Config.FieldMapping.Identifier,
-						DisplayName: oauth2Config.FieldMapping.DisplayName,
-						Email:       oauth2Config.FieldMapping.Email,
-						AvatarUrl:   oauth2Config.FieldMapping.AvatarUrl,
-					},
-				},
+				Oauth2Config: apiOAuth2Config,
 			},
 		}
 	}
@@ -204,7 +223,22 @@ func convertIdentityProviderToStore(identityProvider *v1pb.IdentityProvider) *st
 
 func convertIdentityProviderConfigToStore(identityProviderType v1pb.IdentityProvider_Type, config *v1pb.IdentityProviderConfig) *storepb.IdentityProviderConfig {
 	if identityProviderType == v1pb.IdentityProvider_OAUTH2 {
+		if config == nil {
+			return nil
+		}
 		oauth2Config := config.GetOauth2Config()
+		if oauth2Config == nil {
+			return nil
+		}
+		fieldMapping := &storepb.FieldMapping{}
+		if oauth2Config.FieldMapping != nil {
+			fieldMapping = &storepb.FieldMapping{
+				Identifier:  oauth2Config.FieldMapping.Identifier,
+				DisplayName: oauth2Config.FieldMapping.DisplayName,
+				Email:       oauth2Config.FieldMapping.Email,
+				AvatarUrl:   oauth2Config.FieldMapping.AvatarUrl,
+			}
+		}
 		return &storepb.IdentityProviderConfig{
 			Config: &storepb.IdentityProviderConfig_Oauth2Config{
 				Oauth2Config: &storepb.OAuth2Config{
@@ -214,12 +248,7 @@ func convertIdentityProviderConfigToStore(identityProviderType v1pb.IdentityProv
 					TokenUrl:     oauth2Config.TokenUrl,
 					UserInfoUrl:  oauth2Config.UserInfoUrl,
 					Scopes:       oauth2Config.Scopes,
-					FieldMapping: &storepb.FieldMapping{
-						Identifier:  oauth2Config.FieldMapping.Identifier,
-						DisplayName: oauth2Config.FieldMapping.DisplayName,
-						Email:       oauth2Config.FieldMapping.Email,
-						AvatarUrl:   oauth2Config.FieldMapping.AvatarUrl,
-					},
+					FieldMapping: fieldMapping,
 				},
 			},
 		}
@@ -227,12 +256,57 @@ func convertIdentityProviderConfigToStore(identityProviderType v1pb.IdentityProv
 	return nil
 }
 
+func validateIdentityProviderConfig(identityProviderType v1pb.IdentityProvider_Type, config *v1pb.IdentityProviderConfig) error {
+	if identityProviderType != v1pb.IdentityProvider_OAUTH2 {
+		return errors.New("unsupported identity provider type")
+	}
+	if config == nil {
+		return errors.New("config is required")
+	}
+	oauth2Config := config.GetOauth2Config()
+	if oauth2Config == nil {
+		return errors.New("oauth2_config is required")
+	}
+	if _, err := oauth2.NewIdentityProvider(&storepb.OAuth2Config{
+		ClientId:     oauth2Config.ClientId,
+		ClientSecret: oauth2Config.ClientSecret,
+		AuthUrl:      oauth2Config.AuthUrl,
+		TokenUrl:     oauth2Config.TokenUrl,
+		UserInfoUrl:  oauth2Config.UserInfoUrl,
+		Scopes:       oauth2Config.Scopes,
+		FieldMapping: func() *storepb.FieldMapping {
+			if oauth2Config.FieldMapping == nil {
+				return nil
+			}
+			return &storepb.FieldMapping{
+				Identifier:  oauth2Config.FieldMapping.Identifier,
+				DisplayName: oauth2Config.FieldMapping.DisplayName,
+				Email:       oauth2Config.FieldMapping.Email,
+				AvatarUrl:   oauth2Config.FieldMapping.AvatarUrl,
+			}
+		}(),
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
 func redactIdentityProviderResponse(identityProvider *v1pb.IdentityProvider, userRole store.Role) *v1pb.IdentityProvider {
-	if userRole != store.RoleHost {
-		if identityProvider.Type == v1pb.IdentityProvider_OAUTH2 {
-			identityProvider.Config.GetOauth2Config().ClientSecret = ""
+	if identityProvider == nil {
+		return nil
+	}
+	if userRole == store.RoleHost {
+		return identityProvider
+	}
+	if identityProvider.Type == v1pb.IdentityProvider_OAUTH2 {
+		oauth2Config := identityProvider.Config.GetOauth2Config()
+		if oauth2Config != nil {
+			oauth2Config.ClientSecret = ""
+			oauth2Config.TokenUrl = ""
+			oauth2Config.UserInfoUrl = ""
+			oauth2Config.FieldMapping = nil
 		}
 	}
-
+	identityProvider.IdentifierFilter = ""
 	return identityProvider
 }

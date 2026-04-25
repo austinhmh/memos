@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+
+	"github.com/pkg/errors"
 )
 
 // Role is the type of a role.
@@ -94,6 +96,9 @@ type DeleteUser struct {
 }
 
 func (s *Store) CreateUser(ctx context.Context, create *User) (*User, error) {
+	if create == nil {
+		return nil, errors.New("user create payload is required")
+	}
 	user, err := s.driver.CreateUser(ctx, create)
 	if err != nil {
 		return nil, err
@@ -128,13 +133,10 @@ func (s *Store) ListUsers(ctx context.Context, find *FindUser) ([]*User, error) 
 func (s *Store) GetUser(ctx context.Context, find *FindUser) (*User, error) {
 	if find.ID != nil {
 		if *find.ID == SystemBotID {
-			return SystemBot, nil
-		}
-		if cache, ok := s.userCache.Get(ctx, string(*find.ID)); ok {
-			user, ok := cache.(*User)
-			if ok {
-				return user, nil
+			if find.RowStatus == nil || *find.RowStatus == Normal {
+				return SystemBot, nil
 			}
+			return nil, nil
 		}
 	}
 
@@ -143,6 +145,9 @@ func (s *Store) GetUser(ctx context.Context, find *FindUser) (*User, error) {
 		return nil, err
 	}
 	if len(list) == 0 {
+		if find.ID != nil {
+			s.userCache.Delete(ctx, string(*find.ID))
+		}
 		return nil, nil
 	}
 

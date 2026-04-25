@@ -15,11 +15,9 @@ import (
 	"github.com/usememos/memos/store"
 )
 
-// MetadataInterceptor converts Connect HTTP headers to gRPC metadata.
-//
-// This ensures service methods can use metadata.FromIncomingContext() to access
-// headers like User-Agent, X-Forwarded-For, etc., regardless of whether the
-// request came via Connect RPC or gRPC-Gateway.
+// MetadataInterceptor converts selected Connect HTTP headers to gRPC metadata.
+// It intentionally does not accept client-supplied X-Forwarded-* headers; those
+// must be normalized by a trusted reverse proxy before reaching the service.
 type MetadataInterceptor struct{}
 
 // NewMetadataInterceptor creates a new metadata interceptor.
@@ -37,17 +35,8 @@ func (*MetadataInterceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc 
 		if ua := header.Get("User-Agent"); ua != "" {
 			md.Set("user-agent", ua)
 		}
-		if xff := header.Get("X-Forwarded-For"); xff != "" {
-			md.Set("x-forwarded-for", xff)
-		}
-		if xri := header.Get("X-Real-Ip"); xri != "" {
-			md.Set("x-real-ip", xri)
-		}
 		if origin := header.Get("Origin"); origin != "" {
 			md.Set("origin", origin)
-		}
-		if proto := header.Get("X-Forwarded-Proto"); proto != "" {
-			md.Set("x-forwarded-proto", proto)
 		}
 		// Forward Cookie header for authentication methods that need it (e.g., RefreshToken)
 		if cookie := header.Get("Cookie"); cookie != "" {

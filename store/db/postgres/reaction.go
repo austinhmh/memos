@@ -31,6 +31,9 @@ func (d *DB) ListReactions(ctx context.Context, find *store.FindReaction) ([]*st
 	if find.CreatorID != nil {
 		where, args = append(where, "creator_id = "+placeholder(len(args)+1)), append(args, *find.CreatorID)
 	}
+	if find.CreatorRowStatus != nil {
+		where, args = append(where, "creator_id IN (SELECT id FROM \"user\" WHERE row_status = "+placeholder(len(args)+1)+")"), append(args, *find.CreatorRowStatus)
+	}
 	if find.ContentID != nil {
 		where, args = append(where, "content_id = "+placeholder(len(args)+1)), append(args, *find.ContentID)
 	}

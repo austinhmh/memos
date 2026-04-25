@@ -178,7 +178,7 @@ func TestInstanceSettingMemoRelatedSetting(t *testing.T) {
 	// Verify
 	memoSetting, err = ts.GetInstanceMemoRelatedSetting(ctx)
 	require.NoError(t, err)
-	require.Equal(t, int32(16384), memoSetting.ContentLengthLimit)
+	require.Equal(t, int32(store.DefaultContentLengthLimit), memoSetting.ContentLengthLimit)
 	require.Equal(t, customReactions, memoSetting.Reactions)
 
 	ts.Close()

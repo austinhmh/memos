@@ -14,10 +14,11 @@ type Reaction struct {
 }
 
 type FindReaction struct {
-	ID            *int32
-	CreatorID     *int32
-	ContentID     *string
-	ContentIDList []string
+	ID               *int32
+	CreatorID        *int32
+	CreatorRowStatus *RowStatus
+	ContentID        *string
+	ContentIDList    []string
 }
 
 type DeleteReaction struct {

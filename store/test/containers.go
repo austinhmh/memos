@@ -29,8 +29,11 @@ const (
 	testPassword = "test"
 
 	// Memos container settings for migration testing.
-	MemosDockerImage   = "neosmemo/memos"
-	StableMemosVersion = "stable"
+	MemosDockerImage = "neosmemo/memos"
+	// Keep migration tests pinned to an older schema source. The floating "stable"
+	// tag can advance beyond this repository's schema and turn migration tests into
+	// invalid downgrade attempts.
+	StableMemosVersion = "0.25.1"
 )
 
 var (

@@ -19,7 +19,8 @@ func (s *APIV1Service) ListMemoReactions(ctx context.Context, request *v1pb.List
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid memo name: %v", err)
 	}
-	memo, err := s.Store.GetMemo(ctx, &store.FindMemo{UID: &memoUID})
+	normalStatus := store.Normal
+	memo, err := s.Store.GetMemo(ctx, &store.FindMemo{UID: &memoUID, RowStatus: &normalStatus, CreatorRowStatus: &normalStatus})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get memo: %v", err)
 	}
@@ -31,7 +32,8 @@ func (s *APIV1Service) ListMemoReactions(ctx context.Context, request *v1pb.List
 	}
 
 	reactions, err := s.Store.ListReactions(ctx, &store.FindReaction{
-		ContentID: &request.Name,
+		ContentID:        &request.Name,
+		CreatorRowStatus: &normalStatus,
 	})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to list reactions")
@@ -61,15 +63,16 @@ func (s *APIV1Service) UpsertMemoReaction(ctx context.Context, request *v1pb.Ups
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid memo name: %v", err)
 	}
-	memo, err := s.Store.GetMemo(ctx, &store.FindMemo{UID: &memoUID})
+	normalStatus := store.Normal
+	memo, err := s.Store.GetMemo(ctx, &store.FindMemo{UID: &memoUID, RowStatus: &normalStatus, CreatorRowStatus: &normalStatus})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get memo")
 	}
 	if memo == nil {
 		return nil, status.Errorf(codes.NotFound, "memo not found")
 	}
-	if memo.Visibility == store.Private && memo.CreatorID != user.ID && !isSuperUser(user) {
-		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
+	if err := s.checkMemoVisibility(ctx, memo); err != nil {
+		return nil, err
 	}
 
 	// Validate reaction type against allowed list
@@ -113,14 +116,31 @@ func (s *APIV1Service) DeleteMemoReaction(ctx context.Context, request *v1pb.Del
 		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
 	}
 
-	_, reactionID, err := ExtractMemoReactionIDFromName(request.Name)
+	memoUID, reactionID, err := ExtractMemoReactionIDFromName(request.Name)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid reaction name: %v", err)
 	}
+	normalStatus := store.Normal
+	memo, err := s.Store.GetMemo(ctx, &store.FindMemo{UID: &memoUID, RowStatus: &normalStatus, CreatorRowStatus: &normalStatus})
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get memo")
+	}
+	if memo == nil {
+		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
+	}
+	if err := s.checkMemoVisibility(ctx, memo); err != nil {
+		if status.Code(err) == codes.NotFound || status.Code(err) == codes.PermissionDenied || status.Code(err) == codes.Unauthenticated {
+			return nil, status.Errorf(codes.PermissionDenied, "permission denied")
+		}
+		return nil, err
+	}
+	contentID := fmt.Sprintf("%s%s", MemoNamePrefix, memoUID)
 
 	// Get reaction and check ownership.
 	reaction, err := s.Store.GetReaction(ctx, &store.FindReaction{
-		ID: &reactionID,
+		ID:               &reactionID,
+		ContentID:        &contentID,
+		CreatorRowStatus: &normalStatus,
 	})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get reaction")

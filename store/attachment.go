@@ -9,6 +9,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/usememos/memos/internal/base"
+	"github.com/usememos/memos/internal/util"
 	"github.com/usememos/memos/plugin/storage/s3"
 	storepb "github.com/usememos/memos/proto/gen/store"
 )
@@ -64,6 +65,9 @@ type UpdateAttachment struct {
 	MemoID    *int32
 	Reference *string
 	Payload   *storepb.AttachmentPayload
+
+	RequireMemoIDMatch bool
+	ExpectedMemoID     *int32
 }
 
 type DeleteAttachment struct {
@@ -110,11 +114,55 @@ func (s *Store) UpdateAttachment(ctx context.Context, update *UpdateAttachment) 
 	if update.UID != nil && !base.UIDMatcher.MatchString(*update.UID) {
 		return errors.New("invalid uid")
 	}
-	return s.driver.UpdateAttachment(ctx, update)
+	if err := s.driver.UpdateAttachment(ctx, update); err != nil {
+		return err
+	}
+	if update.RequireMemoIDMatch {
+		find := &FindAttachment{ID: &update.ID}
+		if update.MemoID != nil {
+			find.MemoID = update.MemoID
+		} else if update.ExpectedMemoID != nil {
+			find.MemoID = update.ExpectedMemoID
+		}
+		attachment, err := s.GetAttachment(ctx, find)
+		if err != nil {
+			return err
+		}
+		if attachment == nil {
+			return errors.New("attachment not found")
+		}
+	}
+	return nil
+}
+
+func deleteThumbnailCache(dataDir, uid string) {
+	thumbnailCacheFolder, err := util.SafeJoinUnderBase(dataDir, ".thumbnail_cache")
+	if err != nil {
+		slog.Warn("Failed to resolve thumbnail cache folder", "uid", uid, "error", err)
+		return
+	}
+	matches, err := filepath.Glob(filepath.Join(thumbnailCacheFolder, uid+".*"))
+	if err != nil {
+		slog.Warn("Failed to list thumbnail cache files", "uid", uid, "error", err)
+		return
+	}
+	for _, match := range matches {
+		if err := util.EnsurePathWithinBase(dataDir, match); err != nil {
+			slog.Warn("Skipping unsafe thumbnail cache path", "uid", uid, "path", match, "error", err)
+			continue
+		}
+		if err := os.Remove(match); err != nil && !os.IsNotExist(err) {
+			slog.Warn("Failed to remove thumbnail cache file", "uid", uid, "path", match, "error", err)
+		}
+	}
 }
 
 func (s *Store) DeleteAttachment(ctx context.Context, delete *DeleteAttachment) error {
-	attachment, err := s.GetAttachment(ctx, &FindAttachment{ID: &delete.ID})
+	find := &FindAttachment{ID: &delete.ID}
+	if delete.MemoID != nil {
+		find.MemoID = delete.MemoID
+	}
+	attachment, err := s.GetAttachment(ctx, find)
 	if err != nil {
 		return errors.Wrap(err, "failed to get attachment")
 	}
@@ -128,23 +176,35 @@ func (s *Store) DeleteAttachment(ctx context.Context, delete *DeleteAttachment) 
 		"storage_type", attachment.StorageType,
 		"filename", attachment.Filename)
 
+	if err := s.driver.DeleteAttachment(ctx, delete); err != nil {
+		return errors.Wrap(err, "failed to delete attachment from database")
+	}
+
 	if attachment.StorageType == storepb.AttachmentStorageType_LOCAL {
 		if err := func() error {
-			p := filepath.FromSlash(attachment.Reference)
-			if !filepath.IsAbs(p) {
-				p = filepath.Join(s.profile.Data, p)
+			p, err := util.SafeJoinUnderBase(s.profile.Data, attachment.Reference)
+			if err != nil {
+				return errors.Wrap(err, "unsafe local file path")
+			}
+			if err := util.EnsurePathWithinBase(s.profile.Data, p); err != nil {
+				return errors.Wrap(err, "unsafe local file path")
 			}
 			slog.Debug("Deleting local file",
 				"attachment_id", attachment.ID,
 				"path", p)
-			err := os.Remove(p)
+			err = os.Remove(p)
 			if err != nil {
+				if os.IsNotExist(err) {
+					slog.Warn("Local attachment file already missing; continuing with DB deletion", "attachment_id", attachment.ID, "path", p)
+					return nil
+				}
 				return errors.Wrap(err, "failed to delete local file")
 			}
 			return nil
 		}(); err != nil {
 			return errors.Wrap(err, "failed to delete local file")
 		}
+		deleteThumbnailCache(s.profile.Data, attachment.UID)
 	} else if attachment.StorageType == storepb.AttachmentStorageType_S3 {
 		if err := func() error {
 			s3ObjectPayload := attachment.Payload.GetS3Object()
@@ -181,10 +241,6 @@ func (s *Store) DeleteAttachment(ctx context.Context, delete *DeleteAttachment) 
 				"attachment_id", attachment.ID,
 				"error", err)
 		}
-	}
-
-	if err := s.driver.DeleteAttachment(ctx, delete); err != nil {
-		return errors.Wrap(err, "failed to delete attachment from database")
 	}
 
 	slog.Info("Successfully deleted attachment",
