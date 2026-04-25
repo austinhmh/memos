@@ -1,0 +1,193 @@
+server/router/api/v1/test/idp_service_test.go
+  8bdd84e6ac1b85e8 153-154,174-175,200,204-233,235-245,353,364-367,430-431,668-669
+  dc505cd1f6e365bb 37-39,101-118,155-157,176-178,234,246-303,330-332,363,432-434,459-461,534-644,670-672
+server/router/frontend/frontend.go
+  dc505cd1f6e365bb 38,41-43,45-52,55-58,70-83
+server/router/api/v1/acl_config_test.go
+  dc505cd1f6e365bb 28
+server/router/rss/rss.go
+  dc505cd1f6e365bb 8,24,63-66,79-83,92,94-95,106-110,123-127,157,195,246,249,318,320,326-328
+server/router/api/v1/acl_config.go
+  8bdd84e6ac1b85e8 25,53,56-59
+  dc505cd1f6e365bb 3-6,11-12,65-85,91-118,123-146
+store/test/instance_setting_test.go
+  dc505cd1f6e365bb 181
+store/db/postgres/attachment.go
+  dc505cd1f6e365bb 199,201-209,214-215,218-220,226-231,235-236,239-240
+store/user.go
+  dc505cd1f6e365bb 5-6,99-101,136-137,139,148-150
+store/db/sqlite/user.go
+  dc505cd1f6e365bb 110-112
+store/db/mysql/user_setting.go
+  dc505cd1f6e365bb 21-46
+store/db/mysql/user.go
+  dc505cd1f6e365bb 106-108
+server/router/api/v1/reaction_service.go
+  dc505cd1f6e365bb 22-23,35-36,66-67,74-75,119,123-137,141-143
+store/db/mysql/reaction.go
+  dc505cd1f6e365bb 46-48
+store/db/sqlite/attachment.go
+  dc505cd1f6e365bb 200-209,214-215,218-220,226-231,235-236,239-240
+server/router/api/v1/user_service.go
+  dc505cd1f6e365bb 47-50,86,95-96,101-102,109,114-122,125-130,134-137,225-226,347-357,378-391,666-672,720-726,788-794
+  8bdd84e6ac1b85e8 141-143,223-224,227-253
+server/router/api/v1/test/user_service_registration_test.go
+  dc505cd1f6e365bb 6,11-13,23-35,62-107,147-152,167-199,358-530
+  8bdd84e6ac1b85e8 5,7,108-146,153-166
+pull.sh
+  dc505cd1f6e365bb 81-88,95
+internal/util/safe_path.go
+  dc505cd1f6e365bb 1-84
+store/db/mysql/memo.go
+  dc505cd1f6e365bb 104-106,153
+server/router/api/v1/memo_attachment_service.go
+  dc505cd1f6e365bb 28-29,46-49,53-55,66-89,92-96
+server/router/api/v1/test/instance_service_test.go
+  dc505cd1f6e365bb 11,65-74
+store/db/sqlite/reaction.go
+  dc505cd1f6e365bb 37-39,104-105
+server/router/api/v1/test/memo_attachment_service_test.go
+  dc505cd1f6e365bb 10,150,154,158-174,176-177,181-185
+server/router/fileserver/fileserver_test.go
+  dc505cd1f6e365bb 1-250
+store/test/attachment_test.go
+  dc505cd1f6e365bb 67-116
+store/db/mysql/memo_relation.go
+  dc505cd1f6e365bb 45-56
+server/router/api/v1/auth_service.go
+  dc505cd1f6e365bb 7,36-48,241,271-279,281-285,334-337,344-347,364-367,369-370,372,408,422-423,431-457,463,465-466,472-478
+  8bdd84e6ac1b85e8 131-132
+store/db/sqlite/memo.go
+  dc505cd1f6e365bb 96-98,145
+server/router/api/v1/test/reaction_service_test.go
+  dc505cd1f6e365bb 5-6,12,198-310
+server/router/api/v1/test/memo_relation_service_test.go
+  dc505cd1f6e365bb 10,171-229
+store/db/postgres/user_setting.go
+  dc505cd1f6e365bb 28-63
+server/router/api/v1/gateway_config_test.go
+  dc505cd1f6e365bb 1-158
+server/router/api/v1/test/attachment_service_test.go
+  dc505cd1f6e365bb 5-6,10-12,15-16,67-389
+store/db/postgres/memo.go
+  dc505cd1f6e365bb 89-91,139
+store/db/postgres/user.go
+  dc505cd1f6e365bb 109-111
+server/router/api/v1/v1.go
+  dc505cd1f6e365bb 74-80,102-103,131,133,157,168-184
+  8bdd84e6ac1b85e8 7,42-43
+store/test/containers.go
+  dc505cd1f6e365bb 32-36
+store/db/mysql/attachment.go
+  dc505cd1f6e365bb 219-228,233-234,237-239,245-250,254-255,258-259
+server/router/api/v1/common.go
+  dc505cd1f6e365bb 118-128,144-190
+server/router/api/v1/user_service_stats.go
+  dc505cd1f6e365bb 30,41-42,65-68,70-72,144-167,179-185,198
+  8bdd84e6ac1b85e8 31-38,76-82,87,93-100,108,124-125,195,202-208,234-236,239-244,251,266,280-282,287
+server/router/fileserver/fileserver.go
+  dc505cd1f6e365bb 88-92,94,102-104,159,254,257,261,292,294-296,319-320,341-343,394-399,447-457,465-470,523-533
+server/router/frontend/frontend_test.go
+  dc505cd1f6e365bb 1-81
+store/test/migrator_test.go
+  dc505cd1f6e365bb 6-7,38-49,62,132,238
+plugin/idp/oauth2/oauth2.go
+  dc505cd1f6e365bb 12,14,31-48,71-107,225-238,253-255,266-287,297-313,318,324-326,329-335
+  8bdd84e6ac1b85e8 10,13,15,29-30,49-68,119-126,147,163-171,223-224,239-252,256-265,288-296,314-317,319-323,327-328,336-338
+server/router/rss/rss_test.go
+  dc505cd1f6e365bb 1-83
+server/router/api/v1/test/user_service_stats_test.go
+  8bdd84e6ac1b85e8 8,19-27,29-42,45-57,102-110,112-125,128-137
+  dc505cd1f6e365bb 6,11-12,28,43-44,58-101,111,126-127,229-445
+server/router/api/v1/test/memo_service_test.go
+  dc505cd1f6e365bb 11-13,17,260-362,477-529
+server/router/api/v1/memo_service_converter.go
+  dc505cd1f6e365bb 9-10,46,48-63,73-80
+store/user_setting.go
+  dc505cd1f6e365bb 5-6,10,27-48,62-69,91-116,171-174,179-186,206,209-215,217-218,220-221,229,232-286,289-320,323-331,333-352,382-393,398-401,423-426,453-456
+server/router/api/v1/attachment_service.go
+  dc505cd1f6e365bb 122-123,130-132,135-139,198-203,241-242,269-271,273-277,286-289,320,328-341,343-347,380,393-395,401-403,405-410,413-415,430-432,442,448-449,461-466
+store/db/sqlite/memo_relation.go
+  dc505cd1f6e365bb 52-63
+server/router/api/v1/activity_service.go
+  dc505cd1f6e365bb 48-50,91,102,138,140-143,153-156,161-166
+server/router/api/v1/connect_interceptors.go
+  dc505cd1f6e365bb 18-20
+store/attachment.go
+  dc505cd1f6e365bb 12,68-70,117-157,161-165,179-182,185-190,195,197-200,207
+store/memo_relation.go
+  dc505cd1f6e365bb 23-30
+server/router/api/v1/memo_relation_service.go
+  dc505cd1f6e365bb 28-29,40,42-44,58,65-71,75-88,101-102,106-111,123-130,132,143-151,170-171,175-177,182,186-187
+store/db/postgres/reaction.go
+  dc505cd1f6e365bb 34-36
+plugin/idp/oauth2/oauth2_test.go
+  8bdd84e6ac1b85e8 68-71,74-78,165,218-219,270-277
+  dc505cd1f6e365bb 8,27-67,72-73,84,98,112,166-217,220-248,283
+store/driver.go
+  dc505cd1f6e365bb 50-51
+server/router/api/v1/idp_service.go
+  dc505cd1f6e365bb 7,30-34,106-108,128-129,226-228,230-232,234,259-289
+  8bdd84e6ac1b85e8 12,35-36,130,185-201,204,233,235-241,251,295-307,310
+server/auth/authenticator.go
+  dc505cd1f6e365bb 53-54,59-65,107-108,113-119
+store/test/Dockerfile
+  dc505cd1f6e365bb 3-4,6,8
+store/reaction.go
+  dc505cd1f6e365bb 17-21
+server/router/api/v1/memo_service.go
+  dc505cd1f6e365bb 164-169,171-173,179-180,204-210,272-273,315,317-319,327-328,331,481,483-484,535-536,580-581,597-598,667-668,691-697,734,749
+server/router/api/v1/instance_service.go
+  dc505cd1f6e365bb 274,277-278,287
+server/router/api/v1/test/activity_service_test.go
+  dc505cd1f6e365bb 1-94
+store/memo.go
+  dc505cd1f6e365bb 65-67
+store/db/postgres/memo_relation.go
+  dc505cd1f6e365bb 50-62
+server/router/api/v1/test/auth_test.go
+  dc505cd1f6e365bb 66-67,180-181,336-337,400-405,411,413-417,419,423-424,495-496,539-540,548-603
+store/test/user_setting_test.go
+  dc505cd1f6e365bb 9,160-161,171-215
+server/runner/s3presign/runner.go
+  dc505cd1f6e365bb 72,79-80,82-83,88,100
+server/router/api/v1/test/test_helper.go
+  dc505cd1f6e365bb 38,40
+build-push.sh
+  dc505cd1f6e365bb 126-128,131-133
+store/db/sqlite/user_setting.go
+  dc505cd1f6e365bb 28-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "8408adfe01670daee7878838ea1fc3d0a8249c6a",
+  "prompts": {
+    "8bdd84e6ac1b85e8": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "b1dbc8a6-7a0d-42df-b869-61be513aafc9",
+        "model": "GLM-5"
+      },
+      "human_author": "austinhmh",
+      "messages": [],
+      "total_additions": 510,
+      "total_deletions": 107,
+      "accepted_lines": 432,
+      "overriden_lines": 0
+    },
+    "dc505cd1f6e365bb": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "4864134a-44af-466c-af6d-4486ed025842",
+        "model": "GLM-5"
+      },
+      "human_author": "austinhmh",
+      "messages": [],
+      "total_additions": 4870,
+      "total_deletions": 1217,
+      "accepted_lines": 4162,
+      "overriden_lines": 0
+    }
+  }
+}
