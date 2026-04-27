@@ -6,8 +6,18 @@
 #   ./build-push.sh v1.0.0             # 推送 v1.0.0 标签
 #   ./build-push.sh --local            # 仅本地构建，不推送
 #   ./build-push.sh --local v1.0.0     # 本地构建，使用指定标签
+#   ./build-push.sh true               # 推送 latest 标签，启用代理
+#   ./build-push.sh false              # 推送 latest 标签，禁用代理
+#   ./build-push.sh v1.0.0 false       # 推送 v1.0.0 标签，禁用代理
+#
+# 使用前请确保：
+#   1. 已配置 .env 文件（或设置环境变量）
+#   2. GITHUB_USERNAME 为 GitHub 用户名
+#   3. GITHUB_TOKEN 具有 write:packages 权限
 
 set -eo pipefail
+
+cd "$(dirname "$0")"
 
 IMAGE_NAME="ghcr.io/austinhmh/memos"
 DOCKERFILE="scripts/Dockerfile"
@@ -19,12 +29,43 @@ VERSION_TAG="latest"
 
 for arg in "$@"; do
     case "$arg" in
-        --local)    LOCAL_ONLY=true ;;
-        --no-proxy) NO_PROXY=true ;;
-        --*)        ;;
-        *)          VERSION_TAG="$arg" ;;
+        --local)
+            LOCAL_ONLY=true
+            ;;
+        --no-proxy|false)
+            NO_PROXY=true
+            ;;
+        true)
+            NO_PROXY=false
+            ;;
+        --*)
+            ;;
+        *)
+            VERSION_TAG="$arg"
+            ;;
     esac
 done
+
+if [ -f .env ]; then
+    echo "加载 .env 配置文件..."
+    set -a
+    source .env
+    set +a
+else
+    echo "未找到 .env 文件，使用环境变量"
+fi
+
+if [ "$LOCAL_ONLY" = false ]; then
+    if [ -z "$GITHUB_USERNAME" ]; then
+        echo "错误: 请在 .env 文件或环境变量中设置 GITHUB_USERNAME"
+        exit 1
+    fi
+    if [ -z "$GITHUB_TOKEN" ]; then
+        echo "错误: 请在 .env 文件或环境变量中设置 GITHUB_TOKEN"
+        echo "GITHUB_TOKEN 需要 write:packages 权限"
+        exit 1
+    fi
+fi
 
 HOST_ARCH=$(uname -m)
 case "$HOST_ARCH" in
@@ -142,7 +183,8 @@ if [ "$LOCAL_ONLY" = true ]; then
     echo "[ 5/5 ] 跳过推送 (--local 模式)"
 else
     echo ""
-    echo "[ 5/5 ] 推送镜像到 GHCR ..."
+    echo "[ 5/5 ] 登录并推送镜像到 GHCR ..."
+    echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_USERNAME" --password-stdin
     docker push "$IMAGE_NAME:$VERSION_TAG"
     if [ "$VERSION_TAG" != "latest" ]; then
         docker push "$IMAGE_NAME:latest"
