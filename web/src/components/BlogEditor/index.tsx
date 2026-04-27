@@ -63,10 +63,11 @@ interface BlogEditorProps {
 const AUTOSAVE_DELAY = 2000;
 const SERIALIZE_IDLE_TIMEOUT = 1200;
 
-type IdleTaskWindow = Window & typeof globalThis & {
-  requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number;
-  cancelIdleCallback?: (handle: number) => void;
-};
+type IdleTaskWindow = Window &
+  typeof globalThis & {
+    requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number;
+    cancelIdleCallback?: (handle: number) => void;
+  };
 
 const scheduleIdleTask = (callback: () => void, timeout = SERIALIZE_IDLE_TIMEOUT) => {
   if (typeof window === "undefined") {
@@ -119,56 +120,58 @@ const openLinkInNewTab = (href: string, event: KeyboardEvent) => {
   window.open(href, "_blank", "noopener,noreferrer");
 };
 
-const moveCurrentBlock = (direction: "up" | "down"): Command => (state, dispatch) => {
-  if (!state.selection.empty) {
-    return false;
-  }
-
-  const result = getCurrentBlock(state);
-  if (!result) {
-    return false;
-  }
-
-  const [currentBlock, currentPos] = result;
-
-  if (direction === "up") {
-    const $pos = state.doc.resolve(currentPos);
-    if (!$pos.nodeBefore || !$pos.nodeBefore.isBlock) {
+const moveCurrentBlock =
+  (direction: "up" | "down"): Command =>
+  (state, dispatch) => {
+    if (!state.selection.empty) {
       return false;
     }
 
-    const previousBlock = $pos.nodeBefore;
-    const previousBlockPos = currentPos - previousBlock.nodeSize;
+    const result = getCurrentBlock(state);
+    if (!result) {
+      return false;
+    }
+
+    const [currentBlock, currentPos] = result;
+
+    if (direction === "up") {
+      const $pos = state.doc.resolve(currentPos);
+      if (!$pos.nodeBefore || !$pos.nodeBefore.isBlock) {
+        return false;
+      }
+
+      const previousBlock = $pos.nodeBefore;
+      const previousBlockPos = currentPos - previousBlock.nodeSize;
+      if (!dispatch) {
+        return true;
+      }
+
+      const tr = state.tr;
+      tr.delete(currentPos, currentPos + currentBlock.nodeSize);
+      tr.insert(previousBlockPos, currentBlock);
+      tr.setSelection(TextSelection.near(tr.doc.resolve(previousBlockPos + 1)));
+      dispatch(tr);
+      return true;
+    }
+
+    const $pos = state.doc.resolve(currentPos + currentBlock.nodeSize);
+    if (!$pos.nodeAfter || !$pos.nodeAfter.isBlock) {
+      return false;
+    }
+
+    const nextBlock = $pos.nodeAfter;
+    const nextBlockEndPos = currentPos + currentBlock.nodeSize + nextBlock.nodeSize;
     if (!dispatch) {
       return true;
     }
 
     const tr = state.tr;
+    tr.insert(nextBlockEndPos, currentBlock);
     tr.delete(currentPos, currentPos + currentBlock.nodeSize);
-    tr.insert(previousBlockPos, currentBlock);
-    tr.setSelection(TextSelection.near(tr.doc.resolve(previousBlockPos + 1)));
+    tr.setSelection(TextSelection.near(tr.doc.resolve(nextBlockEndPos - currentBlock.nodeSize + 1)));
     dispatch(tr);
     return true;
-  }
-
-  const $pos = state.doc.resolve(currentPos + currentBlock.nodeSize);
-  if (!$pos.nodeAfter || !$pos.nodeAfter.isBlock) {
-    return false;
-  }
-
-  const nextBlock = $pos.nodeAfter;
-  const nextBlockEndPos = currentPos + currentBlock.nodeSize + nextBlock.nodeSize;
-  if (!dispatch) {
-    return true;
-  }
-
-  const tr = state.tr;
-  tr.insert(nextBlockEndPos, currentBlock);
-  tr.delete(currentPos, currentPos + currentBlock.nodeSize);
-  tr.setSelection(TextSelection.near(tr.doc.resolve(nextBlockEndPos - currentBlock.nodeSize + 1)));
-  dispatch(tr);
-  return true;
-};
+  };
 
 const blurEditor: Command = (_state, _dispatch, view) => {
   if (!view) {
@@ -199,9 +202,8 @@ const buildBlogEditorKeymap = (manualSave: Command): Record<string, Command> => 
         ),
       }
     : {
-        "Mod-Enter": chainCommands(
-          openLink(openLinkInNewTab, LINK_DICTIONARY),
-          (state, dispatch, view) => (!isInCode(state) ? manualSave(state, dispatch, view) : false),
+        "Mod-Enter": chainCommands(openLink(openLinkInNewTab, LINK_DICTIONARY), (state, dispatch, view) =>
+          !isInCode(state) ? manualSave(state, dispatch, view) : false,
         ),
       }),
   "Mod-b": pmToggleMark(schema.marks.strong),
@@ -237,7 +239,12 @@ const buildBlogEditorKeymap = (manualSave: Command): Record<string, Command> => 
   Tab: chainCommands(indentInCode, sinkListItem(schema.nodes.checkbox_item), sinkListItem(schema.nodes.list_item)),
   "Shift-Tab": chainCommands(outdentInCode, liftListItem(schema.nodes.checkbox_item), liftListItem(schema.nodes.list_item)),
   "Shift-Enter": chainCommands(newlineInCode, toggleWrap(schema.nodes.blockquote)),
-  "Mod-]": chainCommands(indentInCode, sinkListItem(schema.nodes.checkbox_item), sinkListItem(schema.nodes.list_item), toggleWrap(schema.nodes.blockquote)),
+  "Mod-]": chainCommands(
+    indentInCode,
+    sinkListItem(schema.nodes.checkbox_item),
+    sinkListItem(schema.nodes.list_item),
+    toggleWrap(schema.nodes.blockquote),
+  ),
   "Mod-[": chainCommands(outdentInCode, liftListItem(schema.nodes.checkbox_item), liftListItem(schema.nodes.list_item)),
   ...(isMac
     ? {
@@ -453,10 +460,13 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
     [flushPendingSave],
   );
 
-  const manualSaveCommand = useCallback<Command>((state) => {
-    void handleManualSave(state.doc);
-    return true;
-  }, [handleManualSave]);
+  const manualSaveCommand = useCallback<Command>(
+    (state) => {
+      void handleManualSave(state.doc);
+      return true;
+    },
+    [handleManualSave],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -464,13 +474,7 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
     const mount = async () => {
       setLoading(true);
 
-      const doc = await loadDoc(
-        schema,
-        parser,
-        memo.name,
-        memo.updateTime,
-        contentRef.current,
-      );
+      const doc = await loadDoc(schema, parser, memo.name, memo.updateTime, contentRef.current);
 
       if (cancelled || !mountedRef.current) return;
 
@@ -498,7 +502,7 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
       const view = new EditorView(el, {
         state,
         editable: () => !readonlyRef.current,
-        attributes: { class: "blog-editor-content ProseMirror", spellcheck: "false" },
+        attributes: { class: "blog-editor-content ProseMirror blog-editor-prosemirror", spellcheck: "false" },
         handleClickOn(view, _pos, node, nodePos, event) {
           const target = event.target as HTMLElement | null;
           if (!target || node.type !== schema.nodes.checkbox_item) {
@@ -572,12 +576,7 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
         if (!parsed) return;
 
         const slice = parsed.slice(0);
-        const singleNode =
-          slice.openStart === 0 &&
-          slice.openEnd === 0 &&
-          slice.content.childCount === 1
-            ? slice.content.firstChild
-            : null;
+        const singleNode = slice.openStart === 0 && slice.openEnd === 0 && slice.content.childCount === 1 ? slice.content.firstChild : null;
 
         const tr = v.state.tr;
         if (singleNode?.type === schema.nodes.paragraph) {
@@ -586,9 +585,7 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
           tr.replaceSelection(slice);
         }
 
-        v.dispatch(
-          tr.scrollIntoView().setMeta("paste", true).setMeta("uiEvent", "paste"),
-        );
+        v.dispatch(tr.scrollIntoView().setMeta("paste", true).setMeta("uiEvent", "paste"));
       };
 
       pmDom.addEventListener("paste", onCapturePaste, true);
@@ -670,26 +667,15 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
         </div>
       )}
 
-      <div
-        ref={containerRef}
-        style={loading ? { height: 0, overflow: "hidden" } : undefined}
-      />
+      <div ref={containerRef} style={loading ? { height: 0, overflow: "hidden" } : undefined} />
 
       <SlashMenu view={viewRef.current} items={slashMenuItems} menuState={slashMenuState} />
 
       {!readonly && (
-        <div
-          className="blog-editor-padding"
-          onClick={() => viewRef.current?.focus()}
-          role="button"
-          tabIndex={-1}
-          aria-hidden
-        />
+        <div className="blog-editor-padding" onClick={() => viewRef.current?.focus()} role="button" tabIndex={-1} aria-hidden />
       )}
 
-      {!readonly && (
-        <div className="blog-editor-status">{isSaving ? "保存中…" : "自动保存"}</div>
-      )}
+      {!readonly && <div className="blog-editor-status">{isSaving ? "保存中…" : "自动保存"}</div>}
     </div>
   );
 };

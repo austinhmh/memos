@@ -1,16 +1,16 @@
 import type { Node as ProsemirrorNode } from "prosemirror-model";
 import { Plugin, PluginKey, type Transaction } from "prosemirror-state";
-import { Decoration, DecorationSet } from "prosemirror-view";
-
-const MAX_CODE_BLOCK_HEIGHT = "50vh";
+import { Decoration, DecorationSet, type EditorView } from "prosemirror-view";
 
 type CodeBlockExpandState = {
   decorations: DecorationSet;
   expandedPositions: Set<number>;
+  overflowPositions: Set<number>;
 };
 
 type CodeBlockExpandMeta = {
   togglePos?: number;
+  overflowPositions?: Set<number>;
 };
 
 const codeBlockExpandPluginKey = new PluginKey<CodeBlockExpandState>("codeBlockExpand");
@@ -21,13 +21,27 @@ function isMermaid(node: ProsemirrorNode): boolean {
   return lang === "mermaid" || lang === "mermaidjs";
 }
 
-function mapExpandedPositions(expandedPositions: Set<number>, tr: Transaction): Set<number> {
+function setsEqual(a: Set<number>, b: Set<number>): boolean {
+  if (a.size !== b.size) {
+    return false;
+  }
+
+  for (const value of a) {
+    if (!b.has(value)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function mapCodeBlockPositions(positions: Set<number>, tr: Transaction): Set<number> {
   if (!tr.docChanged) {
-    return expandedPositions;
+    return positions;
   }
 
   const nextPositions = new Set<number>();
-  expandedPositions.forEach((pos) => {
+  positions.forEach((pos) => {
     const mapped = tr.mapping.mapResult(pos, -1);
     if (mapped.deleted) {
       return;
@@ -41,42 +55,26 @@ function mapExpandedPositions(expandedPositions: Set<number>, tr: Transaction): 
   return nextPositions;
 }
 
-function updateButtonVisibility(button: HTMLButtonElement, expanded: boolean) {
-  const codeBlock = button.previousElementSibling as HTMLElement | null;
-  const pre = codeBlock?.querySelector("pre");
-  if (!pre) {
-    button.hidden = true;
-    return;
-  }
-
-  if (expanded) {
-    pre.style.maxHeight = "";
-    pre.style.overflowY = "";
-  } else {
-    pre.style.maxHeight = MAX_CODE_BLOCK_HEIGHT;
-    pre.style.overflowY = "auto";
-  }
-
-  button.hidden = !(expanded || pre.scrollHeight > pre.clientHeight + 2);
-}
-
 function createExpandButton(pos: number, expanded: boolean): HTMLButtonElement {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "code-block-expand-btn blog-editor-code-block-expand-btn";
-  button.title = expanded ? "收起 Collapse" : "展开全部 Expand All";
-  button.textContent = expanded ? "收起 Collapse" : "展开全部 Expand All";
-  button.hidden = !expanded;
-  button.style.marginTop = "-1em";
-  button.style.position = "relative";
-  button.style.zIndex = "1";
+  button.title = expanded ? "收起代码块" : "展开代码块";
+  button.setAttribute("aria-label", expanded ? "收起代码块" : "展开代码块");
   button.setAttribute("contenteditable", "false");
   button.setAttribute("aria-expanded", expanded ? "true" : "false");
   button.dataset.codeBlockPos = String(pos);
+
+  const arrow = document.createElement("span");
+  arrow.className = "code-block-expand-icon";
+  arrow.setAttribute("aria-hidden", "true");
+  arrow.textContent = expanded ? "↑" : "↓";
+  button.appendChild(arrow);
+
   return button;
 }
 
-function createDecorations(doc: ProsemirrorNode, expandedPositions: Set<number>): DecorationSet {
+function createDecorations(doc: ProsemirrorNode, expandedPositions: Set<number>, overflowPositions: Set<number>): DecorationSet {
   const decorations: Decoration[] = [];
 
   doc.descendants((node, pos) => {
@@ -85,12 +83,15 @@ function createDecorations(doc: ProsemirrorNode, expandedPositions: Set<number>)
     }
 
     const expanded = expandedPositions.has(pos);
-    if (expanded) {
-      decorations.push(
-        Decoration.node(pos, pos + node.nodeSize, {
-          class: "code-expanded",
-        }),
-      );
+    const overflow = overflowPositions.has(pos);
+    decorations.push(
+      Decoration.node(pos, pos + node.nodeSize, {
+        class: expanded ? "code-block-collapsible code-expanded" : "code-block-collapsible",
+      }),
+    );
+
+    if (!expanded && !overflow) {
+      return false;
     }
 
     decorations.push(
@@ -98,40 +99,26 @@ function createDecorations(doc: ProsemirrorNode, expandedPositions: Set<number>)
         pos + node.nodeSize,
         (view) => {
           const button = createExpandButton(pos, expanded);
-          let observer: ResizeObserver | undefined;
 
-          const update = () => updateButtonVisibility(button, expanded);
-          requestAnimationFrame(() => {
-            update();
-            const codeBlock = button.previousElementSibling as HTMLElement | null;
-            const pre = codeBlock?.querySelector("pre");
-            if (!pre || typeof ResizeObserver === "undefined") {
-              return;
-            }
-
-            observer = new ResizeObserver(update);
-            observer.observe(pre);
-          });
-
-          const stopEvent = (event: Event) => {
-            event.preventDefault();
+          const stopEditorEvent = (event: Event) => {
             event.stopPropagation();
           };
 
-          button.addEventListener("mousedown", stopEvent);
+          button.addEventListener("mousedown", stopEditorEvent);
+          button.addEventListener("mouseup", stopEditorEvent);
           button.addEventListener("click", (event) => {
-            stopEvent(event);
+            event.preventDefault();
+            event.stopPropagation();
             view.dispatch(view.state.tr.setMeta(codeBlockExpandPluginKey, { togglePos: pos } satisfies CodeBlockExpandMeta));
           });
 
-          (button as HTMLButtonElement & { destroy?: () => void }).destroy = () => observer?.disconnect();
           return button;
         },
         {
-          key: `code-block-expand-${pos}-${expanded ? "expanded" : "collapsed"}`,
+          key: `code-block-expand-${pos}-${expanded ? "expanded" : "collapsed"}-${overflow ? "overflow" : "fit"}`,
           side: 1,
-          destroy(node) {
-            (node as HTMLButtonElement & { destroy?: () => void }).destroy?.();
+          stopEvent(event) {
+            return event.type === "mousedown" || event.type === "mouseup" || event.type === "click";
           },
         },
       ),
@@ -143,20 +130,61 @@ function createDecorations(doc: ProsemirrorNode, expandedPositions: Set<number>)
   return DecorationSet.create(doc, decorations);
 }
 
+function findCodeBlockElement(view: EditorView, pos: number): HTMLElement | null {
+  const dom = view.nodeDOM(pos);
+  if (!(dom instanceof HTMLElement)) {
+    return null;
+  }
+
+  if (dom.classList.contains("code-block")) {
+    return dom;
+  }
+
+  return dom.querySelector(".code-block");
+}
+
+function collectOverflowPositions(view: EditorView, previousOverflowPositions: Set<number>, expandedPositions: Set<number>): Set<number> {
+  const overflowPositions = new Set<number>();
+
+  view.state.doc.descendants((node, pos) => {
+    if (node.type.name !== "code_block" || isMermaid(node)) {
+      return false;
+    }
+
+    if (expandedPositions.has(pos) && previousOverflowPositions.has(pos)) {
+      overflowPositions.add(pos);
+      return false;
+    }
+
+    const codeBlock = findCodeBlockElement(view, pos);
+    const pre = codeBlock?.querySelector("pre");
+    if (pre && pre.scrollHeight > pre.clientHeight + 1) {
+      overflowPositions.add(pos);
+    }
+
+    return false;
+  });
+
+  return overflowPositions;
+}
+
 export function createCodeBlockExpandPlugin(): Plugin<CodeBlockExpandState> {
   return new Plugin<CodeBlockExpandState>({
     key: codeBlockExpandPluginKey,
     state: {
       init: (_, state) => {
         const expandedPositions = new Set<number>();
+        const overflowPositions = new Set<number>();
         return {
           expandedPositions,
-          decorations: createDecorations(state.doc, expandedPositions),
+          overflowPositions,
+          decorations: createDecorations(state.doc, expandedPositions, overflowPositions),
         };
       },
       apply(tr, pluginState) {
         const meta = tr.getMeta(codeBlockExpandPluginKey) as CodeBlockExpandMeta | undefined;
-        const expandedPositions = new Set(mapExpandedPositions(pluginState.expandedPositions, tr));
+        const expandedPositions = new Set(mapCodeBlockPositions(pluginState.expandedPositions, tr));
+        const overflowPositions = meta?.overflowPositions ?? mapCodeBlockPositions(pluginState.overflowPositions, tr);
 
         if (meta?.togglePos !== undefined) {
           if (expandedPositions.has(meta.togglePos)) {
@@ -172,9 +200,62 @@ export function createCodeBlockExpandPlugin(): Plugin<CodeBlockExpandState> {
 
         return {
           expandedPositions,
-          decorations: createDecorations(tr.doc, expandedPositions),
+          overflowPositions,
+          decorations: createDecorations(tr.doc, expandedPositions, overflowPositions),
         };
       },
+    },
+    view(view) {
+      let raf = 0;
+      let observer: ResizeObserver | undefined;
+
+      const scheduleMeasure = () => {
+        if (raf) {
+          cancelAnimationFrame(raf);
+        }
+
+        raf = requestAnimationFrame(() => {
+          raf = 0;
+          const pluginState = codeBlockExpandPluginKey.getState(view.state);
+          if (!pluginState) {
+            return;
+          }
+
+          const overflowPositions = collectOverflowPositions(view, pluginState.overflowPositions, pluginState.expandedPositions);
+          if (!setsEqual(pluginState.overflowPositions, overflowPositions)) {
+            view.dispatch(view.state.tr.setMeta(codeBlockExpandPluginKey, { overflowPositions } satisfies CodeBlockExpandMeta));
+          }
+        });
+      };
+
+      const observeCodeBlocks = () => {
+        observer?.disconnect();
+        observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(scheduleMeasure);
+        if (!observer) {
+          return;
+        }
+
+        view.dom.querySelectorAll(".code-block pre").forEach((pre) => observer?.observe(pre));
+      };
+
+      const handleResize = () => scheduleMeasure();
+      window.addEventListener("resize", handleResize);
+      observeCodeBlocks();
+      scheduleMeasure();
+
+      return {
+        update() {
+          observeCodeBlocks();
+          scheduleMeasure();
+        },
+        destroy() {
+          if (raf) {
+            cancelAnimationFrame(raf);
+          }
+          observer?.disconnect();
+          window.removeEventListener("resize", handleResize);
+        },
+      };
     },
     props: {
       decorations(state) {

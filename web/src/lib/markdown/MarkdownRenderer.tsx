@@ -1,18 +1,20 @@
-import React, { useMemo, useState, useEffect, useRef, startTransition } from "react";
 import type Token from "markdown-it/lib/token.mjs";
 import type { Node as ProsemirrorNode } from "prosemirror-model";
-import headingToSlug from "@/outline-vendor/shared/editor/lib/headingToSlug";
+import React, { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import BookmarkCard from "@/components/MemoContent/BookmarkCard";
+import headingToSlug from "@/outline-vendor/shared/editor/lib/headingToSlug";
 import { createMarkdownParser } from "./parser";
+import { CheckboxRenderer } from "./renderers/CheckboxRenderer";
 import { CodeBlockRenderer } from "./renderers/CodeBlockRenderer";
 import { MathRenderer } from "./renderers/MathRenderer";
 import { NoticeRenderer } from "./renderers/NoticeRenderer";
 import { TagRenderer } from "./renderers/TagRenderer";
-import { CheckboxRenderer } from "./renderers/CheckboxRenderer";
 
-const LARGE_CONTENT_THRESHOLD = 50_000;
-const INITIAL_BLOCKS = 30;
-const BLOCKS_PER_LOAD = 20;
+const LARGE_CONTENT_THRESHOLD = 30_000;
+const MANY_CODE_BLOCKS_THRESHOLD = 3;
+const LARGE_CODE_BLOCK_THRESHOLD = 6_000;
+const INITIAL_BLOCKS = 12;
+const BLOCKS_PER_LOAD = 8;
 
 interface MarkdownRendererProps {
   content: string;
@@ -29,13 +31,12 @@ type HeadingSlugState = {
 };
 
 export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ content, className }) => {
-  const isLarge = content.length > LARGE_CONTENT_THRESHOLD;
-
   const parsed = useMemo(() => {
     const parser = createMarkdownParser();
     const tokens = parser.parse(content, {});
+    const shouldRenderProgressively = shouldUseProgressiveRendering(content, tokens);
 
-    if (!isLarge) {
+    if (!shouldRenderProgressively) {
       return {
         mode: "standard" as const,
         elements: renderTokens(tokens, content, 0, { seen: {} }),
@@ -43,7 +44,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ c
     }
 
     return { mode: "progressive" as const, groups: splitIntoTopLevelGroups(tokens) };
-  }, [content, isLarge]);
+  }, [content]);
 
   if (parsed.mode === "standard") {
     return <div className={className}>{parsed.elements}</div>;
@@ -53,6 +54,26 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ c
 });
 
 MarkdownRenderer.displayName = "MarkdownRenderer";
+
+function shouldUseProgressiveRendering(content: string, tokens: Token[]): boolean {
+  if (content.length > LARGE_CONTENT_THRESHOLD) {
+    return true;
+  }
+
+  let codeBlockCount = 0;
+  for (const token of tokens) {
+    if (token.type !== "fence" && token.type !== "code_block") {
+      continue;
+    }
+
+    codeBlockCount += 1;
+    if (codeBlockCount >= MANY_CODE_BLOCKS_THRESHOLD || token.content.length >= LARGE_CODE_BLOCK_THRESHOLD) {
+      return true;
+    }
+  }
+
+  return false;
+}
 
 const ProgressiveRenderer: React.FC<{
   groups: BlockGroup[];
@@ -107,17 +128,11 @@ const ProgressiveRenderer: React.FC<{
   );
 };
 
-const MemoizedBlockGroup = React.memo(({
-  group,
-  rawContent,
-  headingState,
-}: {
-  group: BlockGroup;
-  rawContent: string;
-  headingState: HeadingSlugState;
-}) => {
-  return <>{renderTokens(group.tokens, rawContent, group.checkboxStartIndex, headingState)}</>;
-});
+const MemoizedBlockGroup = React.memo(
+  ({ group, rawContent, headingState }: { group: BlockGroup; rawContent: string; headingState: HeadingSlugState }) => {
+    return <>{renderTokens(group.tokens, rawContent, group.checkboxStartIndex, headingState)}</>;
+  },
+);
 
 MemoizedBlockGroup.displayName = "MemoizedBlockGroup";
 
@@ -189,11 +204,7 @@ function renderTokens(
         const first = inlineChildren[0];
         const middle = inlineChildren[1];
         const last = inlineChildren[2];
-        if (
-          first.type === "link_open" &&
-          middle.type === "text" &&
-          last.type === "link_close"
-        ) {
+        if (first.type === "link_open" && middle.type === "text" && last.type === "link_close") {
           const href = first.attrGet("href") || "";
           if (href && middle.content === href && !href.startsWith("#")) {
             result.push(<BookmarkCard key={i} url={href} />);
@@ -226,7 +237,11 @@ function renderTokens(
     if (token.type === "ordered_list_open") {
       const start = token.attrGet("start");
       const { children, endIndex } = collectBlock(tokens, i, "ordered_list_open", "ordered_list_close", rawContent, headingState);
-      result.push(<ol key={i} start={start ? parseInt(start) : undefined}>{children}</ol>);
+      result.push(
+        <ol key={i} start={start ? parseInt(start) : undefined}>
+          {children}
+        </ol>,
+      );
       i = endIndex + 1;
       continue;
     }
@@ -242,7 +257,11 @@ function renderTokens(
       const { children, endIndex } = collectCheckboxList(tokens, i, rawContent, checkboxIndex, headingState);
       const checkboxCount = countCheckboxItems(tokens, i, endIndex);
       checkboxIndex += checkboxCount;
-      result.push(<ul key={i} className="checkbox-list">{children}</ul>);
+      result.push(
+        <ul key={i} className="checkbox-list">
+          {children}
+        </ul>,
+      );
       i = endIndex + 1;
       continue;
     }
@@ -290,7 +309,11 @@ function renderTokens(
     if (token.type === "container_notice_open") {
       const style = token.info.trim() || "info";
       const { children, endIndex } = collectBlock(tokens, i, "container_notice_open", "container_notice_close", rawContent, headingState);
-      result.push(<NoticeRenderer key={i} style={style}>{children}</NoticeRenderer>);
+      result.push(
+        <NoticeRenderer key={i} style={style}>
+          {children}
+        </NoticeRenderer>,
+      );
       i = endIndex + 1;
       continue;
     }
@@ -510,7 +533,7 @@ function collectCheckboxList(
       items.push(
         <CheckboxRenderer key={i} checked={checked} taskIndex={taskIndex}>
           {children}
-        </CheckboxRenderer>
+        </CheckboxRenderer>,
       );
       i = endIndex + 1;
       continue;
@@ -530,12 +553,7 @@ function countCheckboxItems(tokens: Token[], start: number, end: number): number
   return count;
 }
 
-function findClosingToken(
-  tokens: Token[],
-  startIndex: number,
-  openType: string,
-  closeType: string,
-): { endIndex: number } {
+function findClosingToken(tokens: Token[], startIndex: number, openType: string, closeType: string): { endIndex: number } {
   let depth = 1;
   let i = startIndex + 1;
   while (i < tokens.length && depth > 0) {
@@ -618,17 +636,9 @@ function renderTable(tokens: Token[], baseKey: number, rawContent: string): Reac
   );
 }
 
-function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^\w\s\u4e00-\u9fff-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .trim();
-}
-
 function sanitizeHtml(html: string): string {
-  const DANGEROUS_TAGS = /<(script|iframe|object|embed|form|base|meta|link|style|svg|math|details|dialog|template|applet|frameset|frame|bgsound|video|audio|source|input|textarea|select|button|marquee|keygen|noscript|plaintext|listing|xmp)[>\s/]/gi;
+  const DANGEROUS_TAGS =
+    /<(script|iframe|object|embed|form|base|meta|link|style|svg|math|details|dialog|template|applet|frameset|frame|bgsound|video|audio|source|input|textarea|select|button|marquee|keygen|noscript|plaintext|listing|xmp)[>\s/]/gi;
   const EVENT_HANDLERS = /\bon\w+\s*=/gi;
   const DANGEROUS_ATTRS = /\b(srcdoc|formaction|action|xlink:href|data-\w+)\s*=/gi;
   const DANGEROUS_PROTOCOLS = /\b(href|src)\s*=\s*["']?\s*(javascript|vbscript|data)\s*:/gi;

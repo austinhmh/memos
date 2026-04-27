@@ -1,14 +1,15 @@
-import { ConnectError } from "@connectrpc/connect";
 import { timestampDate } from "@bufbuild/protobuf/wkt";
+import { ConnectError } from "@connectrpc/connect";
 import { ArrowLeftIcon, MessageCircleIcon } from "lucide-react";
-import { Suspense, useState, useCallback, useRef, useMemo as useReactMemo } from "react";
+import { Suspense, useCallback, useMemo as useReactMemo, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { MemoDetailSidebar, MemoDetailSidebarDrawer } from "@/components/MemoDetailSidebar";
 import MemoEditor from "@/components/MemoEditor";
+import MemoTableOfContents from "@/components/MemoTableOfContents";
 import MemoView from "@/components/MemoView";
 import { AttachmentList } from "@/components/MemoView/components/metadata";
-import MemoTableOfContents from "@/components/MemoTableOfContents";
+import { MemoViewContext } from "@/components/MemoView/MemoViewContext";
 import MobileHeader from "@/components/MobileHeader";
 import { Button } from "@/components/ui/button";
 import { memoNamePrefix } from "@/helpers/resource-names";
@@ -16,14 +17,13 @@ import useCurrentUser from "@/hooks/useCurrentUser";
 import useMediaQuery from "@/hooks/useMediaQuery";
 import { useMemo, useMemoComments } from "@/hooks/useMemoQueries";
 import useNavigateTo from "@/hooks/useNavigateTo";
+import { useUser } from "@/hooks/useUserQueries";
 import i18n from "@/i18n";
+import { MarkdownRenderer } from "@/lib/markdown/MarkdownRenderer";
+import { lazyWithRetry } from "@/router/lazyWithRetry";
+import { State } from "@/types/proto/api/v1/common_pb";
 import { useTranslate } from "@/utils/i18n";
 import { isSuperUser } from "@/utils/user";
-import { useUser } from "@/hooks/useUserQueries";
-import { State } from "@/types/proto/api/v1/common_pb";
-import { MarkdownRenderer } from "@/lib/markdown/MarkdownRenderer";
-import { MemoViewContext } from "@/components/MemoView/MemoViewContext";
-import { lazyWithRetry } from "@/router/lazyWithRetry";
 
 const BlogEditor = lazyWithRetry(() => import("@/components/BlogEditor"), "BlogEditor");
 
@@ -37,7 +37,6 @@ const MemoDetail = () => {
   const uid = params.uid;
   const memoName = `${memoNamePrefix}${uid}`;
   const [showCommentEditor, setShowCommentEditor] = useState(false);
-  const [editorReady, setEditorReady] = useState(false);
 
   // Resizable panels
   const [leftWidth, setLeftWidth] = useState(20);
@@ -135,7 +134,6 @@ const MemoDetail = () => {
   }
 
   const displayTime = memo.displayTime ? timestampDate(memo.displayTime) : undefined;
-  const showCache = !canEdit || !editorReady;
 
   return (
     <section className="@container w-full min-h-full flex flex-col">
@@ -204,23 +202,22 @@ const MemoDetail = () => {
         <div className="flex-1 min-w-0 px-4 sm:px-6 pb-8 overflow-y-auto">
           <MemoViewContext.Provider value={memoViewContextValue}>
             <div className="w-full">
-              {showCache && (
+              {canEdit ? (
+                <Suspense
+                  fallback={
+                    <div style={{ padding: "2rem", color: "#888" }}>
+                      <p>正在加载文档…</p>
+                    </div>
+                  }
+                >
+                  <BlogEditor memo={stableMemo ?? memo} readonly={false} />
+                </Suspense>
+              ) : (
                 <div className="blog-editor">
                   <div className="blog-editor-content ProseMirror">
                     <MarkdownRenderer content={memo.content} />
                   </div>
                 </div>
-              )}
-              {canEdit && (
-                <Suspense fallback={showCache ? null : <div style={{ padding: "2rem", color: "#888" }}><p>正在加载编辑器…</p></div>}>
-                  <div style={showCache ? { height: 0, overflow: "hidden", opacity: 0 } : undefined}>
-                    <BlogEditor
-                      memo={stableMemo ?? memo}
-                      readonly={false}
-                      onReady={() => setEditorReady(true)}
-                    />
-                  </div>
-                </Suspense>
               )}
             </div>
           </MemoViewContext.Provider>
@@ -267,11 +264,7 @@ const MemoDetail = () => {
                   </div>
                 )}
                 {showCreateCommentButton && (
-                  <Button
-                    variant="ghost"
-                    className="w-full mt-1 text-muted-foreground text-xs"
-                    onClick={() => setShowCommentEditor(true)}
-                  >
+                  <Button variant="ghost" className="w-full mt-1 text-muted-foreground text-xs" onClick={() => setShowCommentEditor(true)}>
                     {t("memo.comment.write-a-comment")}
                   </Button>
                 )}

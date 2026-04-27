@@ -15,6 +15,7 @@ import { memoNamePrefix } from "@/helpers/resource-names";
 import useCurrentUser from "@/hooks/useCurrentUser";
 import useMediaQuery from "@/hooks/useMediaQuery";
 import { useMemoComments, useMemo as useMemoQuery, useUpdateMemo } from "@/hooks/useMemoQueries";
+import { MarkdownRenderer } from "@/lib/markdown/MarkdownRenderer";
 import { lazyWithRetry } from "@/router/lazyWithRetry";
 import { Visibility } from "@/types/proto/api/v1/memo_service_pb";
 import { useTranslate } from "@/utils/i18n";
@@ -197,9 +198,17 @@ const BlogDetail = () => {
         <div className="flex-1 min-w-0 px-4 sm:px-6 pb-8 overflow-y-auto">
           <h1 className="text-2xl font-bold mb-4">{titleLine}</h1>
 
-          <Suspense fallback={<div style={{ padding: "2rem", color: "#888" }}>正在加载编辑器…</div>}>
-            <BlogEditor memo={memo} readonly={readonly} />
-          </Suspense>
+          {canEdit ? (
+            <Suspense fallback={<div style={{ padding: "2rem", color: "#888" }}>正在加载文档…</div>}>
+              <BlogEditor memo={memo} readonly={false} />
+            </Suspense>
+          ) : (
+            <div className="blog-editor">
+              <div className="blog-editor-content ProseMirror">
+                <MarkdownRenderer content={memo.content} />
+              </div>
+            </div>
+          )}
 
           {/* Mobile: sidebar + attachments + comments */}
           {!md && (
