@@ -358,7 +358,7 @@ function renderInline(tokens: Token[], rawContent: string): React.ReactNode[] {
     }
 
     if (token.type === "image") {
-      const src = sanitizeUrl(token.attrGet("src") || "");
+      const src = sanitizeImageUrl(token.attrGet("src") || "");
       const alt = token.content || token.attrGet("alt") || "";
       const title = token.attrGet("title") || undefined;
       result.push(<img key={i} src={src} alt={alt} title={title} loading="lazy" />);
@@ -637,6 +637,15 @@ function sanitizeHtml(html: string): string {
     .replace(EVENT_HANDLERS, "data-removed=")
     .replace(DANGEROUS_ATTRS, "data-removed=")
     .replace(DANGEROUS_PROTOCOLS, '$1="about:blank" data-removed=');
+}
+
+function sanitizeImageUrl(url: string): string {
+  if (!url) return "";
+  const trimmed = url.trim();
+  if (/^data:image\/(png|jpe?g|gif|webp|avif|bmp|heic|heif);base64,[a-z0-9+/=]+$/i.test(trimmed)) {
+    return trimmed;
+  }
+  return sanitizeUrl(trimmed);
 }
 
 function sanitizeUrl(url: string): string {

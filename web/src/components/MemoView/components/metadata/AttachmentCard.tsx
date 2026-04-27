@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 import type { Attachment } from "@/types/proto/api/v1/attachment_service_pb";
-import { getAttachmentType, getAttachmentUrl } from "@/utils/attachment";
+import { getAttachmentThumbnailUrl, getAttachmentType, getAttachmentUrl } from "@/utils/attachment";
 
 interface AttachmentCardProps {
   attachment: Attachment;
@@ -11,14 +11,22 @@ interface AttachmentCardProps {
 const AttachmentCard = ({ attachment, onClick, className }: AttachmentCardProps) => {
   const attachmentType = getAttachmentType(attachment);
   const sourceUrl = getAttachmentUrl(attachment);
+  const thumbnailUrl = getAttachmentThumbnailUrl(attachment);
 
   if (attachmentType === "image/*") {
     return (
       <img
-        src={sourceUrl}
+        src={thumbnailUrl}
         alt={attachment.filename}
         className={cn("w-full h-full object-cover rounded-lg cursor-pointer", className)}
         onClick={onClick}
+        onError={(event) => {
+          const target = event.currentTarget;
+          if (target.src !== sourceUrl) {
+            target.src = sourceUrl;
+          }
+        }}
+        decoding="async"
         loading="lazy"
       />
     );

@@ -11,6 +11,7 @@ import useCurrentUser from "@/hooks/useCurrentUser";
 import { useCreateMemo, useMemos, useUpdateMemo } from "@/hooks/useMemoQueries";
 import { cn } from "@/lib/utils";
 import { MemoSchema, Visibility } from "@/types/proto/api/v1/memo_service_pb";
+import { getAttachmentThumbnailUrl, getAttachmentType, getAttachmentUrl } from "@/utils/attachment";
 import { useTranslate } from "@/utils/i18n";
 import { isSuperUser } from "@/utils/user";
 
@@ -98,6 +99,7 @@ const BlogHome = () => {
             const lines = memo.content.split("\n");
             const title = lines[0].replace(/^#+\s*/, "") || "Untitled";
             const preview = lines.slice(1).join("\n").trim().slice(0, 120);
+            const coverImage = memo.attachments.find((attachment) => getAttachmentType(attachment) === "image/*");
             const canEdit = !!currentUser && (memo.creator === currentUser.name || !!isSuperUser(currentUser));
             const currentVisibilityLabel =
               visibilityOptions.find((option) => option.value === memo.visibility)?.label || t("memo.visibility.private");
@@ -110,48 +112,68 @@ const BlogHome = () => {
                 )}
                 onClick={() => navigate(`/memos/${uid}`)}
               >
-                <div className="flex items-center gap-2 mb-1">
-                  <h3 className="text-base font-semibold flex-1 truncate">{title}</h3>
-                  {canEdit ? (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button
-                          type="button"
-                          className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground shrink-0 hover:bg-accent hover:text-foreground transition-colors"
-                          onClick={(event) => event.stopPropagation()}
-                        >
+                <div className="flex items-start gap-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="text-base font-semibold flex-1 truncate">{title}</h3>
+                      {canEdit ? (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground shrink-0 hover:bg-accent hover:text-foreground transition-colors"
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              <VisibilityIcon visibility={memo.visibility} className="w-3.5 h-3.5" />
+                              <span>{currentVisibilityLabel}</span>
+                              <ChevronDownIcon className="w-3.5 h-3.5 opacity-60" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            {visibilityOptions.map((option) => (
+                              <DropdownMenuItem
+                                key={option.value}
+                                className="cursor-pointer gap-2"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  if (option.value !== memo.visibility) {
+                                    handleVisibilityChange(memo.name, option.value);
+                                  }
+                                }}
+                              >
+                                <VisibilityIcon visibility={option.value} />
+                                <span className="flex-1">{option.label}</span>
+                                {memo.visibility === option.value && <CheckIcon className="w-4 h-4 text-primary" />}
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground shrink-0">
                           <VisibilityIcon visibility={memo.visibility} className="w-3.5 h-3.5" />
                           <span>{currentVisibilityLabel}</span>
-                          <ChevronDownIcon className="w-3.5 h-3.5 opacity-60" />
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        {visibilityOptions.map((option) => (
-                          <DropdownMenuItem
-                            key={option.value}
-                            className="cursor-pointer gap-2"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              if (option.value !== memo.visibility) {
-                                handleVisibilityChange(memo.name, option.value);
-                              }
-                            }}
-                          >
-                            <VisibilityIcon visibility={option.value} />
-                            <span className="flex-1">{option.label}</span>
-                            {memo.visibility === option.value && <CheckIcon className="w-4 h-4 text-primary" />}
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground shrink-0">
-                      <VisibilityIcon visibility={memo.visibility} className="w-3.5 h-3.5" />
-                      <span>{currentVisibilityLabel}</span>
-                    </span>
+                        </span>
+                      )}
+                    </div>
+                    {preview && <p className="text-sm text-muted-foreground line-clamp-2">{preview}</p>}
+                  </div>
+                  {coverImage && (
+                    <img
+                      src={getAttachmentThumbnailUrl(coverImage)}
+                      alt={coverImage.filename}
+                      className="w-24 h-16 sm:w-32 sm:h-20 rounded-md object-cover border border-border bg-muted shrink-0"
+                      loading="lazy"
+                      decoding="async"
+                      onError={(event) => {
+                        const target = event.currentTarget;
+                        const fallbackUrl = getAttachmentUrl(coverImage);
+                        if (target.src !== fallbackUrl) {
+                          target.src = fallbackUrl;
+                        }
+                      }}
+                    />
                   )}
                 </div>
-                {preview && <p className="text-sm text-muted-foreground line-clamp-2">{preview}</p>}
               </article>
             );
           })}

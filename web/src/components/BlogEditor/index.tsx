@@ -1,29 +1,20 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { create } from "@bufbuild/protobuf";
 import { FieldMaskSchema } from "@bufbuild/protobuf/wkt";
-import { toast } from "react-hot-toast";
-import { Node, Slice } from "prosemirror-model";
-import { baseKeymap, chainCommands, setBlockType, toggleMark as pmToggleMark } from "prosemirror-commands";
+import { useQueryClient } from "@tanstack/react-query";
+import { baseKeymap, chainCommands, toggleMark as pmToggleMark, setBlockType } from "prosemirror-commands";
 import { history, redo, undo } from "prosemirror-history";
 import { keymap } from "prosemirror-keymap";
+import { Node, Slice } from "prosemirror-model";
 import { liftListItem, sinkListItem, splitListItem } from "prosemirror-schema-list";
-import { EditorState, TextSelection, type Command, type Plugin } from "prosemirror-state";
+import { type Command, EditorState, type Plugin, TextSelection } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "react-hot-toast";
 import { memoServiceClient } from "@/connect";
 import { useAuth } from "@/contexts/AuthContext";
 import { memoKeys, syncMemoToDetailCache, syncMemoToListCaches } from "@/hooks/useMemoQueries";
 import { userKeys } from "@/hooks/useUserQueries";
-import type { Memo } from "@/types/proto/api/v1/memo_service_pb";
-import { MemoSchema } from "@/types/proto/api/v1/memo_service_pb";
-import { getThemeWithFallback, resolveTheme } from "@/utils/theme";
-import { loadDoc, parseInWorker } from "./lib/docCache";
-import { buildMarkdownInputRules, codeBlockOnEnter } from "./lib/inputRules";
-import isMarkdown from "./lib/isMarkdown";
-import { createMdParser } from "./lib/markdownParser";
-import { createMdSerializer } from "./lib/markdownSerializer";
-import normalizePastedMarkdown from "./lib/normalizePastedMarkdown";
-import { blogEditorSchema } from "./lib/schema";
+import { isMac } from "@/outline-shims/shared/utils/browser";
 import backspaceToParagraph from "@/outline-vendor/shared/editor/commands/backspaceToParagraph";
 import {
   enterInCode,
@@ -33,24 +24,34 @@ import {
   newlineInCode,
   outdentInCode,
 } from "@/outline-vendor/shared/editor/commands/codeFence";
-import splitHeading from "@/outline-vendor/shared/editor/commands/splitHeading";
 import { openLink } from "@/outline-vendor/shared/editor/commands/link";
+import { selectAll } from "@/outline-vendor/shared/editor/commands/selectAll";
+import splitHeading from "@/outline-vendor/shared/editor/commands/splitHeading";
 import toggleBlockType from "@/outline-vendor/shared/editor/commands/toggleBlockType";
-import toggleList from "@/outline-vendor/shared/editor/commands/toggleList";
 import { toggleCheckboxItems } from "@/outline-vendor/shared/editor/commands/toggleCheckboxItems";
+import toggleList from "@/outline-vendor/shared/editor/commands/toggleList";
 import toggleWrap from "@/outline-vendor/shared/editor/commands/toggleWrap";
 import { getCurrentBlock } from "@/outline-vendor/shared/editor/queries/getCurrentBlock";
 import { isInCode } from "@/outline-vendor/shared/editor/queries/isInCode";
-import { selectAll } from "@/outline-vendor/shared/editor/commands/selectAll";
-import { isMac } from "@/outline-shims/shared/utils/browser";
+import type { Memo } from "@/types/proto/api/v1/memo_service_pb";
+import { MemoSchema } from "@/types/proto/api/v1/memo_service_pb";
+import { getThemeWithFallback, resolveTheme } from "@/utils/theme";
+import { SlashMenu } from "./components/SlashMenu";
+import { loadDoc, parseInWorker } from "./lib/docCache";
+import { buildMarkdownInputRules, codeBlockOnEnter } from "./lib/inputRules";
+import isMarkdown from "./lib/isMarkdown";
+import { createMdParser } from "./lib/markdownParser";
+import { createMdSerializer } from "./lib/markdownSerializer";
+import normalizePastedMarkdown from "./lib/normalizePastedMarkdown";
+import { blogEditorSchema } from "./lib/schema";
+import { buildSlashMenuItems } from "./menus/slashMenuItems";
 import { createBookmarkPlugin } from "./plugins/BookmarkPlugin";
+import { createCodeBlockExpandPlugin } from "./plugins/CodeBlockExpandPlugin";
 import { createCodeFenceActivePlugin } from "./plugins/CodeFenceActivePlugin";
 import { createCodeHighlightPlugin } from "./plugins/CodeHighlightPlugin";
 import { createHeadingIdPlugin } from "./plugins/HeadingIdPlugin";
 import { createMermaidPlugin } from "./plugins/MermaidPlugin";
 import { createSlashMenuPlugin, type SlashMenuState } from "./plugins/SlashMenuPlugin";
-import { buildSlashMenuItems } from "./menus/slashMenuItems";
-import { SlashMenu } from "./components/SlashMenu";
 
 interface BlogEditorProps {
   memo: Memo;
@@ -488,6 +489,7 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
           createBookmarkPlugin(),
           createCodeFenceActivePlugin(),
           createCodeHighlightPlugin(),
+          createCodeBlockExpandPlugin(),
           createHeadingIdPlugin(),
           keymap(baseKeymap),
         ],
