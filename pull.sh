@@ -6,23 +6,67 @@
 #   ./pull.sh v1.0.0             # 从 GHCR 拉取指定版本并部署
 #   ./pull.sh --local            # 使用本地 build-push.sh 构建的镜像部署
 #   ./pull.sh --local v1.0.0     # 使用本地指定版本部署
+#   ./pull.sh true               # 从 GHCR 拉取 latest，启用代理
+#   ./pull.sh false              # 从 GHCR 拉取 latest，禁用代理
+#   ./pull.sh v1.0.0 false       # 从 GHCR 拉取指定版本，禁用代理
+#
+# 使用前请确保：
+#   1. 已配置 .env 文件（或设置环境变量）
+#   2. GITHUB_USERNAME 为 GitHub 用户名
+#   3. GITHUB_TOKEN 具有 read:packages 权限
 
 set -e
 
+cd "$(dirname "$0")"
+
 IMAGE_NAME="ghcr.io/austinhmh/memos"
 CONTAINER_NAME="memos"
-DATA_DIR="${MEMOS_DATA_DIR:-$HOME/.memos}"
 
 LOCAL_ONLY=false
+NO_PROXY=false
 VERSION_TAG="latest"
 
 for arg in "$@"; do
-    if [ "$arg" = "--local" ]; then
-        LOCAL_ONLY=true
-    elif [[ "$arg" != --* ]]; then
-        VERSION_TAG="$arg"
-    fi
+    case "$arg" in
+        --local)
+            LOCAL_ONLY=true
+            ;;
+        --no-proxy|false)
+            NO_PROXY=true
+            ;;
+        true)
+            NO_PROXY=false
+            ;;
+        --*)
+            ;;
+        *)
+            VERSION_TAG="$arg"
+            ;;
+    esac
 done
+
+if [ -f .env ]; then
+    echo "加载 .env 配置文件..."
+    set -a
+    source .env
+    set +a
+else
+    echo "未找到 .env 文件，使用环境变量"
+fi
+
+if [ "$LOCAL_ONLY" = false ]; then
+    if [ -z "$GITHUB_USERNAME" ]; then
+        echo "错误: 请在 .env 文件或环境变量中设置 GITHUB_USERNAME"
+        exit 1
+    fi
+    if [ -z "$GITHUB_TOKEN" ]; then
+        echo "错误: 请在 .env 文件或环境变量中设置 GITHUB_TOKEN"
+        echo "GITHUB_TOKEN 需要 read:packages 权限"
+        exit 1
+    fi
+fi
+
+DATA_DIR="${MEMOS_DATA_DIR:-$HOME/.memos}"
 
 # 决定实际使用的镜像名
 if [ "$LOCAL_ONLY" = true ]; then
@@ -39,6 +83,7 @@ echo "运行镜像: $RUN_IMAGE"
 echo "容器名称: $CONTAINER_NAME"
 echo "数据目录: $DATA_DIR"
 echo "端口映射: 8081:5230"
+echo "使用代理: $([ "$NO_PROXY" = true ] && echo "否" || echo "是")"
 echo "=========================================="
 
 # ── 步骤 1: 数据目录 ─────────────────────────────────
@@ -62,7 +107,8 @@ if [ "$LOCAL_ONLY" = true ]; then
     fi
     echo "  本地镜像已确认: $RUN_IMAGE"
 else
-    echo "[ 2/4 ] 从 GHCR 拉取镜像 ..."
+    echo "[ 2/4 ] 登录并从 GHCR 拉取镜像 ..."
+    echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_USERNAME" --password-stdin
     docker pull "$RUN_IMAGE"
 fi
 
