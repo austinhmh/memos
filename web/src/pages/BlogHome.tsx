@@ -1,16 +1,18 @@
-import { PlusIcon } from "lucide-react";
-import { useCallback, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
-import { toast } from "react-hot-toast";
 import { create } from "@bufbuild/protobuf";
+import { CheckIcon, ChevronDownIcon, PlusIcon } from "lucide-react";
+import { useCallback, useMemo } from "react";
+import { toast } from "react-hot-toast";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import VisibilityIcon from "@/components/VisibilityIcon";
 import { useMemoFilters } from "@/hooks";
 import useCurrentUser from "@/hooks/useCurrentUser";
-import { useMemos, useCreateMemo } from "@/hooks/useMemoQueries";
+import { useCreateMemo, useMemos, useUpdateMemo } from "@/hooks/useMemoQueries";
 import { cn } from "@/lib/utils";
 import { MemoSchema, Visibility } from "@/types/proto/api/v1/memo_service_pb";
 import { useTranslate } from "@/utils/i18n";
+import { isSuperUser } from "@/utils/user";
 
 const BLOG_FILTER = `tag in ["blog"]`;
 
@@ -18,12 +20,10 @@ const BlogHome = () => {
   const currentUser = useCurrentUser();
   const navigate = useNavigate();
   const createMemo = useCreateMemo();
+  const updateMemo = useUpdateMemo({ syncListCaches: true });
   const t = useTranslate();
   const contextualFilter = useMemoFilters({ includeShortcuts: false, includePinned: false });
-  const blogFilter = useMemo(
-    () => (contextualFilter ? `${BLOG_FILTER} && ${contextualFilter}` : BLOG_FILTER),
-    [contextualFilter],
-  );
+  const blogFilter = useMemo(() => (contextualFilter ? `${BLOG_FILTER} && ${contextualFilter}` : BLOG_FILTER), [contextualFilter]);
 
   const { data } = useMemos({
     filter: blogFilter,
@@ -32,6 +32,27 @@ const BlogHome = () => {
   });
 
   const memos = data?.memos ?? [];
+  const visibilityOptions = [
+    { value: Visibility.PRIVATE, label: t("memo.visibility.private") },
+    { value: Visibility.PROTECTED, label: t("memo.visibility.protected") },
+    { value: Visibility.PUBLIC, label: t("memo.visibility.public") },
+  ] as const;
+
+  const handleVisibilityChange = useCallback(
+    async (memoName: string, visibility: Visibility) => {
+      try {
+        await updateMemo.mutateAsync({
+          update: { name: memoName, visibility },
+          updateMask: ["visibility"],
+        });
+        toast.success("权限已更新");
+      } catch (err) {
+        console.error("Failed to update visibility:", err);
+        toast.error("权限更新失败");
+      }
+    },
+    [updateMemo],
+  );
 
   const handleNewDoc = useCallback(async () => {
     if (!currentUser) return;
@@ -77,10 +98,12 @@ const BlogHome = () => {
             const lines = memo.content.split("\n");
             const title = lines[0].replace(/^#+\s*/, "") || "Untitled";
             const preview = lines.slice(1).join("\n").trim().slice(0, 120);
+            const canEdit = !!currentUser && (memo.creator === currentUser.name || !!isSuperUser(currentUser));
+            const currentVisibilityLabel =
+              visibilityOptions.find((option) => option.value === memo.visibility)?.label || t("memo.visibility.private");
             return (
-              <button
+              <article
                 key={memo.name}
-                type="button"
                 className={cn(
                   "w-full text-left px-5 py-4 rounded-lg border border-border bg-card",
                   "hover:border-primary/30 hover:shadow-sm transition-all cursor-pointer",
@@ -89,13 +112,47 @@ const BlogHome = () => {
               >
                 <div className="flex items-center gap-2 mb-1">
                   <h3 className="text-base font-semibold flex-1 truncate">{title}</h3>
-                  <span className="inline-flex items-center gap-1 text-xs text-muted-foreground shrink-0">
-                    <VisibilityIcon visibility={memo.visibility} className="w-3.5 h-3.5" />
-                    <span>{t(`memo.visibility.${Visibility[memo.visibility]?.toLowerCase() || "private"}` as Parameters<typeof t>[0])}</span>
-                  </span>
+                  {canEdit ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground shrink-0 hover:bg-accent hover:text-foreground transition-colors"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <VisibilityIcon visibility={memo.visibility} className="w-3.5 h-3.5" />
+                          <span>{currentVisibilityLabel}</span>
+                          <ChevronDownIcon className="w-3.5 h-3.5 opacity-60" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        {visibilityOptions.map((option) => (
+                          <DropdownMenuItem
+                            key={option.value}
+                            className="cursor-pointer gap-2"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              if (option.value !== memo.visibility) {
+                                handleVisibilityChange(memo.name, option.value);
+                              }
+                            }}
+                          >
+                            <VisibilityIcon visibility={option.value} />
+                            <span className="flex-1">{option.label}</span>
+                            {memo.visibility === option.value && <CheckIcon className="w-4 h-4 text-primary" />}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground shrink-0">
+                      <VisibilityIcon visibility={memo.visibility} className="w-3.5 h-3.5" />
+                      <span>{currentVisibilityLabel}</span>
+                    </span>
+                  )}
                 </div>
                 {preview && <p className="text-sm text-muted-foreground line-clamp-2">{preview}</p>}
-              </button>
+              </article>
             );
           })}
         </div>

@@ -20,7 +20,10 @@ const VisibilitySelector = (props: VisibilitySelectorProps) => {
   return (
     <DropdownMenu onOpenChange={props.onOpenChange}>
       <DropdownMenuTrigger asChild>
-        <button className="inline-flex items-center px-2 text-sm text-muted-foreground opacity-80 hover:opacity-100 transition-colors">
+        <button
+          type="button"
+          className="inline-flex items-center px-2 text-sm text-muted-foreground opacity-80 hover:opacity-100 transition-colors"
+        >
           <VisibilityIcon visibility={value} className="opacity-60 mr-1.5" />
           <span>{currentLabel}</span>
           <ChevronDownIcon className="ml-0.5 w-4 h-4 opacity-60" />

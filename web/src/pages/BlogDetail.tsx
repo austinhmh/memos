@@ -1,25 +1,24 @@
-import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { useMemo as useMemoQuery, useMemoComments, useUpdateMemo } from "@/hooks/useMemoQueries";
-import { memoNamePrefix } from "@/helpers/resource-names";
-import useCurrentUser from "@/hooks/useCurrentUser";
-import { useUser } from "@/hooks/useUserQueries";
-import { isSuperUser } from "@/utils/user";
+import { ArrowLeftIcon, CheckIcon, ChevronDownIcon, MessageCircleIcon } from "lucide-react";
 import { Suspense, useCallback, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
-import VisibilityIcon from "@/components/VisibilityIcon";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import MemoActionMenu from "@/components/MemoActionMenu";
-import MemoView from "@/components/MemoView";
-import MemoTableOfContents from "@/components/MemoTableOfContents";
-import MemoEditor from "@/components/MemoEditor";
 import { MemoDetailSidebar } from "@/components/MemoDetailSidebar";
-import { ArrowLeftIcon, CheckIcon, ChevronDownIcon, MessageCircleIcon } from "lucide-react";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import MemoEditor from "@/components/MemoEditor";
+import MemoTableOfContents from "@/components/MemoTableOfContents";
+import MemoView from "@/components/MemoView";
+import { AttachmentList } from "@/components/MemoView/components/metadata";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import VisibilityIcon from "@/components/VisibilityIcon";
+import { memoNamePrefix } from "@/helpers/resource-names";
+import useCurrentUser from "@/hooks/useCurrentUser";
+import useMediaQuery from "@/hooks/useMediaQuery";
+import { useMemoComments, useMemo as useMemoQuery, useUpdateMemo } from "@/hooks/useMemoQueries";
 import { lazyWithRetry } from "@/router/lazyWithRetry";
 import { Visibility } from "@/types/proto/api/v1/memo_service_pb";
 import { useTranslate } from "@/utils/i18n";
-import useMediaQuery from "@/hooks/useMediaQuery";
-import { AttachmentList } from "@/components/MemoView/components/metadata";
+import { isSuperUser } from "@/utils/user";
 
 const BlogEditor = lazyWithRetry(() => import("@/components/BlogEditor"), "BlogEditor");
 
@@ -70,7 +69,6 @@ const BlogDetail = () => {
   const { data: commentsResponse } = useMemoComments(memoName, { enabled: !!memo });
   const comments = commentsResponse?.memos || [];
 
-  const creator = useUser(memo?.creator || "").data;
   const isOwner = !!currentUser && memo?.creator === currentUser?.name;
   const canEdit = isOwner || (!!currentUser && isSuperUser(currentUser));
   const readonly = !canEdit;
@@ -102,7 +100,7 @@ const BlogDetail = () => {
   );
 
   if (error) {
-    const code = (error as any)?.code;
+    const code = (error as { code?: number })?.code;
     if (code === 16 || code === 7) {
       navigate("/403", { replace: true });
       return null;
@@ -144,7 +142,10 @@ const BlogDetail = () => {
           {canEdit ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="inline-flex items-center px-2 py-1 text-sm text-muted-foreground rounded-md hover:bg-accent transition-colors">
+                <button
+                  type="button"
+                  className="inline-flex items-center px-2 py-1 text-sm text-muted-foreground rounded-md hover:bg-accent transition-colors"
+                >
                   <VisibilityIcon visibility={memo.visibility} className="opacity-60 mr-1.5" />
                   <span>{visibilityOptions.find((o) => o.value === memo.visibility)?.label}</span>
                   <ChevronDownIcon className="ml-0.5 w-4 h-4 opacity-60" />
@@ -295,11 +296,7 @@ const BlogDetail = () => {
                   </div>
                 )}
                 {showCreateCommentButton && (
-                  <Button
-                    variant="ghost"
-                    className="w-full mt-1 text-muted-foreground text-xs"
-                    onClick={() => setShowCommentEditor(true)}
-                  >
+                  <Button variant="ghost" className="w-full mt-1 text-muted-foreground text-xs" onClick={() => setShowCommentEditor(true)}>
                     {t("memo.comment.write-a-comment")}
                   </Button>
                 )}
