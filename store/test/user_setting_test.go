@@ -168,6 +168,35 @@ func TestUserSettingRefreshTokens(t *testing.T) {
 	ts.Close()
 }
 
+func TestRefreshTokenAddToleratesNonCanonicalStoredJSON(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ts := NewTestingStore(ctx, t)
+	user, err := createTestingHostUser(ctx, ts)
+	require.NoError(t, err)
+
+	_, err = ts.GetDriver().UpsertUserSetting(ctx, &store.UserSetting{
+		UserID: user.ID,
+		Key:    storepb.UserSetting_REFRESH_TOKENS,
+		Value:  `{"refreshTokens":[{"tokenId":"token-old", "description":"legacy spaced json"}]}`,
+	})
+	require.NoError(t, err)
+
+	err = ts.AddUserRefreshToken(ctx, user.ID, &storepb.RefreshTokensUserSetting_RefreshToken{
+		TokenId:     "token-new",
+		Description: "new browser session",
+	})
+	require.NoError(t, err)
+
+	tokens, err := ts.GetUserRefreshTokens(ctx, user.ID)
+	require.NoError(t, err)
+	require.Len(t, tokens, 2)
+	require.Equal(t, "token-old", tokens[0].TokenId)
+	require.Equal(t, "token-new", tokens[1].TokenId)
+
+	ts.Close()
+}
+
 func TestRefreshTokenStaleWritersCannotOverwriteRotation(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

@@ -295,13 +295,18 @@ func (s *Store) AddUserRefreshToken(ctx context.Context, userID int32, token *st
 	lock.Lock()
 	defer lock.Unlock()
 
-	return s.mutateUserRefreshTokens(ctx, userID, func(existingTokens []*storepb.RefreshTokensUserSetting_RefreshToken) ([]*storepb.RefreshTokensUserSetting_RefreshToken, error) {
-		newTokens := cloneRefreshTokens(existingTokens)
-		if token != nil {
-			newTokens = append(newTokens, proto.Clone(token).(*storepb.RefreshTokensUserSetting_RefreshToken))
-		}
-		return newTokens, nil
-	})
+	tokens, err := s.GetUserRefreshTokens(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	newTokens := cloneRefreshTokens(tokens)
+	if token != nil {
+		newTokens = append(newTokens, proto.Clone(token).(*storepb.RefreshTokensUserSetting_RefreshToken))
+	}
+
+	_, err = s.UpsertUserSetting(ctx, newRefreshTokensUserSetting(userID, newTokens))
+	return err
 }
 
 // RotateUserRefreshToken atomically consumes an existing refresh token and stores its replacement.
