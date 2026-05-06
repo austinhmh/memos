@@ -426,7 +426,8 @@
       "saturday": "星期六",
       "sunday": "星期日",
       "week-start-day": "每週起始日"
-    }
+    },
+    "backup": "備份"
   },
   "tag": {
     "all-tags": "所有標籤",

@@ -443,7 +443,8 @@
       "saturday": "Saturday",
       "sunday": "Sunday",
       "week-start-day": "Week start day"
-    }
+    },
+    "backup": "Backup"
   },
   "tag": {
     "all-tags": "All Tags",
