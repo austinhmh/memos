@@ -20,6 +20,13 @@ type Client struct {
 	Bucket *string
 }
 
+// Object describes an object listed from S3.
+type Object struct {
+	Key          string
+	Size         int64
+	LastModified time.Time
+}
+
 func NewClient(ctx context.Context, s3Config *storepb.StorageS3Config) (*Client, error) {
 	cfg, err := config.LoadDefaultConfig(ctx,
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(s3Config.AccessKeyId, s3Config.AccessKeySecret, "")),
@@ -115,4 +122,33 @@ func (c *Client) DeleteObject(ctx context.Context, key string) error {
 		return errors.Wrap(err, "failed to delete object")
 	}
 	return nil
+}
+
+// ListObjects lists objects in S3 matching a prefix.
+func (c *Client) ListObjects(ctx context.Context, prefix string) ([]Object, error) {
+	paginator := s3.NewListObjectsV2Paginator(c.Client, &s3.ListObjectsV2Input{
+		Bucket: c.Bucket,
+		Prefix: aws.String(prefix),
+	})
+	objects := []Object{}
+	for paginator.HasMorePages() {
+		output, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to list objects")
+		}
+		for _, object := range output.Contents {
+			if object.Key == nil || *object.Key == "" {
+				continue
+			}
+			listedObject := Object{Key: *object.Key}
+			if object.Size != nil {
+				listedObject.Size = *object.Size
+			}
+			if object.LastModified != nil {
+				listedObject.LastModified = *object.LastModified
+			}
+			objects = append(objects, listedObject)
+		}
+	}
+	return objects, nil
 }

@@ -1,8 +1,20 @@
-import { CogIcon, DatabaseIcon, ImageIcon, KeyIcon, LibraryIcon, LucideIcon, Settings2Icon, UserIcon, UsersIcon } from "lucide-react";
+import {
+  CogIcon,
+  DatabaseBackupIcon,
+  DatabaseIcon,
+  ImageIcon,
+  KeyIcon,
+  LibraryIcon,
+  LucideIcon,
+  Settings2Icon,
+  UserIcon,
+  UsersIcon,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import MobileHeader from "@/components/MobileHeader";
 import BackgroundSection from "@/components/Settings/BackgroundSection";
+import BackupSection from "@/components/Settings/BackupSection";
 import InstanceSection from "@/components/Settings/InstanceSection";
 import MemberSection from "@/components/Settings/MemberSection";
 import MemoRelatedSettings from "@/components/Settings/MemoRelatedSettings";
@@ -19,14 +31,14 @@ import { InstanceSetting_Key } from "@/types/proto/api/v1/instance_service_pb";
 import { User_Role } from "@/types/proto/api/v1/user_service_pb";
 import { useTranslate } from "@/utils/i18n";
 
-type SettingSection = "my-account" | "preference" | "background" | "member" | "system" | "memo-related" | "storage" | "sso";
+type SettingSection = "my-account" | "preference" | "background" | "member" | "system" | "memo-related" | "storage" | "backup" | "sso";
 
 interface State {
   selectedSection: SettingSection;
 }
 
 const BASIC_SECTIONS: SettingSection[] = ["my-account", "preference", "background"];
-const ADMIN_SECTIONS: SettingSection[] = ["member", "system", "memo-related", "storage", "sso"];
+const ADMIN_SECTIONS: SettingSection[] = ["member", "system", "memo-related", "storage", "backup", "sso"];
 const SECTION_ICON_MAP: Record<SettingSection, LucideIcon> = {
   "my-account": UserIcon,
   preference: CogIcon,
@@ -35,6 +47,7 @@ const SECTION_ICON_MAP: Record<SettingSection, LucideIcon> = {
   system: Settings2Icon,
   "memo-related": LibraryIcon,
   storage: DatabaseIcon,
+  backup: DatabaseBackupIcon,
   sso: KeyIcon,
 };
 
@@ -75,9 +88,7 @@ const Setting = () => {
 
     // Initial fetch for instance settings.
     (async () => {
-      [InstanceSetting_Key.MEMO_RELATED, InstanceSetting_Key.STORAGE].forEach(async (key) => {
-        await fetchSetting(key);
-      });
+      await Promise.all([InstanceSetting_Key.MEMO_RELATED, InstanceSetting_Key.STORAGE].map((key) => fetchSetting(key)));
     })();
   }, [isHost, fetchSetting]);
 
@@ -154,8 +165,10 @@ const Setting = () => {
               <InstanceSection />
             ) : state.selectedSection === "memo-related" ? (
               <MemoRelatedSettings />
-            ) : state.selectedSection === "storage" ? (
+            ) : state.selectedSection === "storage" && isHost ? (
               <StorageSection />
+            ) : state.selectedSection === "backup" && isHost ? (
+              <BackupSection />
             ) : state.selectedSection === "sso" ? (
               <SSOSection />
             ) : null}

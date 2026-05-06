@@ -17,10 +17,12 @@ import (
 
 	"github.com/usememos/memos/internal/profile"
 	storepb "github.com/usememos/memos/proto/gen/store"
+	backupsvc "github.com/usememos/memos/server/backup"
 	apiv1 "github.com/usememos/memos/server/router/api/v1"
 	"github.com/usememos/memos/server/router/fileserver"
 	"github.com/usememos/memos/server/router/frontend"
 	"github.com/usememos/memos/server/router/rss"
+	backuprunner "github.com/usememos/memos/server/runner/backup"
 	"github.com/usememos/memos/server/runner/s3presign"
 	"github.com/usememos/memos/store"
 )
@@ -45,7 +47,12 @@ func NewServer(ctx context.Context, profile *profile.Profile, store *store.Store
 	echoServer.HideBanner = true
 	echoServer.HidePort = true
 	echoServer.Use(middleware.Recover())
-	echoServer.Use(middleware.BodyLimit("64M"))
+	echoServer.Use(middleware.BodyLimitWithConfig(middleware.BodyLimitConfig{
+		Skipper: func(c echo.Context) bool {
+			return c.Request().URL.Path == "/api/v1/admin/backups/restore"
+		},
+		Limit: "64M",
+	}))
 	echoServer.Use(securityHeadersMiddleware())
 	s.echoServer = echoServer
 
@@ -68,8 +75,9 @@ func NewServer(ctx context.Context, profile *profile.Profile, store *store.Store
 
 	apiV1Service := apiv1.NewAPIV1Service(s.Secret, profile, store)
 
-	// Register URL metadata endpoint (needs auth, registered before gateway).
+	// Register custom authenticated HTTP endpoints before the gRPC gateway catch-all.
 	apiV1Service.RegisterLinkRoutes(echoServer)
+	apiV1Service.RegisterBackupRoutes(echoServer)
 
 	// Register HTTP file server routes BEFORE gRPC-Gateway to ensure proper range request handling for Safari.
 	// This uses native HTTP serving (http.ServeContent) instead of gRPC for video/audio files.
@@ -142,9 +150,10 @@ func (s *Server) StartBackgroundRunners(ctx context.Context) {
 	// Create a separate context for each background runner
 	// This allows us to control cancellation for each runner independently
 	s3Context, s3Cancel := context.WithCancel(ctx)
+	backupContext, backupCancel := context.WithCancel(ctx)
 
 	// Store the cancel function so we can properly shut down runners
-	s.runnerCancelFuncs = append(s.runnerCancelFuncs, s3Cancel)
+	s.runnerCancelFuncs = append(s.runnerCancelFuncs, s3Cancel, backupCancel)
 
 	// Create and start S3 presign runner
 	s3presignRunner := s3presign.NewRunner(s.Store)
@@ -154,6 +163,12 @@ func (s *Server) StartBackgroundRunners(ctx context.Context) {
 	go func() {
 		s3presignRunner.Run(s3Context)
 		slog.Info("s3presign runner stopped")
+	}()
+
+	backupRunner := backuprunner.NewRunner(backupsvc.NewService(s.Profile, s.Store))
+	go func() {
+		backupRunner.Run(backupContext)
+		slog.Info("backup runner stopped")
 	}()
 
 	// Log the number of goroutines running
