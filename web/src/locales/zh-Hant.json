@@ -170,7 +170,8 @@
       "public": "公開"
     },
     "list": "列表",
-    "masonry": "瀑布流"
+    "masonry": "瀑布流",
+    "table-of-contents": "目錄"
   },
   "message": {
     "archived-successfully": "封存成功",

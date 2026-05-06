@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { normalizeMermaidCode } from "@/lib/mermaid/normalizeMermaidCode";
 import { renderMermaid } from "@/lib/mermaid/mermaidInit";
+import { normalizeMermaidCode } from "@/lib/mermaid/normalizeMermaidCode";
 import { cn } from "@/lib/utils";
 import { getThemeWithFallback, resolveTheme, setupSystemThemeListener } from "@/utils/theme";
 import { extractCodeContent } from "./utils";

@@ -1,5 +1,5 @@
-import type { StateBlock, StateInline } from "markdown-it";
 import type MarkdownIt from "markdown-it";
+import type { StateBlock, StateInline } from "markdown-it";
 
 function isValidDelimiter(state: StateInline, pos: number) {
   const max = state.posMax;

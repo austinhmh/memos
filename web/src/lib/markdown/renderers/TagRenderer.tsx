@@ -1,9 +1,9 @@
 import { useLocation } from "react-router-dom";
+import { useMemoViewContext } from "@/components/MemoView/MemoViewContext";
 import { type MemoFilter, stringifyFilters, useMemoFilterContext } from "@/contexts/MemoFilterContext";
 import useNavigateTo from "@/hooks/useNavigateTo";
 import { cn } from "@/lib/utils";
 import { Routes } from "@/router";
-import { useMemoViewContext } from "@/components/MemoView/MemoViewContext";
 
 interface TagRendererProps {
   tag: string;
@@ -42,10 +42,7 @@ export const TagRenderer: React.FC<TagRendererProps> = ({ tag }) => {
 
   return (
     <span
-      className={cn(
-        "inline-block w-auto text-primary transition-colors",
-        readonly ? "cursor-default" : "cursor-pointer hover:opacity-80",
-      )}
+      className={cn("inline-block w-auto text-primary transition-colors", readonly ? "cursor-default" : "cursor-pointer hover:opacity-80")}
       data-tag={tag}
       onClick={handleTagClick}
     >

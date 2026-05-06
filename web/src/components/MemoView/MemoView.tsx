@@ -69,13 +69,13 @@ const MemoView: React.FC<MemoViewProps> = (props: MemoViewProps) => {
 
   return (
     <MemoViewContext.Provider value={contextValue}>
-      <article 
+      <article
         className={cn(
-          MEMO_CARD_BASE_CLASSES, 
+          MEMO_CARD_BASE_CLASSES,
           props.fullHeight ? "h-[90vh] overflow-y-auto" : "h-[40vh] md:h-[33.33vh] overflow-y-auto",
-          className
-        )} 
-        ref={cardRef} 
+          className,
+        )}
+        ref={cardRef}
         tabIndex={readonly ? -1 : 0}
       >
         <MemoHeader

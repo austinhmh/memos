@@ -1,5 +1,5 @@
-import type { StateInline } from "markdown-it";
 import type MarkdownIt from "markdown-it";
+import type { StateInline } from "markdown-it";
 
 function tokenize(state: StateInline, _silent: boolean): boolean {
   const start = state.pos;
@@ -24,12 +24,11 @@ function tokenize(state: StateInline, _silent: boolean): boolean {
     state.delimiters.push({
       marker,
       length: 0,
-      jump: i,
       token: state.tokens.length - 1,
       end: -1,
       open: scanned.can_open,
       close: scanned.can_close,
-    } as any);
+    });
   }
 
   state.pos += scanned.length;

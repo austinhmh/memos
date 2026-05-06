@@ -1,18 +1,17 @@
 import { create } from "@bufbuild/protobuf";
-import { FieldMaskSchema } from "@bufbuild/protobuf/wkt";
-import { timestampDate } from "@bufbuild/protobuf/wkt";
+import { FieldMaskSchema, timestampDate } from "@bufbuild/protobuf/wkt";
+import { useQueryClient } from "@tanstack/react-query";
 import { isEqual } from "lodash-es";
 import { CheckCircleIcon, Code2Icon, HashIcon, LinkIcon, PlusIcon, XIcon } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "react-hot-toast";
 import { memoServiceClient } from "@/connect";
 import useCurrentUser from "@/hooks/useCurrentUser";
 import { memoKeys } from "@/hooks/useMemoQueries";
 import { cn } from "@/lib/utils";
 import { Memo, Memo_PropertySchema, MemoRelation_Type } from "@/types/proto/api/v1/memo_service_pb";
-import { isSuperUser } from "@/utils/user";
 import { useTranslate } from "@/utils/i18n";
+import { isSuperUser } from "@/utils/user";
 import MemoRelationForceGraph from "../MemoRelationForceGraph";
 
 interface Props {
@@ -33,57 +32,66 @@ const MemoDetailSidebar = ({ memo, className, parentPage }: Props) => {
   const shouldShowRelationGraph = memo.relations.filter((r) => r.type === MemoRelation_Type.REFERENCE).length > 0;
   const canEdit = !!currentUser && (memo.creator === currentUser.name || isSuperUser(currentUser));
 
-  const invalidateMemo = useCallback((name: string) => {
-    queryClient.invalidateQueries({ queryKey: memoKeys.detail(name) });
-    queryClient.invalidateQueries({ queryKey: memoKeys.lists() });
-  }, [queryClient]);
+  const invalidateMemo = useCallback(
+    (name: string) => {
+      queryClient.invalidateQueries({ queryKey: memoKeys.detail(name) });
+      queryClient.invalidateQueries({ queryKey: memoKeys.lists() });
+    },
+    [queryClient],
+  );
 
-  const addTagToContent = useCallback(async (tag: string) => {
-    const normalizedTag = tag.replace(/^#/, "").trim();
-    if (!normalizedTag || !memo.name) return;
+  const addTagToContent = useCallback(
+    async (tag: string) => {
+      const normalizedTag = tag.replace(/^#/, "").trim();
+      if (!normalizedTag || !memo.name) return;
 
-    const tagText = `#${normalizedTag}`;
-    if (memo.content.includes(tagText)) {
-      toast.error(`标签 ${tagText} 已存在`);
-      return;
-    }
+      const tagText = `#${normalizedTag}`;
+      if (memo.content.includes(tagText)) {
+        toast.error(`标签 ${tagText} 已存在`);
+        return;
+      }
 
-    const trimmed = memo.content.replace(/\n+$/, "");
-    const newContent = trimmed + "\n\n" + tagText + "\n";
+      const trimmed = memo.content.replace(/\n+$/, "");
+      const newContent = trimmed + "\n\n" + tagText + "\n";
 
-    try {
-      await memoServiceClient.updateMemo({
-        memo: { name: memo.name, content: newContent },
-        updateMask: create(FieldMaskSchema, { paths: ["content"] }),
-      });
-      invalidateMemo(memo.name);
-      setTagValue("");
-      setShowTagInput(false);
-    } catch (err) {
-      console.error("Failed to add tag:", err);
-      toast.error("添加标签失败 Failed to add tag");
-    }
-  }, [memo, invalidateMemo]);
+      try {
+        await memoServiceClient.updateMemo({
+          memo: { name: memo.name, content: newContent },
+          updateMask: create(FieldMaskSchema, { paths: ["content"] }),
+        });
+        invalidateMemo(memo.name);
+        setTagValue("");
+        setShowTagInput(false);
+      } catch (err) {
+        console.error("Failed to add tag:", err);
+        toast.error("添加标签失败 Failed to add tag");
+      }
+    },
+    [memo, invalidateMemo],
+  );
 
-  const removeTagFromContent = useCallback(async (tag: string) => {
-    if (!memo.name) return;
-    const tagText = `#${tag}`;
-    const newContent = memo.content
-      .replace(new RegExp(`\\n*${tagText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*`, "g"), "")
-      .replace(/\n{3,}/g, "\n\n")
-      .replace(/\n+$/, "\n");
+  const removeTagFromContent = useCallback(
+    async (tag: string) => {
+      if (!memo.name) return;
+      const tagText = `#${tag}`;
+      const newContent = memo.content
+        .replace(new RegExp(`\\n*${tagText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*`, "g"), "")
+        .replace(/\n{3,}/g, "\n\n")
+        .replace(/\n+$/, "\n");
 
-    try {
-      await memoServiceClient.updateMemo({
-        memo: { name: memo.name, content: newContent },
-        updateMask: create(FieldMaskSchema, { paths: ["content"] }),
-      });
-      invalidateMemo(memo.name);
-    } catch (err) {
-      console.error("Failed to remove tag:", err);
-      toast.error("删除标签失败 Failed to remove tag");
-    }
-  }, [memo, invalidateMemo]);
+      try {
+        await memoServiceClient.updateMemo({
+          memo: { name: memo.name, content: newContent },
+          updateMask: create(FieldMaskSchema, { paths: ["content"] }),
+        });
+        invalidateMemo(memo.name);
+      } catch (err) {
+        console.error("Failed to remove tag:", err);
+        toast.error("删除标签失败 Failed to remove tag");
+      }
+    },
+    [memo, invalidateMemo],
+  );
 
   const handleTagSubmit = useCallback(() => {
     if (tagValue.trim()) {
@@ -202,7 +210,10 @@ const MemoDetailSidebar = ({ memo, className, parentPage }: Props) => {
                 添加
               </button>
               <button
-                onClick={() => { setShowTagInput(false); setTagValue(""); }}
+                onClick={() => {
+                  setShowTagInput(false);
+                  setTagValue("");
+                }}
                 className="p-0.5 rounded hover:bg-accent text-muted-foreground"
               >
                 <XIcon className="w-3.5 h-3.5" />
@@ -231,8 +242,8 @@ const MemoDetailSidebar = ({ memo, className, parentPage }: Props) => {
                 </div>
               ))}
             </div>
-          ) : !showTagInput && (
-            <p className="text-xs text-muted-foreground/50">无标签 No tags</p>
+          ) : (
+            !showTagInput && <p className="text-xs text-muted-foreground/50">无标签 No tags</p>
           )}
         </div>
       </div>

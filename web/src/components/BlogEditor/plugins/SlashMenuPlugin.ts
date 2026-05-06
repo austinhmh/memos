@@ -38,12 +38,7 @@ export function createSlashMenuPlugin(onStateChange: (state: SlashMenuState) => 
         if (!tr.docChanged && !tr.selectionSet) return prev;
 
         const { $from } = newState.selection;
-        const textBefore = $from.parent.textBetween(
-          Math.max(0, $from.parentOffset - 100),
-          $from.parentOffset,
-          undefined,
-          "\ufffc"
-        );
+        const textBefore = $from.parent.textBetween(Math.max(0, $from.parentOffset - 100), $from.parentOffset, undefined, "\ufffc");
 
         const match = /\/([^\s/]*)$/.exec(textBefore);
         if (match) {
@@ -67,12 +62,7 @@ export function createSlashMenuPlugin(onStateChange: (state: SlashMenuState) => 
           const { $from } = view.state.selection;
           if ($from.parent.type.spec.code) return false;
 
-          const textBefore = $from.parent.textBetween(
-            Math.max(0, $from.parentOffset - 1),
-            $from.parentOffset,
-            undefined,
-            "\ufffc"
-          );
+          const textBefore = $from.parent.textBetween(Math.max(0, $from.parentOffset - 1), $from.parentOffset, undefined, "\ufffc");
           if (textBefore && !/\s$/.test(textBefore) && textBefore.length > 0) {
             return false;
           }
@@ -98,7 +88,10 @@ export function createSlashMenuPlugin(onStateChange: (state: SlashMenuState) => 
             tr.delete(pluginState.from, pluginState.to);
           }
           tr.setMeta(slashMenuPluginKey, {
-            open: false, query: "", from: 0, to: 0,
+            open: false,
+            query: "",
+            from: 0,
+            to: 0,
           });
           view.dispatch(tr);
           return true;

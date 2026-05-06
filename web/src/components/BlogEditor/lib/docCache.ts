@@ -1,5 +1,5 @@
-import { Node } from "prosemirror-model";
 import type { Schema } from "prosemirror-model";
+import { Node } from "prosemirror-model";
 
 const DB_NAME = "memos-editor-cache";
 const DB_VERSION = 2;
@@ -63,17 +63,17 @@ function toTimestampKey(updateTime: unknown): string {
 
 let workerInstance: Worker | null = null;
 let workerIdCounter = 0;
-const workerCallbacks = new Map<string, {
-  resolve: (json: Record<string, unknown>) => void;
-  reject: (err: Error) => void;
-}>();
+const workerCallbacks = new Map<
+  string,
+  {
+    resolve: (json: Record<string, unknown>) => void;
+    reject: (err: Error) => void;
+  }
+>();
 
 function getWorker(): Worker {
   if (!workerInstance) {
-    workerInstance = new Worker(
-      new URL("./parseWorker.ts", import.meta.url),
-      { type: "module" },
-    );
+    workerInstance = new Worker(new URL("./parseWorker.ts", import.meta.url), { type: "module" });
     workerInstance.onmessage = (e: MessageEvent<{ id: string; json?: Record<string, unknown>; error?: string }>) => {
       const cb = workerCallbacks.get(e.data.id);
       if (!cb) return;

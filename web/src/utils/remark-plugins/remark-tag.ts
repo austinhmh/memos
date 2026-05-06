@@ -1,7 +1,10 @@
 import type { Root, Text } from "mdast";
-import type { Node as UnistNode } from "unist";
 import { visit } from "unist-util-visit";
 import type { TagNode, TagNodeData } from "@/types/markdown";
+
+type ParentWithChildren = {
+  children: Array<Text | TagNode>;
+};
 
 const MAX_TAG_LENGTH = 100;
 
@@ -105,7 +108,7 @@ export const remarkTag = () => {
       });
 
       if (typeof index === "number" && parent) {
-        (parent.children as UnistNode[]).splice(index, 1, ...(newNodes as UnistNode[]));
+        (parent as ParentWithChildren).children.splice(index, 1, ...newNodes);
       }
     });
   };

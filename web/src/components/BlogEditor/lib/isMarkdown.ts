@@ -20,12 +20,12 @@ export default function isMarkdown(text: string): boolean {
     signals += latex.length;
   }
 
-  const links = text.match(/\[[^]+\]\(https?:\/\/\S+\)/gm);
+  const links = text.match(/\[[\s\S]+\]\(https?:\/\/\S+\)/gm);
   if (links) {
     signals += links.length * 2;
   }
 
-  const relativeLinks = text.match(/\[[^]+\]\(\/\S+\)/gm);
+  const relativeLinks = text.match(/\[[\s\S]+\]\(\/\S+\)/gm);
   if (relativeLinks) {
     signals += relativeLinks.length * 2;
   }

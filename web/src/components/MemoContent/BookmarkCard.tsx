@@ -70,14 +70,17 @@ export default function BookmarkCard({ url: initialUrl, onUrlChange }: BookmarkC
     setIsEditingUrl(false);
   }, [currentUrl, onUrlChange]);
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      handleUrlSubmit();
-    } else if (e.key === "Escape") {
-      setIsEditingUrl(false);
-    }
-  }, [handleUrlSubmit]);
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        handleUrlSubmit();
+      } else if (e.key === "Escape") {
+        setIsEditingUrl(false);
+      }
+    },
+    [handleUrlSubmit],
+  );
 
   if (isLoading) {
     return <BookmarkCardSkeleton />;
@@ -139,15 +142,9 @@ export default function BookmarkCard({ url: initialUrl, onUrlChange }: BookmarkC
       >
         <div className="flex-1 min-w-0 p-3 flex flex-col justify-between">
           {data.title && (
-            <div className="font-medium text-sm text-foreground line-clamp-1 group-hover:text-primary transition-colors">
-              {data.title}
-            </div>
+            <div className="font-medium text-sm text-foreground line-clamp-1 group-hover:text-primary transition-colors">{data.title}</div>
           )}
-          {data.description && (
-            <div className="text-xs text-muted-foreground mt-1 line-clamp-2 leading-relaxed">
-              {data.description}
-            </div>
-          )}
+          {data.description && <div className="text-xs text-muted-foreground mt-1 line-clamp-2 leading-relaxed">{data.description}</div>}
           <div className="flex items-center gap-1.5 mt-2">
             {data.favicon && (
               <img

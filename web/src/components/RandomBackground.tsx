@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { STORAGE_KEY, fetchBgImagesFromServer } from "@/components/Settings/BackgroundSection";
+import { fetchBgImagesFromServer, STORAGE_KEY } from "@/components/Settings/BackgroundSection";
 
 interface BackgroundImage {
   url: string;
@@ -67,12 +67,7 @@ const RandomBackground = () => {
 
   return (
     <div className="fixed inset-0 -z-10 overflow-hidden" style={{ height: "100dvh" }}>
-      <img
-        src={bgUrl}
-        alt=""
-        className="absolute inset-0 w-full h-full object-cover"
-        draggable={false}
-      />
+      <img src={bgUrl} alt="" className="absolute inset-0 w-full h-full object-cover" draggable={false} />
       <div className="absolute inset-0 bg-black/30 dark:bg-black/40 backdrop-blur-[1px]" />
     </div>
   );

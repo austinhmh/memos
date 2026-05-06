@@ -6,19 +6,23 @@ interface SettingMenuItemProps {
   icon: LucideIcon;
   isSelected: boolean;
   onClick: () => void;
+  "data-testid"?: string;
 }
 
-const SectionMenuItem: React.FC<SettingMenuItemProps> = ({ text, icon: IconComponent, isSelected, onClick }) => {
+const SectionMenuItem: React.FC<SettingMenuItemProps> = ({ text, icon: IconComponent, isSelected, onClick, "data-testid": dataTestId }) => {
   return (
-    <div
+    <button
+      type="button"
       onClick={onClick}
-      className={`w-auto max-w-full px-3 leading-8 flex flex-row justify-start items-center cursor-pointer rounded-lg select-none hover:opacity-80 ${
+      aria-current={isSelected ? "page" : undefined}
+      data-testid={dataTestId}
+      className={`w-auto max-w-full px-3 leading-8 flex flex-row justify-start items-center cursor-pointer rounded-lg select-none hover:opacity-80 text-left ${
         isSelected ? "bg-accent shadow" : ""
       }`}
     >
-      <IconComponent className="w-4 h-auto mr-2 opacity-80 shrink-0" />
+      <IconComponent className="w-4 h-auto mr-2 opacity-80 shrink-0" aria-hidden="true" />
       <span className="truncate">{text}</span>
-    </div>
+    </button>
   );
 };
 

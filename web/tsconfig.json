@@ -32,6 +32,7 @@
   "include": ["./src"],
   "exclude": [
     "./src/outline-vendor/**/*",
-    "./src/outline-shims/shared/**/*"
+    "./src/outline-shims/shared/**/*",
+    "./src/components/OutlineEditorWrapper.tsx"
   ]
 }

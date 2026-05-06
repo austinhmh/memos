@@ -1,8 +1,8 @@
 import type { Node } from "prosemirror-model";
 import type { Transaction } from "prosemirror-state";
 import { Plugin, PluginKey, TextSelection } from "prosemirror-state";
-import { Decoration, DecorationSet } from "prosemirror-view";
 import type { EditorView } from "prosemirror-view";
+import { Decoration, DecorationSet } from "prosemirror-view";
 import { normalizeMermaidCode } from "@/lib/mermaid/normalizeMermaidCode";
 
 export const mermaidPluginKey = new PluginKey<MermaidState>("mermaid");
@@ -16,21 +16,18 @@ export type MermaidState = {
 
 type NodeWithPos = { node: Node; pos: number };
 type PendingRender = { block: NodeWithPos; isDark: boolean };
-type IdleTaskWindow = Window & typeof globalThis & {
-  requestIdleCallback?: (callback: (deadline: IdleDeadline) => void, options?: IdleRequestOptions) => number;
-  cancelIdleCallback?: (handle: number) => void;
-};
+type IdleTaskWindow = Window &
+  typeof globalThis & {
+    requestIdleCallback?: (callback: (deadline: IdleDeadline) => void, options?: IdleRequestOptions) => number;
+    cancelIdleCallback?: (handle: number) => void;
+  };
 
 const MERMAID_RENDER_DEBOUNCE = 450;
 const MERMAID_RENDER_IDLE_TIMEOUT = 1500;
 
-const scheduleMermaidIdleTask = (
-  callback: (deadline: IdleDeadline) => void,
-  timeout = MERMAID_RENDER_IDLE_TIMEOUT,
-) => {
+const scheduleMermaidIdleTask = (callback: (deadline: IdleDeadline) => void, timeout = MERMAID_RENDER_IDLE_TIMEOUT) => {
   if (typeof window === "undefined") {
-    return globalThis.setTimeout(() =>
-      callback({ didTimeout: false, timeRemaining: () => 0 } as IdleDeadline), 0);
+    return globalThis.setTimeout(() => callback({ didTimeout: false, timeRemaining: () => 0 } as IdleDeadline), 0);
   }
 
   const idleWindow = window as IdleTaskWindow;
@@ -38,10 +35,7 @@ const scheduleMermaidIdleTask = (
     return idleWindow.requestIdleCallback(callback, { timeout });
   }
 
-  return window.setTimeout(
-    () => callback({ didTimeout: false, timeRemaining: () => 0 } as IdleDeadline),
-    0,
-  );
+  return window.setTimeout(() => callback({ didTimeout: false, timeRemaining: () => 0 } as IdleDeadline), 0);
 };
 
 const cancelMermaidIdleTask = (handle?: number) => {
@@ -286,10 +280,7 @@ function overlap(start1: number, end1: number, start2: number, end2: number): nu
   return Math.max(0, Math.min(end1, end2) - Math.max(start1, start2));
 }
 
-function findBestOverlapDecoration(
-  decorations: Decoration[],
-  block: NodeWithPos,
-): Decoration | undefined {
+function findBestOverlapDecoration(decorations: Decoration[], block: NodeWithPos): Decoration | undefined {
   if (decorations.length === 0) return undefined;
   let best: Decoration | undefined;
   let bestScore = -1;
@@ -318,15 +309,7 @@ function findBlockNodes(doc: Node): NodeWithPos[] {
   return result;
 }
 
-function getNewState({
-  doc,
-  pluginState,
-  view,
-}: {
-  doc: Node;
-  pluginState: MermaidState;
-  view?: EditorView;
-}): MermaidState {
+function getNewState({ doc, pluginState, view }: { doc: Node; pluginState: MermaidState; view?: EditorView }): MermaidState {
   const decorations: Decoration[] = [];
   const blocks = findBlockNodes(doc).filter((item) => isMermaid(item.node));
 
@@ -339,8 +322,7 @@ function getNewState({
 
     const bestDecoration = findBestOverlapDecoration(existingDecorations, block);
     const renderer: MermaidRenderer =
-      (bestDecoration?.spec as { renderer?: MermaidRenderer } | undefined)?.renderer ??
-      new MermaidRenderer();
+      (bestDecoration?.spec as { renderer?: MermaidRenderer } | undefined)?.renderer ?? new MermaidRenderer();
     const editing =
       pluginState.editingId !== undefined &&
       ((bestDecoration?.spec as { diagramId?: string } | undefined)?.diagramId === pluginState.editingId ||
@@ -367,18 +349,17 @@ function getNewState({
       renderer.retry(block, pluginState.isDark);
     };
 
-    const diagramDecoration = Decoration.widget(
-      block.pos + block.node.nodeSize,
-      () => renderer.mount(block, pluginState.isDark, editing),
-      { diagramId: renderer.diagramId, renderer, side: -10, key: renderer.diagramId },
-    );
+    const diagramDecoration = Decoration.widget(block.pos + block.node.nodeSize, () => renderer.mount(block, pluginState.isDark, editing), {
+      diagramId: renderer.diagramId,
+      renderer,
+      side: -10,
+      key: renderer.diagramId,
+    });
 
-    const diagramIdDecoration = Decoration.node(
-      block.pos,
-      block.pos + block.node.nodeSize,
-      editing ? { class: "code-active" } : {},
-      { diagramId: renderer.diagramId, renderer },
-    );
+    const diagramIdDecoration = Decoration.node(block.pos, block.pos + block.node.nodeSize, editing ? { class: "code-active" } : {}, {
+      diagramId: renderer.diagramId,
+      renderer,
+    });
 
     decorations.push(diagramDecoration);
     decorations.push(diagramIdDecoration);
@@ -415,27 +396,15 @@ export function createMermaidPlugin(options: { isDark: boolean }): Plugin<Mermai
         isDark,
         initialized: false,
       }),
-      apply: (
-        transaction: Transaction,
-        pluginState: MermaidState,
-        oldState,
-        state,
-      ) => {
-        const mermaidMeta = transaction.getMeta(mermaidPluginKey) as
-          | Record<string, unknown>
-          | undefined;
-        const themeMeta = transaction.getMeta("theme") as
-          | { isDark?: boolean }
-          | undefined;
+      apply: (transaction: Transaction, pluginState: MermaidState, oldState, state) => {
+        const mermaidMeta = transaction.getMeta(mermaidPluginKey) as Record<string, unknown> | undefined;
+        const themeMeta = transaction.getMeta("theme") as { isDark?: boolean } | undefined;
         const themeToggled = themeMeta?.isDark !== undefined;
 
         const nextPluginState: MermaidState = {
           ...pluginState,
           isDark: themeToggled ? !!themeMeta!.isDark : pluginState.isDark,
-          editingId:
-            mermaidMeta && "editingId" in mermaidMeta
-              ? (mermaidMeta.editingId as string | undefined)
-              : pluginState.editingId,
+          editingId: mermaidMeta && "editingId" in mermaidMeta ? (mermaidMeta.editingId as string | undefined) : pluginState.editingId,
           decorationSet: pluginState.decorationSet.map(transaction.mapping, transaction.doc),
         };
 
@@ -447,22 +416,13 @@ export function createMermaidPlugin(options: { isDark: boolean }): Plugin<Mermai
         }
 
         // Auto-exit editing when cursor leaves the mermaid code block
-        if (
-          transaction.selectionSet &&
-          nextPluginState.editingId &&
-          !mermaidMeta
-        ) {
+        if (transaction.selectionSet && nextPluginState.editingId && !mermaidMeta) {
           const codeBlock = findParentCodeBlock(state);
           let isEditing = codeBlock && isMermaid(codeBlock.node);
 
           if (isEditing && codeBlock && !transaction.docChanged) {
-            const decorations = nextPluginState.decorationSet.find(
-              codeBlock.pos,
-              codeBlock.pos + codeBlock.node.nodeSize,
-            );
-            const nodeDecoration = decorations.find(
-              (d: Decoration) => d.spec.diagramId && d.from === codeBlock.pos,
-            );
+            const decorations = nextPluginState.decorationSet.find(codeBlock.pos, codeBlock.pos + codeBlock.node.nodeSize);
+            const nodeDecoration = decorations.find((d: Decoration) => d.spec.diagramId && d.from === codeBlock.pos);
             if (nodeDecoration?.spec.diagramId !== nextPluginState.editingId) {
               isEditing = false;
             }
@@ -473,18 +433,10 @@ export function createMermaidPlugin(options: { isDark: boolean }): Plugin<Mermai
           }
         }
 
-        const node = state.selection.$head.parent;
-        const previousNode = oldState.selection.$head.parent;
-        const codeBlockChanged =
-          transaction.docChanged &&
-          (isMermaid(node) || isMermaid(previousNode));
-
         // @ts-expect-error accessing private meta field
         const isPaste = transaction.meta?.paste;
 
-        const mermaidBlockCount = findBlockNodes(transaction.doc).filter(
-          (item) => isMermaid(item.node),
-        ).length;
+        const mermaidBlockCount = findBlockNodes(transaction.doc).filter((item) => isMermaid(item.node)).length;
         const existingMermaidDecorations = nextPluginState.decorationSet
           .find(0, transaction.doc.content.size, (spec: Record<string, unknown>) => !!spec.diagramId)
           .filter((d: Decoration) => d.from !== d.to).length;
@@ -598,19 +550,16 @@ export function createMermaidPlugin(options: { isDark: boolean }): Plugin<Mermai
             const parentNode = $pos.node($pos.depth);
 
             const mermaidState = mermaidPluginKey.getState(view.state) as MermaidState | undefined;
-            const decorations = mermaidState?.decorationSet.find(
-              parentPos,
-              parentPos + parentNode.nodeSize,
-              (spec: Record<string, unknown>) => !!spec.diagramId,
-            ) ?? [];
-            const nodeDecoration = decorations.find(
-              (d: Decoration) => d.spec.diagramId && d.from === parentPos,
-            );
+            const decorations =
+              mermaidState?.decorationSet.find(
+                parentPos,
+                parentPos + parentNode.nodeSize,
+                (spec: Record<string, unknown>) => !!spec.diagramId,
+              ) ?? [];
+            const nodeDecoration = decorations.find((d: Decoration) => d.spec.diagramId && d.from === parentPos);
             const diagramId = nodeDecoration?.spec.diagramId as string | undefined;
 
-            const tr = view.state.tr
-              .setSelection(TextSelection.near(view.state.doc.resolve(pos)))
-              .scrollIntoView();
+            const tr = view.state.tr.setSelection(TextSelection.near(view.state.doc.resolve(pos))).scrollIntoView();
 
             if (diagramId) {
               tr.setMeta(mermaidPluginKey, { editingId: diagramId });

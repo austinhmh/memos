@@ -9,18 +9,14 @@ interface UseIntelligentScrollSyncOptions {
 /**
  * Intelligent scroll synchronization between editor and preview
  * Maps editor line numbers to preview elements using data-source-line attributes
- * 
+ *
  * Key improvements:
  * - Directly monitors textarea scroll events (not wrapper container)
  * - Implements hybrid synchronization: progress-based + line-based
  * - Handles bidirectional synchronization with proper debouncing
  * - Accounts for content length differences between Markdown and rendered HTML
  */
-export const useIntelligentScrollSync = ({
-  editorTextAreaRef,
-  previewScrollRef,
-  content,
-}: UseIntelligentScrollSyncOptions) => {
+export const useIntelligentScrollSync = ({ editorTextAreaRef, previewScrollRef, content }: UseIntelligentScrollSyncOptions) => {
   const isSyncingRef = useRef(false);
   const lastSyncTimeRef = useRef(0);
   const lastScrollSourceRef = useRef<"editor" | "preview" | null>(null);
@@ -92,7 +88,7 @@ export const useIntelligentScrollSync = ({
 
       // Find element at the center of the visible area
       const centerScrollTop = previewScroll.scrollTop + previewScroll.clientHeight / 2;
-      
+
       let bestMatch = elementsWithLines[0];
       for (const item of elementsWithLines) {
         if (item.top <= centerScrollTop) {
@@ -169,7 +165,7 @@ export const useIntelligentScrollSync = ({
      */
     const handleEditorScroll = () => {
       const now = Date.now();
-      
+
       // Prevent sync loops and rate limit
       if (isSyncingRef.current || now - lastSyncTimeRef.current < 50) {
         return;
@@ -200,7 +196,7 @@ export const useIntelligentScrollSync = ({
      */
     const handlePreviewScroll = () => {
       const now = Date.now();
-      
+
       // Prevent sync loops and rate limit
       if (isSyncingRef.current || now - lastSyncTimeRef.current < 50) {
         return;

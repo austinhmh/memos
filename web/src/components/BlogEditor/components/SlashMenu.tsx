@@ -1,6 +1,6 @@
+import type { EditorView } from "prosemirror-view";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { EditorView } from "prosemirror-view";
 import type { SlashMenuItem, SlashMenuState } from "../plugins/SlashMenuPlugin";
 
 interface SlashMenuProps {
@@ -23,13 +23,12 @@ export const SlashMenu = ({ view, items, menuState }: SlashMenuProps) => {
     const poll = () => {
       try {
         const { $from } = view.state.selection;
-        const tb = $from.parent.textBetween(
-          Math.max(0, $from.parentOffset - 100),
-          $from.parentOffset, undefined, "\ufffc"
-        );
+        const tb = $from.parent.textBetween(Math.max(0, $from.parentOffset - 100), $from.parentOffset, undefined, "\ufffc");
         const m = /\/([^\s/]*)$/.exec(tb);
         setLiveQuery(m ? m[1] : "");
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
       raf = requestAnimationFrame(poll);
     };
     raf = requestAnimationFrame(poll);
@@ -40,11 +39,7 @@ export const SlashMenu = ({ view, items, menuState }: SlashMenuProps) => {
     return items.filter((item) => {
       if (!liveQuery) return true;
       const q = liveQuery.toLowerCase();
-      const tokens = [
-        item.id.toLowerCase(),
-        item.label.toLowerCase(),
-        ...(item.keywords ? item.keywords.toLowerCase().split(/\s+/) : []),
-      ];
+      const tokens = [item.id.toLowerCase(), item.label.toLowerCase(), ...(item.keywords ? item.keywords.toLowerCase().split(/\s+/) : [])];
       return tokens.some((token) => token.startsWith(q));
     });
   }, [items, liveQuery]);
@@ -164,15 +159,16 @@ export const SlashMenu = ({ view, items, menuState }: SlashMenuProps) => {
                 executeItem(item);
               }}
             >
-            <span
-                  className="slash-menu-icon"
-                  style={{
-                    backgroundColor: item.iconBg || undefined,
-                  }}
-                >{item.icon && item.iconColor && React.isValidElement(item.icon)
-                    ? React.cloneElement(item.icon as React.ReactElement<{ color?: string }>, { color: item.iconColor })
-                    : item.icon
-                }</span>
+              <span
+                className="slash-menu-icon"
+                style={{
+                  backgroundColor: item.iconBg || undefined,
+                }}
+              >
+                {item.icon && item.iconColor && React.isValidElement(item.icon)
+                  ? React.cloneElement(item.icon as React.ReactElement<{ color?: string }>, { color: item.iconColor })
+                  : item.icon}
+              </span>
               <span className="slash-menu-text">
                 <span className="slash-menu-label">{item.label}</span>
                 {item.subtitle && <span className="slash-menu-subtitle">{item.subtitle}</span>}

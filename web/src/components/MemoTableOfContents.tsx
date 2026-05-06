@@ -1,7 +1,7 @@
-import { useEffect, useState, useMemo } from "react";
 import { ListTreeIcon } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { useEffect, useMemo, useState } from "react";
 import slugify from "slugify";
+import { cn } from "@/lib/utils";
 
 interface TocItem {
   level: number;
@@ -113,9 +113,7 @@ const MemoTableOfContents = ({ content, className }: MemoTableOfContentsProps) =
                 className={cn(
                   "w-full text-left text-xs leading-5 py-0.5 rounded-sm transition-colors truncate cursor-pointer",
                   "hover:text-foreground hover:bg-accent/40",
-                  activeId === h.id
-                    ? "text-foreground font-medium bg-accent/30"
-                    : "text-muted-foreground",
+                  activeId === h.id ? "text-foreground font-medium bg-accent/30" : "text-muted-foreground",
                 )}
                 style={{ paddingLeft: `${indent * 12 + 4}px` }}
                 title={h.text}

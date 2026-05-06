@@ -1,15 +1,17 @@
-import { MarkdownParser } from "prosemirror-markdown";
 import MarkdownIt from "markdown-it";
+import type Token from "markdown-it/lib/token.mjs";
 import markdownItContainer from "markdown-it-container";
 import { full as emojiPlugin } from "markdown-it-emoji";
+import type { ParseSpec } from "prosemirror-markdown";
+import { MarkdownParser } from "prosemirror-markdown";
 import type { Schema } from "prosemirror-model";
-import { markdownMath } from "@/lib/markdown/rules/math";
 import { markdownCheckboxes } from "@/lib/markdown/rules/checkboxes";
-import { markdownTag } from "@/lib/markdown/rules/tag";
 import { markdownHighlight } from "@/lib/markdown/rules/highlight";
+import { markdownMath } from "@/lib/markdown/rules/math";
+import { markdownTag } from "@/lib/markdown/rules/tag";
 import { markdownUnderlines } from "@/lib/markdown/rules/underlines";
 
-function listIsTight(tokens: { type: string; hidden?: boolean }[], i: number): boolean {
+function listIsTight(tokens: readonly { type: string; hidden?: boolean }[], i: number): boolean {
   while (++i < tokens.length) {
     if (tokens[i].type !== "list_item_open" && tokens[i].type !== "checkbox_item_open") {
       return !!tokens[i].hidden;
@@ -17,6 +19,12 @@ function listIsTight(tokens: { type: string; hidden?: boolean }[], i: number): b
   }
   return false;
 }
+
+const getAlign = (tok: Token) => {
+  const style = tok.attrGet("style");
+  const match = style?.match(/text-align:\s*(left|center|right)/);
+  return { alignment: match ? match[1] : null };
+};
 
 let cachedTokenizer: MarkdownIt | null = null;
 
@@ -41,8 +49,12 @@ function getProseMirrorTokenizer(): MarkdownIt {
   md.core.ruler.push("prosemirror_compat", (state) => {
     for (const blockToken of state.tokens) {
       switch (blockToken.type) {
-        case "container_notice_open": blockToken.type = "blockquote_open"; break;
-        case "container_notice_close": blockToken.type = "blockquote_close"; break;
+        case "container_notice_open":
+          blockToken.type = "blockquote_open";
+          break;
+        case "container_notice_close":
+          blockToken.type = "blockquote_close";
+          break;
         case "math_block":
           blockToken.type = "fence";
           blockToken.info = "math";
@@ -89,24 +101,14 @@ function getProseMirrorTokenizer(): MarkdownIt {
         const children = tokens[i + 1].children || [];
         let bookmarkUrl: string | null = null;
 
-        if (
-          children.length === 3 &&
-          children[0].type === "link_open" &&
-          children[1].type === "text" &&
-          children[2].type === "link_close"
-        ) {
+        if (children.length === 3 && children[0].type === "link_open" && children[1].type === "text" && children[2].type === "link_close") {
           const href = children[0].attrGet("href") || "";
           if (href && children[1].content === href && !href.startsWith("#")) {
             bookmarkUrl = href;
           }
         }
 
-        if (
-          !bookmarkUrl &&
-          children.length === 1 &&
-          children[0].type === "text" &&
-          bareUrlPattern.test(children[0].content.trim())
-        ) {
+        if (!bookmarkUrl && children.length === 1 && children[0].type === "text" && bareUrlPattern.test(children[0].content.trim())) {
           bookmarkUrl = children[0].content.trim();
         }
 
@@ -128,34 +130,34 @@ function getProseMirrorTokenizer(): MarkdownIt {
 export function createMdParser(schema: Schema): MarkdownParser {
   const tokenizer = getProseMirrorTokenizer();
 
-  const tokens: Record<string, { block?: string; node?: string; mark?: string; ignore?: boolean; getAttrs?: (tok: any, tokens: any[], i: number) => Record<string, unknown>; noCloseToken?: boolean }> = {
+  const tokens: Record<string, ParseSpec> = {
     blockquote: { block: "blockquote" },
     paragraph: { block: "paragraph" },
     list_item: { block: "list_item" },
     checkbox_item: {
       block: "checkbox_item",
-      getAttrs: (tok: { attrGet: (name: string) => string | null }) => ({
+      getAttrs: (tok: Token) => ({
         checked: tok.attrGet("checked") === "true",
       }),
     },
     bullet_list: {
       block: "bullet_list",
-      getAttrs: (_tok: unknown, toks: { type: string; hidden?: boolean }[], i: number) => ({ tight: listIsTight(toks, i) }),
+      getAttrs: (_tok: Token, toks: Token[], i: number) => ({ tight: listIsTight(toks, i) }),
     },
     checkbox_list: {
       block: "checkbox_list",
-      getAttrs: (_tok: unknown, toks: { type: string; hidden?: boolean }[], i: number) => ({ tight: listIsTight(toks, i) }),
+      getAttrs: (_tok: Token, toks: Token[], i: number) => ({ tight: listIsTight(toks, i) }),
     },
     ordered_list: {
       block: "ordered_list",
-      getAttrs: (tok: { attrGet: (name: string) => string | null }, toks: { type: string; hidden?: boolean }[], i: number) => ({
+      getAttrs: (tok: Token, toks: Token[], i: number) => ({
         order: +(tok.attrGet("start") || 1),
         tight: listIsTight(toks, i),
       }),
     },
     heading: {
       block: "heading",
-      getAttrs: (tok: { tag: string }) => ({ level: Number(tok.tag.slice(1)) }),
+      getAttrs: (tok: Token) => ({ level: Number(tok.tag.slice(1)) }),
     },
     code_block: {
       block: "code_block",
@@ -164,16 +166,16 @@ export function createMdParser(schema: Schema): MarkdownParser {
     },
     fence: {
       block: "code_block",
-      getAttrs: (tok: { info?: string }) => ({ language: (tok.info || "").trim() }),
+      getAttrs: (tok: Token) => ({ language: (tok.info || "").trim() }),
       noCloseToken: true,
     },
     hr: { node: "horizontal_rule" },
     image: {
       node: "image",
-      getAttrs: (tok: { attrGet: (n: string) => string | null; children?: { content?: string }[] }) => ({
+      getAttrs: (tok: Token) => ({
         src: tok.attrGet("src"),
         title: tok.attrGet("title") || null,
-        alt: (tok.children?.[0] as { content?: string } | undefined)?.content ?? null,
+        alt: tok.children?.[0]?.content ?? null,
       }),
     },
     hardbreak: { node: "hard_break" },
@@ -184,19 +186,11 @@ export function createMdParser(schema: Schema): MarkdownParser {
     tr: { block: "table_row" },
     th: {
       block: "table_header",
-      getAttrs: (tok: { attrGet?: (n: string) => string | null; attrs?: [string, string][] }) => {
-        const style = typeof tok.attrGet === "function" ? tok.attrGet("style") : null;
-        const match = style?.match(/text-align:\s*(left|center|right)/);
-        return { alignment: match ? match[1] : null };
-      },
+      getAttrs: getAlign,
     },
     td: {
       block: "table_cell",
-      getAttrs: (tok: { attrGet?: (n: string) => string | null; attrs?: [string, string][] }) => {
-        const style = typeof tok.attrGet === "function" ? tok.attrGet("style") : null;
-        const match = style?.match(/text-align:\s*(left|center|right)/);
-        return { alignment: match ? match[1] : null };
-      },
+      getAttrs: getAlign,
     },
     em: { mark: "em" },
     strong: { mark: "strong" },
@@ -205,7 +199,7 @@ export function createMdParser(schema: Schema): MarkdownParser {
     underline: { mark: "underline" },
     link: {
       mark: "link",
-      getAttrs: (tok: { attrGet: (n: string) => string | null }) => ({
+      getAttrs: (tok: Token) => ({
         href: tok.attrGet("href"),
         title: tok.attrGet("title") || null,
       }),
@@ -213,7 +207,7 @@ export function createMdParser(schema: Schema): MarkdownParser {
     code_inline: { mark: "code", noCloseToken: true },
     bookmark: {
       node: "bookmark",
-      getAttrs: (tok: { attrGet: (n: string) => string | null }) => ({
+      getAttrs: (tok: Token) => ({
         url: tok.attrGet("url") || "",
       }),
     },

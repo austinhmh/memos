@@ -55,7 +55,7 @@ const StorageSection = () => {
     return !isEqual(originalSetting, instanceStorageSetting);
   }, [instanceStorageSetting, originalSetting]);
 
-  const handleMaxUploadSizeChanged = async (event: React.FocusEvent<HTMLInputElement>) => {
+  const handleMaxUploadSizeChanged = async (event: React.ChangeEvent<HTMLInputElement>) => {
     let num = parseInt(event.target.value);
     if (Number.isNaN(num)) {
       num = 0;
@@ -67,7 +67,7 @@ const StorageSection = () => {
     setInstanceStorageSetting(update);
   };
 
-  const handleFilepathTemplateChanged = async (event: React.FocusEvent<HTMLInputElement>) => {
+  const handleFilepathTemplateChanged = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const update = create(InstanceSetting_StorageSettingSchema, {
       ...instanceStorageSetting,
       filepathTemplate: event.target.value,
@@ -95,29 +95,29 @@ const StorageSection = () => {
     setInstanceStorageSetting(update);
   };
 
-  const handleS3ConfigAccessKeyIdChanged = async (event: React.FocusEvent<HTMLInputElement>) => {
+  const handleS3ConfigAccessKeyIdChanged = async (event: React.ChangeEvent<HTMLInputElement>) => {
     handlePartialS3ConfigChanged({ accessKeyId: event.target.value });
   };
 
-  const handleS3ConfigAccessKeySecretChanged = async (event: React.FocusEvent<HTMLInputElement>) => {
+  const handleS3ConfigAccessKeySecretChanged = async (event: React.ChangeEvent<HTMLInputElement>) => {
     handlePartialS3ConfigChanged({ accessKeySecret: event.target.value });
   };
 
-  const handleS3ConfigEndpointChanged = async (event: React.FocusEvent<HTMLInputElement>) => {
+  const handleS3ConfigEndpointChanged = async (event: React.ChangeEvent<HTMLInputElement>) => {
     handlePartialS3ConfigChanged({ endpoint: event.target.value });
   };
 
-  const handleS3ConfigRegionChanged = async (event: React.FocusEvent<HTMLInputElement>) => {
+  const handleS3ConfigRegionChanged = async (event: React.ChangeEvent<HTMLInputElement>) => {
     handlePartialS3ConfigChanged({ region: event.target.value });
   };
 
-  const handleS3ConfigBucketChanged = async (event: React.FocusEvent<HTMLInputElement>) => {
+  const handleS3ConfigBucketChanged = async (event: React.ChangeEvent<HTMLInputElement>) => {
     handlePartialS3ConfigChanged({ bucket: event.target.value });
   };
 
-  const handleS3ConfigUsePathStyleChanged = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleS3ConfigUsePathStyleChanged = (checked: boolean) => {
     handlePartialS3ConfigChanged({
-      usePathStyle: event.target.checked,
+      usePathStyle: checked,
     });
   };
 
@@ -169,7 +169,7 @@ const StorageSection = () => {
               <Label htmlFor="local">{t("setting.storage-section.type-local")}</Label>
             </div>
             <div className="flex items-center space-x-2">
-              <RadioGroupItem value={String(InstanceSetting_StorageSetting_StorageType.S3)} id="s3" />
+              <RadioGroupItem value={String(InstanceSetting_StorageSetting_StorageType.S3)} id="s3" data-testid="storage-s3-radio" />
               <Label htmlFor="s3">S3</Label>
             </div>
           </RadioGroup>
@@ -178,6 +178,7 @@ const StorageSection = () => {
         <SettingRow label={t("setting.system-section.max-upload-size")} tooltip={t("setting.system-section.max-upload-size-hint")}>
           <Input
             className="w-24 font-mono"
+            data-testid="storage-max-upload-size-input"
             value={String(instanceStorageSetting.uploadSizeLimitMb)}
             onChange={handleMaxUploadSizeChanged}
           />
@@ -187,9 +188,10 @@ const StorageSection = () => {
           <SettingRow label={t("setting.storage-section.filepath-template")}>
             <Input
               className="w-64"
-              value={instanceStorageSetting.filepathTemplate}
+              value={instanceStorageSetting.filepathTemplate ?? ""}
               placeholder="assets/{timestamp}_{filename}"
               onChange={handleFilepathTemplateChanged}
+              data-testid="storage-filepath-template-input"
             />
           </SettingRow>
         )}
@@ -198,45 +200,63 @@ const StorageSection = () => {
       {instanceStorageSetting.storageType === InstanceSetting_StorageSetting_StorageType.S3 && (
         <SettingGroup title="S3 Configuration" showSeparator>
           <SettingRow label="Access key id">
-            <Input className="w-64" value={instanceStorageSetting.s3Config?.accessKeyId} onChange={handleS3ConfigAccessKeyIdChanged} />
+            <Input
+              className="w-64"
+              value={instanceStorageSetting.s3Config?.accessKeyId ?? ""}
+              onChange={handleS3ConfigAccessKeyIdChanged}
+              data-testid="storage-s3-access-key-id-input"
+            />
           </SettingRow>
 
           <SettingRow label="Access key secret">
             <Input
               className="w-64"
               type="password"
-              value={instanceStorageSetting.s3Config?.accessKeySecret}
+              value={instanceStorageSetting.s3Config?.accessKeySecret ?? ""}
               onChange={handleS3ConfigAccessKeySecretChanged}
+              data-testid="storage-s3-access-key-secret-input"
             />
           </SettingRow>
 
           <SettingRow label="Endpoint">
-            <Input className="w-64" value={instanceStorageSetting.s3Config?.endpoint} onChange={handleS3ConfigEndpointChanged} />
+            <Input
+              className="w-64"
+              value={instanceStorageSetting.s3Config?.endpoint ?? ""}
+              onChange={handleS3ConfigEndpointChanged}
+              data-testid="storage-s3-endpoint-input"
+            />
           </SettingRow>
 
           <SettingRow label="Region">
-            <Input className="w-64" value={instanceStorageSetting.s3Config?.region} onChange={handleS3ConfigRegionChanged} />
+            <Input
+              className="w-64"
+              value={instanceStorageSetting.s3Config?.region ?? ""}
+              onChange={handleS3ConfigRegionChanged}
+              data-testid="storage-s3-region-input"
+            />
           </SettingRow>
 
           <SettingRow label="Bucket">
-            <Input className="w-64" value={instanceStorageSetting.s3Config?.bucket} onChange={handleS3ConfigBucketChanged} />
+            <Input
+              className="w-64"
+              value={instanceStorageSetting.s3Config?.bucket ?? ""}
+              onChange={handleS3ConfigBucketChanged}
+              data-testid="storage-s3-bucket-input"
+            />
           </SettingRow>
 
           <SettingRow label="Use Path Style">
             <Switch
-              checked={instanceStorageSetting.s3Config?.usePathStyle}
-              onCheckedChange={(checked) =>
-                handleS3ConfigUsePathStyleChanged({ target: { checked } } as React.ChangeEvent<HTMLInputElement> & {
-                  target: { checked: boolean };
-                })
-              }
+              checked={instanceStorageSetting.s3Config?.usePathStyle ?? false}
+              onCheckedChange={handleS3ConfigUsePathStyleChanged}
+              data-testid="storage-s3-use-path-style-switch"
             />
           </SettingRow>
         </SettingGroup>
       )}
 
       <div className="w-full flex justify-end">
-        <Button disabled={!allowSaveStorageSetting} onClick={saveInstanceStorageSetting}>
+        <Button disabled={!allowSaveStorageSetting} onClick={saveInstanceStorageSetting} data-testid="storage-save-button">
           {t("common.save")}
         </Button>
       </div>

@@ -9,11 +9,11 @@ export const rehypeLineNumbers = () => {
   return (tree: Root) => {
     visit(tree, "element", (node: Element) => {
       // Transfer sourceLine from data to HTML data attribute
-      if (node.data && (node.data as any).sourceLine) {
+      if (node.data?.sourceLine) {
         if (!node.properties) {
           node.properties = {};
         }
-        node.properties["data-source-line"] = (node.data as any).sourceLine;
+        node.properties["data-source-line"] = node.data.sourceLine;
       }
     });
   };

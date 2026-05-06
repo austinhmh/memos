@@ -9,7 +9,10 @@
 		"includes": [
 			"**",
 			"!!**/dist",
-			"!src/types/proto"
+			"!src/types/proto",
+			"!src/outline-vendor/**",
+			"!src/outline-shims/**",
+			"!src/components/OutlineEditorWrapper.tsx"
 		],
 		"ignoreUnknown": true
 	},
@@ -110,7 +113,10 @@
 			"**",
 			"!**/dist/**",
 			"!**/node_modules/**",
-			"!src/types/proto/**"
+			"!src/types/proto/**",
+			"!src/outline-vendor/**",
+			"!src/outline-shims/**",
+			"!src/components/OutlineEditorWrapper.tsx"
 		]
 	},
 	"javascript": {

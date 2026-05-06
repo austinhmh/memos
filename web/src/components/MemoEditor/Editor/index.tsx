@@ -4,8 +4,8 @@ import { cn } from "@/lib/utils";
 import { EDITOR_HEIGHT } from "../constants";
 import type { EditorProps } from "../types";
 import { editorCommands } from "./commands";
-import { handleMarkdownShortcuts } from "./shortcuts";
 import SlashCommands from "./SlashCommands";
+import { handleMarkdownShortcuts } from "./shortcuts";
 import TagSuggestions from "./TagSuggestions";
 import { useListCompletion } from "./useListCompletion";
 

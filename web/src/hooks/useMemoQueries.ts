@@ -1,6 +1,6 @@
 import { create } from "@bufbuild/protobuf";
 import { FieldMaskSchema } from "@bufbuild/protobuf/wkt";
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData, type QueryClient } from "@tanstack/react-query";
+import { type InfiniteData, type QueryClient, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { memoServiceClient } from "@/connect";
 import { userKeys } from "@/hooks/useUserQueries";
 import type { ListMemosRequest, ListMemosResponse, Memo } from "@/types/proto/api/v1/memo_service_pb";
@@ -29,26 +29,6 @@ function replaceMemoInListResponse(response: ListMemosResponse | undefined, upda
   return changed ? { ...response, memos } : response;
 }
 
-function replaceMemoInInfiniteList(
-  data: InfiniteData<ListMemosResponse> | undefined,
-  updatedMemo: Memo,
-): InfiniteData<ListMemosResponse> | undefined {
-  if (!data?.pages?.length) {
-    return data;
-  }
-
-  let changed = false;
-  const pages = data.pages.map((page) => {
-    const nextPage = replaceMemoInListResponse(page, updatedMemo);
-    if (nextPage !== page) {
-      changed = true;
-    }
-    return nextPage ?? page;
-  });
-
-  return changed ? { ...data, pages } : data;
-}
-
 function extractTagFilters(filter?: string): string[] {
   if (!filter) {
     return [];
@@ -67,11 +47,7 @@ function matchesKnownListFilters(updatedMemo: Memo, request?: Partial<ListMemosR
   return requiredTags.every((tag) => memoTags.includes(tag));
 }
 
-function syncMemoInListResponse(
-  response: ListMemosResponse | undefined,
-  updatedMemo: Memo,
-  request?: Partial<ListMemosRequest>,
-) {
+function syncMemoInListResponse(response: ListMemosResponse | undefined, updatedMemo: Memo, request?: Partial<ListMemosRequest>) {
   if (!response?.memos?.length) {
     return response;
   }
@@ -202,11 +178,7 @@ export function useCreateMemo() {
 
 export function useUpdateMemo(options: UseUpdateMemoOptions = {}) {
   const queryClient = useQueryClient();
-  const {
-    invalidateListsOnSuccess = true,
-    invalidateUserStatsOnSuccess = true,
-    syncListCaches = false,
-  } = options;
+  const { invalidateListsOnSuccess = true, invalidateUserStatsOnSuccess = true, syncListCaches = false } = options;
 
   const syncUpdatedMemoIntoKnownLists = (updatedMemo: Memo) => {
     syncMemoToListCaches(queryClient, updatedMemo);

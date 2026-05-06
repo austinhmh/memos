@@ -29,16 +29,14 @@ export function ViewProvider({ children }: { children: ReactNode }) {
           orderByTimeAsc: Boolean(data.orderByTimeAsc ?? false),
           layout: (["LIST", "MASONRY"].includes(data.layout) ? data.layout : "LIST") as LayoutMode,
           compactMode: (["auto", "always", "never"].includes(data.compactMode) ? data.compactMode : "auto") as CompactMode,
-          compactLines: typeof data.compactLines === "number" && data.compactLines >= 3 && data.compactLines <= 10 
-            ? data.compactLines 
-            : 6,
+          compactLines: typeof data.compactLines === "number" && data.compactLines >= 3 && data.compactLines <= 10 ? data.compactLines : 6,
         };
       }
     } catch (error) {
       console.warn("Failed to load view settings from localStorage:", error);
     }
-    return { 
-      orderByTimeAsc: false, 
+    return {
+      orderByTimeAsc: false,
       layout: "LIST" as LayoutMode,
       compactMode: "auto" as CompactMode,
       compactLines: 6,

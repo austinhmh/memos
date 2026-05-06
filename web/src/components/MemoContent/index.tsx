@@ -1,7 +1,7 @@
 import { memo } from "react";
+import { MarkdownRenderer } from "@/lib/markdown/MarkdownRenderer";
 import { cn } from "@/lib/utils";
 import { useTranslate } from "@/utils/i18n";
-import { MarkdownRenderer } from "@/lib/markdown/MarkdownRenderer";
 import { useCompactLabel, useCompactMode } from "./hooks";
 import type { MemoContentProps } from "./types";
 

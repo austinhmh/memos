@@ -22,7 +22,14 @@ interface UseMemoActionHandlersOptions {
   setRemoveTasksDialogOpen: (open: boolean) => void;
 }
 
-export const useMemoActionHandlers = ({ memo, onEdit, isDetailPage, deleteSuccessPath, setDeleteDialogOpen, setRemoveTasksDialogOpen }: UseMemoActionHandlersOptions) => {
+export const useMemoActionHandlers = ({
+  memo,
+  onEdit,
+  isDetailPage,
+  deleteSuccessPath,
+  setDeleteDialogOpen,
+  setRemoveTasksDialogOpen,
+}: UseMemoActionHandlersOptions) => {
   const t = useTranslate();
   const location = useLocation();
   const navigateTo = useNavigateTo();

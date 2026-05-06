@@ -396,6 +396,10 @@ func StartMemosContainer(ctx context.Context, cfg MemosContainerConfig) (testcon
 	switch cfg.Driver {
 	case "sqlite":
 		env["MEMOS_DRIVER"] = "sqlite"
+		hostUser := fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
+		opts = append(opts, testcontainers.WithConfigModifier(func(config *container.Config) {
+			config.User = hostUser
+		}))
 		opts = append(opts, testcontainers.WithHostConfigModifier(func(hc *container.HostConfig) {
 			hc.Binds = append(hc.Binds, fmt.Sprintf("%s:%s", cfg.DataDir, "/var/opt/memos"))
 		}))

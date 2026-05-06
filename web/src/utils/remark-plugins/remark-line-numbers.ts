@@ -1,6 +1,16 @@
 import type { Root } from "mdast";
-import type { Node } from "unist";
 import { visit } from "unist-util-visit";
+
+type NodeWithLineData = {
+  position?: {
+    start?: {
+      line?: number;
+    };
+  };
+  data?: {
+    sourceLine?: number;
+  };
+};
 
 /**
  * Remark plugin to add source line number information to AST nodes
@@ -8,14 +18,14 @@ import { visit } from "unist-util-visit";
  */
 export const remarkLineNumbers = () => {
   return (tree: Root) => {
-    visit(tree, (node: Node) => {
+    visit(tree, (node: NodeWithLineData) => {
       // Add line number information from position data
       if (node.position?.start?.line) {
         if (!node.data) {
           node.data = {};
         }
         // Store the starting line number
-        (node.data as any).sourceLine = node.position.start.line;
+        node.data.sourceLine = node.position.start.line;
       }
     });
   };

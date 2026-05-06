@@ -2,11 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Memo } from "@/types/proto/api/v1/memo_service_pb";
 import { MINIMUM_MEMO_VIEWPORT_WIDTH } from "./constants";
 
-export function useMasonryLayout(
-  memoList: Memo[],
-  listMode: boolean,
-  containerRef: React.RefObject<HTMLDivElement>,
-) {
+export function useMasonryLayout(memoList: Memo[], listMode: boolean, containerRef: React.RefObject<HTMLDivElement>) {
   const [columns, setColumns] = useState(1);
   const [distribution, setDistribution] = useState<number[][]>([[]]);
 
@@ -15,7 +11,7 @@ export function useMasonryLayout(
 
     const containerWidth = containerRef.current.offsetWidth;
     const scale = containerWidth / MINIMUM_MEMO_VIEWPORT_WIDTH;
-    
+
     // Maximum 2 columns for better visibility
     if (scale >= 2.0) return 2;
     if (scale >= 1.2) return 2;

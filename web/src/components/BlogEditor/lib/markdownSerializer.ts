@@ -1,15 +1,7 @@
-import type { Node, Mark } from "prosemirror-model";
-import {
-  MarkdownSerializer,
-  type MarkdownSerializerState,
-} from "prosemirror-markdown";
+import { MarkdownSerializer, type MarkdownSerializerState } from "prosemirror-markdown";
+import type { Mark, Node } from "prosemirror-model";
 
-type NodeSerializer = (
-  state: MarkdownSerializerState,
-  node: Node,
-  parent: Node,
-  index: number,
-) => void;
+type NodeSerializer = (state: MarkdownSerializerState, node: Node, parent: Node, index: number) => void;
 type MarkSpec = {
   open: string | ((state: MarkdownSerializerState, mark: Mark, parent: Node, index: number) => string);
   close: string | ((state: MarkdownSerializerState, mark: Mark, parent: Node, index: number) => string);
@@ -147,7 +139,7 @@ export function createMdSerializer(): MarkdownSerializer {
       state.text(node.text!, true);
     },
     bookmark(state, node) {
-      state.write(node.attrs.url as string || "");
+      state.write((node.attrs.url as string) || "");
       state.closeBlock(node);
     },
   };

@@ -22,7 +22,9 @@ interface Props {
 
 function CreateUserDialog({ open, onOpenChange, user: initialUser, onSuccess }: Props) {
   const t = useTranslate();
-  const [user, setUser] = useState(create(UserSchema, initialUser ? { username: initialUser.username, role: initialUser.role } : {}));
+  const [user, setUser] = useState<User>(() =>
+    create(UserSchema, initialUser ? { username: initialUser.username, role: initialUser.role } : {}),
+  );
   const requestState = useLoading(false);
   const isCreating = !initialUser;
 
@@ -35,10 +37,10 @@ function CreateUserDialog({ open, onOpenChange, user: initialUser, onSuccess }: 
   }, [initialUser]);
 
   const setPartialUser = (state: Partial<User>) => {
-    setUser({
+    setUser((user) => ({
       ...user,
       ...state,
-    });
+    }));
   };
 
   const handleConfirm = async () => {
@@ -53,7 +55,7 @@ function CreateUserDialog({ open, onOpenChange, user: initialUser, onSuccess }: 
         await userServiceClient.createUser({ user });
         toast.success("Create user successfully");
       } else {
-        const updateMask = [];
+        const updateMask: string[] = [];
         if (user.username !== initialUser?.username) {
           updateMask.push("username");
         }

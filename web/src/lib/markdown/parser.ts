@@ -1,10 +1,10 @@
 import MarkdownIt from "markdown-it";
 import markdownItContainer from "markdown-it-container";
 import { full as emojiPlugin } from "markdown-it-emoji";
-import { markdownMath } from "./rules/math";
 import { markdownCheckboxes } from "./rules/checkboxes";
-import { markdownTag } from "./rules/tag";
 import { markdownHighlight } from "./rules/highlight";
+import { markdownMath } from "./rules/math";
+import { markdownTag } from "./rules/tag";
 import { markdownUnderlines } from "./rules/underlines";
 
 let cachedParser: MarkdownIt | null = null;

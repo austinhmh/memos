@@ -123,12 +123,7 @@ const MemoEditorImpl: React.FC<MemoEditorProps> = ({
 
   if (compact) {
     return (
-      <div
-        className={cn(
-          "group relative w-full flex flex-col bg-card px-4 pt-3 pb-1 rounded-lg border border-border gap-2",
-          className,
-        )}
-      >
+      <div className={cn("group relative w-full flex flex-col bg-card px-4 pt-3 pb-1 rounded-lg border border-border gap-2", className)}>
         <EditorContent ref={editorRef} placeholder={placeholder} autoFocus={autoFocus} compact />
         <div className="w-full flex flex-col gap-2 flex-shrink-0">
           <EditorMetadata memoName={memoName} />

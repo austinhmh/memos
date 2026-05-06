@@ -1,7 +1,7 @@
-import { Plugin } from "prosemirror-state";
-import { Slice, Fragment } from "prosemirror-model";
 import type { MarkdownParser } from "prosemirror-markdown";
 import type { Schema } from "prosemirror-model";
+import { Fragment, Slice } from "prosemirror-model";
+import { Plugin } from "prosemirror-state";
 import isMarkdown from "../lib/isMarkdown";
 import normalizePastedMarkdown from "../lib/normalizePastedMarkdown";
 
@@ -9,10 +9,7 @@ import normalizePastedMarkdown from "../lib/normalizePastedMarkdown";
  * ProseMirror plugin that intercepts paste events and parses pasted
  * Markdown text into structured ProseMirror nodes.
  */
-export function createPasteHandlerPlugin(
-  schema: Schema,
-  parser: MarkdownParser,
-) {
+export function createPasteHandlerPlugin(schema: Schema, parser: MarkdownParser) {
   return new Plugin({
     props: {
       handlePaste(view, event) {
@@ -72,11 +69,7 @@ export function createPasteHandlerPlugin(
 
           const slice = parsed.slice(0);
           const singleNode =
-            slice.openStart === 0 &&
-            slice.openEnd === 0 &&
-            slice.content.childCount === 1
-              ? slice.content.firstChild
-              : null;
+            slice.openStart === 0 && slice.openEnd === 0 && slice.content.childCount === 1 ? slice.content.firstChild : null;
 
           const tr = view.state.tr;
 
@@ -86,12 +79,7 @@ export function createPasteHandlerPlugin(
             tr.replaceSelection(slice);
           }
 
-          view.dispatch(
-            tr
-              .scrollIntoView()
-              .setMeta("paste", true)
-              .setMeta("uiEvent", "paste"),
-          );
+          view.dispatch(tr.scrollIntoView().setMeta("paste", true).setMeta("uiEvent", "paste"));
           console.log("[PasteHandler] SUCCESS: dispatched parsed content");
           return true;
         } catch (err) {
@@ -124,10 +112,7 @@ export function createPasteHandlerPlugin(
           if (!trimmed) {
             return schema.nodes.paragraph.create();
           }
-          return schema.nodes.paragraph.create(
-            null,
-            trimmed ? schema.text(trimmed) : undefined,
-          );
+          return schema.nodes.paragraph.create(null, trimmed ? schema.text(trimmed) : undefined);
         });
         return new Slice(Fragment.from(nodes), 0, 0);
       },

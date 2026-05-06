@@ -1,8 +1,8 @@
 import type { Node } from "prosemirror-model";
-import type { Transaction, EditorState } from "prosemirror-state";
-import { Plugin, PluginKey, NodeSelection } from "prosemirror-state";
-import { DecorationSet } from "prosemirror-view";
+import type { EditorState, Transaction } from "prosemirror-state";
+import { NodeSelection, Plugin, PluginKey } from "prosemirror-state";
 import type { EditorView, NodeView } from "prosemirror-view";
+import { DecorationSet } from "prosemirror-view";
 
 export const bookmarkPluginKey = new PluginKey<BookmarkState>("bookmark");
 
@@ -68,11 +68,11 @@ class BookmarkNodeView implements NodeView {
   private cardElement: HTMLElement;
   private editButton: HTMLButtonElement;
   private view: EditorView;
-  private getPos: () => number;
+  private getPos: () => number | undefined;
   private lastUrl: string;
   private isEditing = false;
 
-  constructor(node: Node, view: EditorView, getPos: () => number) {
+  constructor(node: Node, view: EditorView, getPos: () => number | undefined) {
     this.view = view;
     this.getPos = getPos;
     this.lastUrl = (node.attrs.url as string) || "";
@@ -184,6 +184,7 @@ class BookmarkNodeView implements NodeView {
   private commitUrl(rawUrl: string) {
     const url = this.normalizeUrl(rawUrl);
     const pos = this.getPos();
+    if (pos === undefined) return;
     const node = this.view.state.doc.nodeAt(pos);
     if (!node || node.type.name !== "bookmark") return;
 
@@ -195,6 +196,7 @@ class BookmarkNodeView implements NodeView {
 
   private deleteNode() {
     const pos = this.getPos();
+    if (pos === undefined) return;
     const node = this.view.state.doc.nodeAt(pos);
     if (!node || node.type.name !== "bookmark") return;
 
@@ -206,6 +208,7 @@ class BookmarkNodeView implements NodeView {
 
   private enterEditing() {
     const pos = this.getPos();
+    if (pos === undefined) return;
     const tr = this.view.state.tr.setMeta(bookmarkPluginKey, { editingPos: pos });
     this.view.dispatch(tr);
   }
@@ -330,7 +333,9 @@ class BookmarkNodeView implements NodeView {
       const img = document.createElement("img");
       img.src = data.image;
       img.alt = "";
-      img.onerror = () => { thumb.style.display = "none"; };
+      img.onerror = () => {
+        thumb.style.display = "none";
+      };
       thumb.appendChild(img);
       link.appendChild(thumb);
     }
@@ -405,7 +410,6 @@ class BookmarkNodeView implements NodeView {
 const activeNodeViews = new Set<BookmarkNodeView>();
 
 export function createBookmarkPlugin(): Plugin<BookmarkState> {
-  let currentView: EditorView | undefined;
   let lastEditingPos: number | null = null;
 
   return new Plugin<BookmarkState>({
@@ -414,15 +418,8 @@ export function createBookmarkPlugin(): Plugin<BookmarkState> {
       init: () => ({
         editingPos: null,
       }),
-      apply: (
-        transaction: Transaction,
-        pluginState: BookmarkState,
-        _oldState: EditorState,
-        _state: EditorState,
-      ) => {
-        const meta = transaction.getMeta(bookmarkPluginKey) as
-          | { editingPos?: number | null }
-          | undefined;
+      apply: (transaction: Transaction, pluginState: BookmarkState, _oldState: EditorState, _state: EditorState) => {
+        const meta = transaction.getMeta(bookmarkPluginKey) as { editingPos?: number | null } | undefined;
 
         let nextEditingPos = pluginState.editingPos;
         if (meta && "editingPos" in meta) {
@@ -434,11 +431,9 @@ export function createBookmarkPlugin(): Plugin<BookmarkState> {
         return { editingPos: nextEditingPos };
       },
     },
-    view(view: EditorView) {
-      currentView = view;
+    view() {
       return {
         update(view: EditorView) {
-          currentView = view;
           const ps = bookmarkPluginKey.getState(view.state);
           const newEditingPos = ps?.editingPos ?? null;
           if (newEditingPos !== lastEditingPos) {
@@ -448,15 +443,12 @@ export function createBookmarkPlugin(): Plugin<BookmarkState> {
             }
           }
         },
-        destroy() {
-          currentView = undefined;
-        },
       };
     },
     props: {
       nodeViews: {
-        bookmark(node: Node, view: EditorView, getPos: (() => number) | boolean) {
-          return new BookmarkNodeView(node, view, getPos as () => number);
+        bookmark(node: Node, view: EditorView, getPos: () => number | undefined) {
+          return new BookmarkNodeView(node, view, getPos);
         },
       },
     },

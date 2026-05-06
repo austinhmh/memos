@@ -1,4 +1,4 @@
-import { lazy, type ComponentType } from "react";
+import { type ComponentType, lazy } from "react";
 
 const RETRY_STORAGE_PREFIX = "memos:lazy-retry:";
 const RETRYABLE_CHUNK_ERROR_PATTERNS = [
@@ -15,10 +15,7 @@ const isRetryableChunkError = (error: unknown): boolean => {
   return RETRYABLE_CHUNK_ERROR_PATTERNS.some((pattern) => pattern.test(message));
 };
 
-export const lazyWithRetry = <T extends ComponentType<any>>(
-  importer: () => Promise<{ default: T }>,
-  key: string,
-) =>
+export const lazyWithRetry = <P extends object>(importer: () => Promise<{ default: ComponentType<P> }>, key: string) =>
   lazy(async () => {
     try {
       const module = await importer();
@@ -42,6 +39,6 @@ export const lazyWithRetry = <T extends ComponentType<any>>(
 
       sessionStorage.setItem(storageKey, currentLocation);
       window.location.reload();
-      return new Promise<{ default: T }>(() => {});
+      return new Promise<{ default: ComponentType<P> }>(() => {});
     }
   });

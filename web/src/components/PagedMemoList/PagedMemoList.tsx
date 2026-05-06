@@ -149,9 +149,7 @@ const PagedMemoList = (props: Props) => {
         <Skeleton showCreator={props.showCreator} count={4} />
       ) : (
         <>
-          <div className="w-full flex flex-col gap-2">
-            {sortedMemoList.map((memo) => props.renderer(memo))}
-          </div>
+          <div className="w-full flex flex-col gap-2">{sortedMemoList.map((memo) => props.renderer(memo))}</div>
 
           {isFetchingNextPage && <Skeleton showCreator={props.showCreator} count={2} />}
 

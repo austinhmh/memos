@@ -1,53 +1,21 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "strict": false,
-    "strictNullChecks": false,
-    "strictFunctionTypes": false,
-    "strictPropertyInitialization": false,
-    "baseUrl": ".",
     "paths": {
-      "@/outline-vendor/*": [
-        "./types/outline-lint-stubs.ts"
-      ],
-      "@/outline-shims/*": [
-        "./types/outline-lint-stubs.ts"
-      ],
-      "@shared/editor/*": [
-        "./types/outline-lint-stubs.ts"
-      ],
-      "@shared/*": [
-        "./types/outline-lint-stubs.ts"
-      ],
-      "~/editor/*": [
-        "./types/outline-lint-stubs.ts"
-      ],
-      "~/editor": [
-        "./types/outline-lint-stubs.ts"
-      ],
-      "~/*": [
-        "./types/outline-lint-stubs.ts"
-      ],
-      "@/*": [
-        "./src/*"
-      ],
-      "@/components/Settings/StorageSection": [
-        "./types/outline-lint-stubs.ts"
-      ]
+      "@/*": ["./src/*"],
+      "@/outline-vendor/*": ["./types/outline-lint-stubs.d.ts"],
+      "@/outline-shims/*": ["./types/outline-lint-stubs.d.ts"],
+      "@shared/editor/*": ["./types/outline-lint-stubs.d.ts"],
+      "@shared/*": ["./types/outline-lint-stubs.d.ts"],
+      "~/editor/*": ["./types/outline-lint-stubs.d.ts"],
+      "~/editor": ["./types/outline-lint-stubs.d.ts"],
+      "~/*": ["./types/outline-lint-stubs.d.ts"]
     }
   },
-  "include": [
-    "./src/types/i18n.d.ts",
-    "./src/components/Settings/BackupSection.tsx",
-    "./src/hooks/useBackupQueries.ts",
-    "./src/pages/Setting.tsx",
-    "./src/utils/i18n.ts",
-    "./types/outline-lint-stubs.ts"
-  ],
+  "include": ["./src", "./types/outline-lint-stubs.d.ts"],
   "exclude": [
     "./src/outline-vendor/**/*",
     "./src/outline-shims/**/*",
-    "./node_modules/**/*",
-    "./dist/**/*"
+    "./src/components/OutlineEditorWrapper.tsx"
   ]
 }

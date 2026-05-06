@@ -62,7 +62,11 @@ export const useMemoFilters = (options: UseMemoFiltersOptions = {}): string | un
     }
 
     // 清理可能破坏 filter 语法的字符（如误粘贴的 HTML 标签、双引号）
-    const safeFilterValue = (v: string) => v.replace(/"/g, "").replace(/<[^>]+>/g, "").trim() || v;
+    const safeFilterValue = (v: string) =>
+      v
+        .replace(/"/g, "")
+        .replace(/<[^>]+>/g, "")
+        .trim() || v;
 
     // Add active filters from context
     for (const filter of filters) {

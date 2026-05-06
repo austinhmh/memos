@@ -1,13 +1,13 @@
+import { create } from "@bufbuild/protobuf";
 import { PlusIcon } from "lucide-react";
 import { useCallback, useMemo } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
-import { create } from "@bufbuild/protobuf";
+import { NavLink, useNavigate } from "react-router-dom";
 import TagsSection from "@/components/MemoExplorer/TagsSection";
 import { Button } from "@/components/ui/button";
 import { useMemoFilters } from "@/hooks";
 import useCurrentUser from "@/hooks/useCurrentUser";
-import { useMemos, useCreateMemo } from "@/hooks/useMemoQueries";
+import { useCreateMemo, useMemos } from "@/hooks/useMemoQueries";
 import { cn } from "@/lib/utils";
 import { MemoSchema, Visibility } from "@/types/proto/api/v1/memo_service_pb";
 
@@ -22,10 +22,7 @@ const BlogExplorer = ({ className }: Props) => {
   const navigate = useNavigate();
   const createMemo = useCreateMemo();
   const contextualFilter = useMemoFilters({ includeShortcuts: false, includePinned: false });
-  const blogFilter = useMemo(
-    () => (contextualFilter ? `${BLOG_FILTER} && ${contextualFilter}` : BLOG_FILTER),
-    [contextualFilter],
-  );
+  const blogFilter = useMemo(() => (contextualFilter ? `${BLOG_FILTER} && ${contextualFilter}` : BLOG_FILTER), [contextualFilter]);
 
   const { data } = useMemos({
     filter: blogFilter,
@@ -67,7 +64,12 @@ const BlogExplorer = ({ className }: Props) => {
   }, [currentUser, navigate, createMemo]);
 
   return (
-    <aside className={cn("relative w-full h-full overflow-auto flex flex-col justify-start items-start bg-background text-sidebar-foreground", className)}>
+    <aside
+      className={cn(
+        "relative w-full h-full overflow-auto flex flex-col justify-start items-start bg-background text-sidebar-foreground",
+        className,
+      )}
+    >
       <div className="w-full flex items-center justify-between mb-4">
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Documents</h2>
         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleNewDoc} title="New document">

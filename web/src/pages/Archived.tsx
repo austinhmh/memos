@@ -21,9 +21,7 @@ const Archived = () => {
 
   return (
     <PagedMemoList
-      renderer={(memo: Memo) => (
-        <MemoPreviewCard key={`${memo.name}-${memo.updateTime}`} memo={memo} showVisibility />
-      )}
+      renderer={(memo: Memo) => <MemoPreviewCard key={`${memo.name}-${memo.updateTime}`} memo={memo} showVisibility />}
       listSort={listSort}
       state={State.ARCHIVED}
       orderBy={orderBy}

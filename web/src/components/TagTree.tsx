@@ -19,7 +19,7 @@ const TagTree = ({ tagAmounts: rawTagAmounts, expandSubTags }: Props) => {
   const [tags, setTags] = useState<Tag[]>([]);
 
   useEffect(() => {
-    const sortedTagAmounts = Array.from(rawTagAmounts).sort();
+    const sortedTagAmounts: [tag: string, amount: number][] = Array.from(rawTagAmounts).sort();
     const root: Tag = {
       key: "",
       text: "",
@@ -45,14 +45,7 @@ const TagTree = ({ tagAmounts: rawTagAmounts, expandSubTags }: Props) => {
           amount = tagAmount[1];
         }
 
-        let obj = null;
-
-        for (const t of tempObj.subTags) {
-          if (t.text === tagText) {
-            obj = t;
-            break;
-          }
-        }
+        let obj = tempObj.subTags.find((t) => t.text === tagText);
 
         if (!obj) {
           obj = {
@@ -68,7 +61,7 @@ const TagTree = ({ tagAmounts: rawTagAmounts, expandSubTags }: Props) => {
       }
     }
 
-    setTags(root.subTags as Tag[]);
+    setTags(root.subTags);
   }, [rawTagAmounts]);
 
   return (

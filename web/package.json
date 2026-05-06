@@ -1,11 +1,14 @@
 {
   "name": "memos",
   "private": true,
+  "engines": {
+    "node": "^20.19.0 || ^22.12.0 || >=24.0.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "release": "vite build --mode release --outDir=../server/router/frontend/dist --emptyOutDir",
-    "lint": "tsc -p tsconfig.lint.json --noEmit --skipLibCheck && biome check src/components/Settings/BackupSection.tsx src/hooks/useBackupQueries.ts src/pages/Setting.tsx src/utils/i18n.ts",
+    "lint": "tsc -p tsconfig.lint.json --noEmit --skipLibCheck && biome check src"
     "lint:fix": "biome check --write src",
     "format": "biome format --write src",
     "test": "vitest run",

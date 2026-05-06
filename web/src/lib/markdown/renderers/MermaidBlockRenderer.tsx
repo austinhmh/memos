@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { normalizeMermaidCode } from "@/lib/mermaid/normalizeMermaidCode";
 import { renderMermaid } from "@/lib/mermaid/mermaidInit";
+import { normalizeMermaidCode } from "@/lib/mermaid/normalizeMermaidCode";
 import { cn } from "@/lib/utils";
 import { getThemeWithFallback, resolveTheme, setupSystemThemeListener } from "@/utils/theme";
 
@@ -49,7 +49,9 @@ export const MermaidBlockRenderer: React.FC<MermaidBlockRendererProps> = ({ code
     return (
       <div className="w-full">
         <div className="text-sm text-destructive mb-2">Mermaid Error: {error}</div>
-        <pre><code className="language-mermaid">{code}</code></pre>
+        <pre>
+          <code className="language-mermaid">{code}</code>
+        </pre>
       </div>
     );
   }

@@ -80,11 +80,7 @@ function hasHeadingInRange(doc: ProsemirrorNode, range: ChangedRange): boolean {
   return found;
 }
 
-function transactionTouchesHeadings(
-  tr: Transaction,
-  oldDoc: ProsemirrorNode,
-  newDoc: ProsemirrorNode,
-): boolean {
+function transactionTouchesHeadings(tr: Transaction, oldDoc: ProsemirrorNode, newDoc: ProsemirrorNode): boolean {
   if (!tr.docChanged) {
     return false;
   }

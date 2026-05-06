@@ -1,7 +1,7 @@
-import { InputRule, ellipsis, inputRules, smartQuotes, textblockTypeInputRule, wrappingInputRule } from "prosemirror-inputrules";
+import { ellipsis, InputRule, inputRules, smartQuotes, textblockTypeInputRule, wrappingInputRule } from "prosemirror-inputrules";
 import type { Schema } from "prosemirror-model";
-import { TextSelection } from "prosemirror-state";
 import type { Command, Plugin } from "prosemirror-state";
+import { TextSelection } from "prosemirror-state";
 import { listWrappingInputRule } from "@/outline-vendor/shared/editor/lib/listInputRule";
 import { markInputRuleForPattern } from "@/outline-vendor/shared/editor/lib/markInputRule";
 
@@ -34,9 +34,7 @@ export function codeBlockOnEnter(schema: Schema): Command {
     if (dispatch) {
       const start = $from.before();
       const end = $from.after();
-      const tr = state.tr
-        .delete(start, end)
-        .insert(start, type.createAndFill({ language: (match[1] || "").trim() })!);
+      const tr = state.tr.delete(start, end).insert(start, type.createAndFill({ language: (match[1] || "").trim() })!);
       tr.setSelection(TextSelection.near(tr.doc.resolve(start + 1)));
       dispatch(tr);
     }
@@ -85,11 +83,7 @@ function codeBlockRule(schema: Schema): InputRule | null {
 function headingRule(schema: Schema, maxLevel: number): InputRule | null {
   const type = schema.nodes.heading;
   if (!type) return null;
-  return textblockTypeInputRule(
-    new RegExp(`^(#{1,${maxLevel}})\\s$`),
-    type,
-    (match) => ({ level: match[1].length }),
-  );
+  return textblockTypeInputRule(new RegExp(`^(#{1,${maxLevel}})\\s$`), type, (match) => ({ level: match[1].length }));
 }
 
 function horizontalRuleRule(schema: Schema): InputRule | null {
@@ -107,7 +101,7 @@ function horizontalRuleRule(schema: Schema): InputRule | null {
  * 构建所见即所得所需的全部输入规则，并返回 inputRules 插件。
  */
 export function buildMarkdownInputRules(schema: Schema): Plugin {
-  const emdash = new InputRule(/(?:^|[^|\-])(--\s)$/, "— ");
+  const emdash = new InputRule(/(?:^|[^|-])(--\s)$/, "— ");
 
   const rules: InputRule[] = [];
 

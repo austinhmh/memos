@@ -1,5 +1,5 @@
 import { create } from "@bufbuild/protobuf";
-import { ImagePlusIcon, Trash2Icon, ImageIcon, Loader2Icon } from "lucide-react";
+import { ImageIcon, ImagePlusIcon, Loader2Icon, Trash2Icon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { attachmentServiceClient } from "@/connect";
 import { AttachmentSchema } from "@/types/proto/api/v1/attachment_service_pb";
@@ -62,66 +62,77 @@ const BackgroundSection = () => {
       syncToLocalStorage(serverImages);
       setLoading(false);
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const handleUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+  const handleUpload = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (!files || files.length === 0) return;
 
-    setUploading(true);
-    try {
-      const newImages: BackgroundImage[] = [];
+      setUploading(true);
+      try {
+        const newImages: BackgroundImage[] = [];
 
-      for (const file of Array.from(files)) {
-        if (!file.type.startsWith("image/")) continue;
+        for (const file of Array.from(files)) {
+          if (!file.type.startsWith("image/")) continue;
 
-        const buffer = new Uint8Array(await file.arrayBuffer());
-        const attachmentRequest = create(AttachmentSchema, {
-          filename: `${BG_PREFIX}${file.name}`,
-          size: BigInt(file.size),
-          type: file.type,
-          content: buffer,
-        });
+          const buffer = new Uint8Array(await file.arrayBuffer());
+          const attachmentRequest = create(AttachmentSchema, {
+            filename: `${BG_PREFIX}${file.name}`,
+            size: BigInt(file.size),
+            type: file.type,
+            content: buffer,
+          });
 
-        const attachment = await attachmentServiceClient.createAttachment({
-          attachment: attachmentRequest,
-        });
+          const attachment = await attachmentServiceClient.createAttachment({
+            attachment: attachmentRequest,
+          });
 
-        const url = getAttachmentUrl(attachment);
-        newImages.push({
-          url,
-          name: attachment.name,
-          filename: attachment.filename.slice(BG_PREFIX.length),
-        });
+          const url = getAttachmentUrl(attachment);
+          newImages.push({
+            url,
+            name: attachment.name,
+            filename: attachment.filename.slice(BG_PREFIX.length),
+          });
+        }
+
+        const updated = [...images, ...newImages];
+        setImages(updated);
+        syncToLocalStorage(updated);
+      } catch (err) {
+        console.error("Failed to upload background image:", err);
+      } finally {
+        setUploading(false);
+        if (fileInputRef.current) fileInputRef.current.value = "";
       }
+    },
+    [images],
+  );
 
-      const updated = [...images, ...newImages];
+  const handleRemove = useCallback(
+    async (index: number) => {
+      const img = images[index];
+      try {
+        await attachmentServiceClient.deleteAttachment({ name: img.name });
+      } catch (err) {
+        console.error("Failed to delete background attachment:", err);
+      }
+      const updated = images.filter((_, i) => i !== index);
       setImages(updated);
       syncToLocalStorage(updated);
-    } catch (err) {
-      console.error("Failed to upload background image:", err);
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
-  }, [images]);
-
-  const handleRemove = useCallback(async (index: number) => {
-    const img = images[index];
-    try {
-      await attachmentServiceClient.deleteAttachment({ name: img.name });
-    } catch (err) {
-      console.error("Failed to delete background attachment:", err);
-    }
-    const updated = images.filter((_, i) => i !== index);
-    setImages(updated);
-    syncToLocalStorage(updated);
-  }, [images]);
+    },
+    [images],
+  );
 
   return (
     <SettingSection>
-      <SettingGroup title="背景图 Background Images" description="上传图片作为页面背景，每次访问随机展示 Upload images for random page backgrounds">
+      <SettingGroup
+        title="背景图 Background Images"
+        description="上传图片作为页面背景，每次访问随机展示 Upload images for random page backgrounds"
+      >
         <div className="flex flex-col gap-4 w-full">
           {loading ? (
             <div className="flex items-center justify-center py-8 text-muted-foreground">
@@ -132,12 +143,7 @@ const BackgroundSection = () => {
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
               {images.map((img, index) => (
                 <div key={img.name} className="group relative aspect-video rounded-lg overflow-hidden border border-border bg-muted">
-                  <img
-                    src={img.url}
-                    alt={img.filename}
-                    className="w-full h-full object-cover"
-                    loading="lazy"
-                  />
+                  <img src={img.url} alt={img.filename} className="w-full h-full object-cover" loading="lazy" />
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all flex items-center justify-center">
                     <button
                       onClick={() => handleRemove(index)}
@@ -163,14 +169,7 @@ const BackgroundSection = () => {
           )}
 
           <div className="flex items-center gap-3">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={handleUpload}
-              className="hidden"
-            />
+            <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleUpload} className="hidden" />
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={uploading}

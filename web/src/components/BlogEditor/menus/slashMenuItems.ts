@@ -1,69 +1,62 @@
-import React from "react";
-import { setBlockType, toggleMark as pmToggleMark } from "prosemirror-commands";
-import type { EditorView } from "prosemirror-view";
-import type { Schema } from "prosemirror-model";
-import { bookmarkPluginKey } from "../plugins/BookmarkPlugin";
 import {
-  TypeIcon,
+  BoldIcon,
+  CheckSquareIcon,
+  CodeIcon,
+  CodeXmlIcon,
+  DiamondIcon,
   Heading1Icon,
   Heading2Icon,
   Heading3Icon,
   Heading4Icon,
   Heading5Icon,
-  ListOrderedIcon,
-  ListIcon,
-  CodeIcon,
-  QuoteIcon,
-  MinusIcon,
-  LinkIcon,
-  CheckSquareIcon,
-  ImageIcon,
-  PaperclipIcon,
-  TableIcon,
-  DiamondIcon,
   HighlighterIcon,
-  BoldIcon,
+  ImageIcon,
   ItalicIcon,
+  LinkIcon,
+  ListIcon,
+  ListOrderedIcon,
+  MinusIcon,
+  PaperclipIcon,
+  QuoteIcon,
   StrikethroughIcon,
-  CodeXmlIcon,
+  TableIcon,
+  TypeIcon,
   UnderlineIcon,
 } from "lucide-react";
+import { toggleMark as pmToggleMark, setBlockType } from "prosemirror-commands";
+import type { Schema } from "prosemirror-model";
+import type { EditorView } from "prosemirror-view";
+import React from "react";
 import toggleBlockType from "@/outline-vendor/shared/editor/commands/toggleBlockType";
 import toggleList from "@/outline-vendor/shared/editor/commands/toggleList";
 import toggleWrap from "@/outline-vendor/shared/editor/commands/toggleWrap";
+import { bookmarkPluginKey } from "../plugins/BookmarkPlugin";
 import type { SlashMenuItem } from "../plugins/SlashMenuPlugin";
 
 const I = 18;
 
-const ic = (Icon: React.FC<{ size?: number }>, color: string, bg: string): { icon: React.ReactNode; iconColor: string; iconBg: string } => ({
-  icon: React.createElement(Icon, { size: I }),
-  iconColor: color,
-  iconBg: bg,
-});
-
-const blue   = ic.bind(null, Heading1Icon, "#3b82f6", "rgba(59,130,246,0.1)");
 const colors = {
-  text:       { iconColor: "#6b7280", iconBg: "rgba(107,114,128,0.1)" },
-  h1:        { iconColor: "#3b82f6", iconBg: "rgba(59,130,246,0.1)" },
-  h2:        { iconColor: "#6366f1", iconBg: "rgba(99,102,241,0.1)" },
-  h3:        { iconColor: "#8b5cf6", iconBg: "rgba(139,92,246,0.1)" },
-  h4:        { iconColor: "#a855f7", iconBg: "rgba(168,85,247,0.1)" },
-  h5:        { iconColor: "#c084fc", iconBg: "rgba(192,132,252,0.1)" },
-  list:      { iconColor: "#f59e0b", iconBg: "rgba(245,158,11,0.1)" },
-  code:      { iconColor: "#ef4444", iconBg: "rgba(239,68,68,0.1)" },
-  quote:     { iconColor: "#64748b", iconBg: "rgba(100,116,139,0.1)" },
-  divider:   { iconColor: "#94a3b8", iconBg: "rgba(148,163,184,0.1)" },
-  link:      { iconColor: "#06b6d4", iconBg: "rgba(6,182,212,0.1)" },
-  todo:      { iconColor: "#22c55e", iconBg: "rgba(34,197,94,0.1)" },
-  image:     { iconColor: "#f97316", iconBg: "rgba(249,115,22,0.1)" },
-  file:      { iconColor: "#8b5cf6", iconBg: "rgba(139,92,246,0.1)" },
-  table:     { iconColor: "#14b8a6", iconBg: "rgba(20,184,166,0.1)" },
-  mermaid:   { iconColor: "#ec4899", iconBg: "rgba(236,72,153,0.1)" },
+  text: { iconColor: "#6b7280", iconBg: "rgba(107,114,128,0.1)" },
+  h1: { iconColor: "#3b82f6", iconBg: "rgba(59,130,246,0.1)" },
+  h2: { iconColor: "#6366f1", iconBg: "rgba(99,102,241,0.1)" },
+  h3: { iconColor: "#8b5cf6", iconBg: "rgba(139,92,246,0.1)" },
+  h4: { iconColor: "#a855f7", iconBg: "rgba(168,85,247,0.1)" },
+  h5: { iconColor: "#c084fc", iconBg: "rgba(192,132,252,0.1)" },
+  list: { iconColor: "#f59e0b", iconBg: "rgba(245,158,11,0.1)" },
+  code: { iconColor: "#ef4444", iconBg: "rgba(239,68,68,0.1)" },
+  quote: { iconColor: "#64748b", iconBg: "rgba(100,116,139,0.1)" },
+  divider: { iconColor: "#94a3b8", iconBg: "rgba(148,163,184,0.1)" },
+  link: { iconColor: "#06b6d4", iconBg: "rgba(6,182,212,0.1)" },
+  todo: { iconColor: "#22c55e", iconBg: "rgba(34,197,94,0.1)" },
+  image: { iconColor: "#f97316", iconBg: "rgba(249,115,22,0.1)" },
+  file: { iconColor: "#8b5cf6", iconBg: "rgba(139,92,246,0.1)" },
+  table: { iconColor: "#14b8a6", iconBg: "rgba(20,184,166,0.1)" },
+  mermaid: { iconColor: "#ec4899", iconBg: "rgba(236,72,153,0.1)" },
   highlight: { iconColor: "#eab308", iconBg: "rgba(234,179,8,0.1)" },
-  bold:      { iconColor: "#1e293b", iconBg: "rgba(30,41,59,0.1)" },
-  italic:    { iconColor: "#475569", iconBg: "rgba(71,85,105,0.1)" },
-  strike:    { iconColor: "#64748b", iconBg: "rgba(100,116,139,0.1)" },
-  inlineCode:{ iconColor: "#ef4444", iconBg: "rgba(239,68,68,0.1)" },
+  bold: { iconColor: "#1e293b", iconBg: "rgba(30,41,59,0.1)" },
+  italic: { iconColor: "#475569", iconBg: "rgba(71,85,105,0.1)" },
+  strike: { iconColor: "#64748b", iconBg: "rgba(100,116,139,0.1)" },
+  inlineCode: { iconColor: "#ef4444", iconBg: "rgba(239,68,68,0.1)" },
   underline: { iconColor: "#3b82f6", iconBg: "rgba(59,130,246,0.1)" },
 };
 
@@ -100,9 +93,7 @@ export function buildSlashMenuItems(schema: Schema): SlashMenuItem[] {
       ...headingColors[level - 1],
       keywords: `h${level} heading heading${level} title 标题 biaoti bt ${level}ji`,
       group: "基础",
-      action: run((view) =>
-        toggleBlockType(schema.nodes.heading, schema.nodes.paragraph, { level })(view.state, view.dispatch)
-      ),
+      action: run((view) => toggleBlockType(schema.nodes.heading, schema.nodes.paragraph, { level })(view.state, view.dispatch)),
     });
   }
 
@@ -115,9 +106,7 @@ export function buildSlashMenuItems(schema: Schema): SlashMenuItem[] {
       ...colors.list,
       keywords: "ol ordered list numbered num 123 有序 youxu liebiao lb shuzi",
       group: "基础",
-      action: run((view) =>
-        toggleList(schema.nodes.ordered_list, schema.nodes.list_item)(view.state, view.dispatch)
-      ),
+      action: run((view) => toggleList(schema.nodes.ordered_list, schema.nodes.list_item)(view.state, view.dispatch)),
     });
   }
 
@@ -130,9 +119,7 @@ export function buildSlashMenuItems(schema: Schema): SlashMenuItem[] {
       ...colors.list,
       keywords: "ul unordered list bullet 无序 wuxu liebiao lb dot",
       group: "基础",
-      action: run((view) =>
-        toggleList(schema.nodes.bullet_list, schema.nodes.list_item)(view.state, view.dispatch)
-      ),
+      action: run((view) => toggleList(schema.nodes.bullet_list, schema.nodes.list_item)(view.state, view.dispatch)),
     });
   }
 
@@ -145,9 +132,7 @@ export function buildSlashMenuItems(schema: Schema): SlashMenuItem[] {
       ...colors.code,
       keywords: "code codeblock block script fence pre 代码 daima dm daimakuai 程序 chengxu cx",
       group: "基础",
-      action: run((view) =>
-        toggleBlockType(schema.nodes.code_block, schema.nodes.paragraph, { language: "" })(view.state, view.dispatch)
-      ),
+      action: run((view) => toggleBlockType(schema.nodes.code_block, schema.nodes.paragraph, { language: "" })(view.state, view.dispatch)),
     });
   }
 
@@ -193,7 +178,10 @@ export function buildSlashMenuItems(schema: Schema): SlashMenuItem[] {
       action: (view) => {
         const { state, dispatch } = view;
         const bookmarkNode = state.schema.nodes.bookmark?.create({ url: "" });
-        if (!bookmarkNode) { view.focus(); return; }
+        if (!bookmarkNode) {
+          view.focus();
+          return;
+        }
         const tr = state.tr.replaceSelectionWith(bookmarkNode);
         const insertedPos = tr.selection.from - bookmarkNode.nodeSize;
         tr.setMeta(bookmarkPluginKey, { editingPos: insertedPos });
@@ -211,9 +199,7 @@ export function buildSlashMenuItems(schema: Schema): SlashMenuItem[] {
       ...colors.todo,
       keywords: "todo task checkbox checklist check 任务 renwu rw 待办 daiban db 清单 qingdan qd",
       group: "常用",
-      action: run((view) =>
-        toggleList(schema.nodes.checkbox_list, schema.nodes.checkbox_item)(view.state, view.dispatch)
-      ),
+      action: run((view) => toggleList(schema.nodes.checkbox_list, schema.nodes.checkbox_item)(view.state, view.dispatch)),
     });
   }
 
@@ -284,7 +270,11 @@ export function buildSlashMenuItems(schema: Schema): SlashMenuItem[] {
         const { state, dispatch } = view;
         const cell = schema.nodes.table_cell.createAndFill()!;
         const headerCell = schema.nodes.table_header.createAndFill()!;
-        const headerRow = schema.nodes.table_row.create(null, [headerCell, headerCell.copy(headerCell.content), headerCell.copy(headerCell.content)]);
+        const headerRow = schema.nodes.table_row.create(null, [
+          headerCell,
+          headerCell.copy(headerCell.content),
+          headerCell.copy(headerCell.content),
+        ]);
         const row = schema.nodes.table_row.create(null, [cell, cell.copy(cell.content), cell.copy(cell.content)]);
         const table = schema.nodes.table.create(null, [headerRow, row, row.copy(row.content)]);
         dispatch(state.tr.replaceSelectionWith(table).scrollIntoView());
@@ -303,7 +293,7 @@ export function buildSlashMenuItems(schema: Schema): SlashMenuItem[] {
       keywords: "mermaid diagram flowchart chart graph 图表 tubiao tb 流程图 liuchengtu lct 时序图 shixutu",
       group: "常用",
       action: run((view) =>
-        toggleBlockType(schema.nodes.code_block, schema.nodes.paragraph, { language: "mermaid" })(view.state, view.dispatch)
+        toggleBlockType(schema.nodes.code_block, schema.nodes.paragraph, { language: "mermaid" })(view.state, view.dispatch),
       ),
     });
   }

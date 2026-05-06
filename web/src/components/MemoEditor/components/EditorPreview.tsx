@@ -1,3 +1,4 @@
+import { create } from "@bufbuild/protobuf";
 import type { Element } from "hast";
 import { memo, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
@@ -13,6 +14,8 @@ import { SANITIZE_SCHEMA } from "@/components/MemoContent/constants";
 import { Tag } from "@/components/MemoContent/Tag";
 import { TaskListItem } from "@/components/MemoContent/TaskListItem";
 import { MemoViewContext } from "@/components/MemoView/MemoViewContext";
+import type { Memo } from "@/types/proto/api/v1/memo_service_pb";
+import { MemoSchema } from "@/types/proto/api/v1/memo_service_pb";
 import { useTranslate } from "@/utils/i18n";
 import { rehypeLineNumbers } from "@/utils/rehype-plugins/rehype-line-numbers";
 import { remarkDisableSetext } from "@/utils/remark-plugins/remark-disable-setext";
@@ -35,7 +38,7 @@ export const EditorPreview = memo(({ content, scrollRef }: EditorPreviewProps) =
   // This prevents errors when Tag components try to access the context
   const mockMemoViewContext = useMemo(
     () => ({
-      memo: { name: "", content: "", relations: [], resources: [], reactions: [], properties: {}, tags: [] } as any,
+      memo: create(MemoSchema, { name: "", content: "", tags: [] }) as Memo,
       creator: undefined,
       currentUser: undefined,
       parentPage: "",
@@ -49,9 +52,7 @@ export const EditorPreview = memo(({ content, scrollRef }: EditorPreviewProps) =
 
   return (
     <div className="w-full h-full flex flex-col min-h-0">
-      <h3 className="text-sm font-medium text-muted-foreground mb-2 px-1 flex-shrink-0">
-        {previewTitle}
-      </h3>
+      <h3 className="text-sm font-medium text-muted-foreground mb-2 px-1 flex-shrink-0">{previewTitle}</h3>
       <div ref={scrollRef} className="flex-1 overflow-y-auto border rounded-md p-4 bg-background min-h-0">
         {content ? (
           <MemoViewContext.Provider value={mockMemoViewContext}>
@@ -73,19 +74,18 @@ export const EditorPreview = memo(({ content, scrollRef }: EditorPreviewProps) =
                   rehypeLineNumbers, // Transfer line numbers to HTML
                 ]}
                 components={{
-                  input: ((inputProps: React.ComponentProps<"input"> & { node?: Element }) => {
-                    if (inputProps.node && isTaskListItemNode(inputProps.node)) {
-                      return <TaskListItem {...inputProps} />;
+                  input: ({ node, ...inputProps }) => {
+                    if (node && isTaskListItemNode(node)) {
+                      return <TaskListItem {...inputProps} node={node} />;
                     }
                     return <input {...inputProps} />;
-                  }) as React.ComponentType<React.ComponentProps<"input">>,
-                  span: ((spanProps: React.ComponentProps<"span"> & { node?: Element }) => {
-                    const { node, ...rest } = spanProps;
+                  },
+                  span: ({ node, ...spanProps }) => {
                     if (node && isTagNode(node)) {
-                      return <Tag {...spanProps} />;
+                      return <Tag {...spanProps} node={node} />;
                     }
-                    return <span {...rest} />;
-                  }) as React.ComponentType<React.ComponentProps<"span">>,
+                    return <span {...spanProps} />;
+                  },
                   pre: CodeBlock,
                   a: ({ href, children, ...aProps }) => (
                     <a href={href} target="_blank" rel="noopener noreferrer" {...aProps}>
@@ -99,9 +99,7 @@ export const EditorPreview = memo(({ content, scrollRef }: EditorPreviewProps) =
             </div>
           </MemoViewContext.Provider>
         ) : (
-          <p className="text-muted-foreground text-sm italic">
-            {emptyText}
-          </p>
+          <p className="text-muted-foreground text-sm italic">{emptyText}</p>
         )}
       </div>
     </div>

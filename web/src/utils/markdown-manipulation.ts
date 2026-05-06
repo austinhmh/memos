@@ -1,11 +1,19 @@
 // Utilities for manipulating markdown strings using AST parsing
 // Uses mdast for accurate task detection that properly handles code blocks
 
-import type { ListItem } from "mdast";
+import type { ListItem, Root } from "mdast";
 import { fromMarkdown } from "mdast-util-from-markdown";
 import { gfmFromMarkdown } from "mdast-util-gfm";
 import { gfm } from "micromark-extension-gfm";
 import { visit } from "unist-util-visit";
+
+interface PositionedListItem extends ListItem {
+  position?: {
+    start: {
+      line: number;
+    };
+  };
+}
 
 interface TaskInfo {
   lineNumber: number;
@@ -22,7 +30,7 @@ function extractTasksFromAst(markdown: string): TaskInfo[] {
 
   const tasks: TaskInfo[] = [];
 
-  visit(tree, "listItem", (node: ListItem) => {
+  visit(tree as Root, "listItem", (node: PositionedListItem) => {
     // Only process actual task list items (those with a checkbox)
     if (typeof node.checked === "boolean" && node.position?.start.line) {
       tasks.push({
@@ -145,7 +153,7 @@ export function extractTasks(markdown: string): TaskItem[] {
   const tasks: TaskItem[] = [];
   let taskIndex = 0;
 
-  visit(tree, "listItem", (node: ListItem) => {
+  visit(tree as Root, "listItem", (node: PositionedListItem) => {
     if (typeof node.checked === "boolean" && node.position?.start.line) {
       const lineNumber = node.position.start.line - 1;
       const line = lines[lineNumber];

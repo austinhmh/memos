@@ -1,5 +1,5 @@
-import type { StateInline } from "markdown-it";
 import type MarkdownIt from "markdown-it";
+import type { StateInline } from "markdown-it";
 
 const MAX_TAG_LENGTH = 100;
 

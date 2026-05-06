@@ -183,7 +183,8 @@
       "public": "Public"
     },
     "list": "List",
-    "masonry": "Masonry"
+    "masonry": "Masonry",
+    "table-of-contents": "Table of contents"
   },
   "message": {
     "archived-successfully": "Archived successfully",
@@ -352,6 +353,7 @@
       "user-endpoint": "User endpoint"
     },
     "storage": "Storage",
+    "backup": "Backup",
     "storage-section": {
       "accesskey": "Access key",
       "accesskey-placeholder": "Access key / Access ID",

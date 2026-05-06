@@ -19,7 +19,7 @@ jobs:
           version: 9
       - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version: "20.19.0"
           cache: pnpm
           cache-dependency-path: "web/pnpm-lock.yaml"
       - run: pnpm install
@@ -37,7 +37,7 @@ jobs:
           version: 9
       - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version: "20.19.0"
           cache: pnpm
           cache-dependency-path: "web/pnpm-lock.yaml"
       - run: pnpm install

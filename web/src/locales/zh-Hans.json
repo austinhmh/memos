@@ -183,7 +183,8 @@
       "public": "公开"
     },
     "list": "列表模式",
-    "masonry": "瀑布流模式"
+    "masonry": "瀑布流模式",
+    "table-of-contents": "目录"
   },
   "message": {
     "archived-successfully": "归档成功",
@@ -352,6 +353,7 @@
       "user-endpoint": "用户端点（User Endpoint）"
     },
     "storage": "存储",
+    "backup": "备份",
     "storage-section": {
       "accesskey": "访问密钥（Access key）",
       "accesskey-placeholder": "Access key / Access ID",

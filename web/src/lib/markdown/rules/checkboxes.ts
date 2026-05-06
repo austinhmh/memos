@@ -1,5 +1,5 @@
-import type { Token } from "markdown-it";
 import type MarkdownIt from "markdown-it";
+import type { Token } from "markdown-it";
 
 const CHECKBOX_REGEX = /\[(X|\s|_|-)\]\s(.*)?/i;
 
@@ -20,12 +20,7 @@ function isListItem(token: Token | void): boolean {
 }
 
 function looksLikeChecklist(tokens: Token[], index: number) {
-  return (
-    isInline(tokens[index]) &&
-    isListItem(tokens[index - 2]) &&
-    isParagraph(tokens[index - 1]) &&
-    matches(tokens[index])
-  );
+  return isInline(tokens[index]) && isListItem(tokens[index - 2]) && isParagraph(tokens[index - 1]) && matches(tokens[index]);
 }
 
 export function markdownCheckboxes(md: MarkdownIt): void {

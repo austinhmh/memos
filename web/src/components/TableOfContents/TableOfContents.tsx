@@ -100,7 +100,7 @@ const TableOfContents = ({ content, className }: Props) => {
     const handleScroll = () => {
       const flatHeadings = flattenHeadings(headings);
       const headingElements = flatHeadings.map((h) => document.getElementById(h.id)).filter(Boolean);
-      
+
       for (let i = headingElements.length - 1; i >= 0; i--) {
         const element = headingElements[i];
         if (element) {
@@ -111,7 +111,7 @@ const TableOfContents = ({ content, className }: Props) => {
           }
         }
       }
-      
+
       if (headingElements.length > 0) {
         setActiveId(flatHeadings[0].id);
       }
@@ -177,9 +177,7 @@ const TableOfContents = ({ content, className }: Props) => {
             className={cn(
               "flex-1 text-left text-sm py-1 px-2 rounded transition-colors truncate",
               "hover:bg-accent hover:text-accent-foreground",
-              activeId === heading.id
-                ? "text-primary font-medium bg-accent/50"
-                : "text-muted-foreground"
+              activeId === heading.id ? "text-primary font-medium bg-accent/50" : "text-muted-foreground",
             )}
             title={heading.text}
           >
@@ -187,9 +185,7 @@ const TableOfContents = ({ content, className }: Props) => {
           </button>
         </div>
         {hasChildren && !isCollapsed && (
-          <ul className="ml-4 space-y-1 mt-1">
-            {heading.children!.map((child) => renderHeading(child, depth + 1))}
-          </ul>
+          <ul className="ml-4 space-y-1 mt-1">{heading.children!.map((child) => renderHeading(child, depth + 1))}</ul>
         )}
       </li>
     );
@@ -208,20 +204,14 @@ const TableOfContents = ({ content, className }: Props) => {
         onClick={() => setIsExpanded(!isExpanded)}
         className="flex flex-row justify-start items-center w-full gap-1 mb-3 text-sm leading-6 text-muted-foreground select-none hover:text-foreground transition-colors cursor-pointer"
       >
-        {isExpanded ? (
-          <ChevronDownIcon className="w-4 h-auto" />
-        ) : (
-          <ChevronRightIcon className="w-4 h-auto" />
-        )}
+        {isExpanded ? <ChevronDownIcon className="w-4 h-auto" /> : <ChevronRightIcon className="w-4 h-auto" />}
         <ListIcon className="w-4 h-auto" />
-        <span>{t("memo.table-of-contents") || "目录"}</span>
+        <span>{t("memo.table-of-contents")}</span>
         <span className="text-xs opacity-60">({totalCount})</span>
       </button>
       {isExpanded && (
         <nav className="w-full">
-          <ul className="space-y-1">
-            {headings.map((heading) => renderHeading(heading))}
-          </ul>
+          <ul className="space-y-1">{headings.map((heading) => renderHeading(heading))}</ul>
         </nav>
       )}
     </aside>

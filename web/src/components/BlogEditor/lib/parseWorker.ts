@@ -1,5 +1,5 @@
-import { blogEditorSchema } from "./schema";
 import { createMdParser } from "./markdownParser";
+import { blogEditorSchema } from "./schema";
 
 const schema = blogEditorSchema;
 const parser = createMdParser(schema);

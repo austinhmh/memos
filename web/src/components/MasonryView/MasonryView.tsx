@@ -8,24 +8,21 @@ import { useMasonryLayout } from "./useMasonryLayout";
 const MasonryView = ({ memoList, renderer, prefixElement, listMode = false }: MasonryViewProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const prefixElementRef = useRef<HTMLDivElement>(null);
-  const { compactMode, compactLines } = useView();
+  const { compactLines } = useView();
 
   const { columns, distribution } = useMasonryLayout(memoList, listMode, containerRef);
 
   // Create render context: always show full content (no compact mode)
-  const renderContext: MemoRenderContext = useMemo(
-    () => {
-      // Always show full content, ignore compact mode
-      const compact = false;
+  const renderContext: MemoRenderContext = useMemo(() => {
+    // Always show full content, ignore compact mode
+    const compact = false;
 
-      return {
-        compact,
-        columns,
-        compactLines,
-      };
-    },
-    [columns, compactLines],
-  );
+    return {
+      compact,
+      columns,
+      compactLines,
+    };
+  }, [columns, compactLines]);
 
   return (
     <div className="w-full flex flex-col gap-2">

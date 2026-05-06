@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { blogEditorSchema } from "./schema";
 import { createMdParser } from "./markdownParser";
 import { createMdSerializer } from "./markdownSerializer";
+import { blogEditorSchema } from "./schema";
 
 const parser = createMdParser(blogEditorSchema);
 const serializer = createMdSerializer();

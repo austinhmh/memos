@@ -1,8 +1,8 @@
 import { useRef } from "react";
+import { useMemoViewContext, useMemoViewDerived } from "@/components/MemoView/MemoViewContext";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useUpdateMemo } from "@/hooks/useMemoQueries";
 import { toggleTaskAtIndex } from "@/utils/markdown-manipulation";
-import { useMemoViewContext, useMemoViewDerived } from "@/components/MemoView/MemoViewContext";
 
 interface CheckboxRendererProps {
   checked: boolean;

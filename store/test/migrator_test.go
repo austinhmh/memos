@@ -41,10 +41,21 @@ func dockerSharedTempDir(t *testing.T) string {
 	require.NoError(t, os.MkdirAll(baseDir, 0o700))
 	dataDir, err := os.MkdirTemp(baseDir, "migration-*")
 	require.NoError(t, err)
+	require.NoError(t, os.Chmod(dataDir, 0o777))
 	t.Cleanup(func() {
+		_ = chmodTree(dataDir, 0o777)
 		_ = os.RemoveAll(dataDir)
 	})
 	return dataDir
+}
+
+func chmodTree(root string, mode os.FileMode) error {
+	return filepath.WalkDir(root, func(path string, _ os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		return os.Chmod(path, mode)
+	})
 }
 
 // TestMigrationDataPersistence verifies that data created in the old version

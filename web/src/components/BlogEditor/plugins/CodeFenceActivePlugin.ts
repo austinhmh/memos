@@ -1,8 +1,8 @@
-import { Plugin, PluginKey } from "prosemirror-state";
 import type { EditorState } from "prosemirror-state";
+import { Plugin, PluginKey } from "prosemirror-state";
 import { Decoration, DecorationSet } from "prosemirror-view";
-import { mermaidPluginKey } from "./MermaidPlugin";
 import type { MermaidState } from "./MermaidPlugin";
+import { mermaidPluginKey } from "./MermaidPlugin";
 
 function isMermaid(node: import("prosemirror-model").Node): boolean {
   if (node.type.name !== "code_block") return false;
@@ -49,11 +49,7 @@ function createActiveCodeBlockDecoration(state: EditorState): DecorationSet {
     }
   }
 
-  const decoration = Decoration.node(
-    codeBlock.pos,
-    codeBlock.pos + codeBlock.node.nodeSize,
-    { class: "code-active" },
-  );
+  const decoration = Decoration.node(codeBlock.pos, codeBlock.pos + codeBlock.node.nodeSize, { class: "code-active" });
   return DecorationSet.create(state.doc, [decoration]);
 }
 
@@ -63,11 +59,7 @@ export function createCodeFenceActivePlugin(): Plugin<DecorationSet> {
     state: {
       init: (_, state) => createActiveCodeBlockDecoration(state),
       apply: (tr, pluginState, _oldState, newState) => {
-        if (
-          !tr.selectionSet &&
-          !tr.docChanged &&
-          !tr.getMeta(mermaidPluginKey)
-        ) {
+        if (!tr.selectionSet && !tr.docChanged && !tr.getMeta(mermaidPluginKey)) {
           return pluginState;
         }
         return createActiveCodeBlockDecoration(newState);

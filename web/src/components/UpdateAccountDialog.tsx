@@ -110,9 +110,13 @@ function UpdateAccountDialog({ open, onOpenChange, onSuccess }: Props) {
       toast.error(t("message.fill-all"));
       return;
     }
+    if (!currentUser?.name) {
+      toast.error(t("message.user-not-found"));
+      return;
+    }
 
     try {
-      const updateMask = [];
+      const updateMask: string[] = [];
       if (!isEqual(currentUser?.username, state.username)) {
         updateMask.push("username");
       }
@@ -130,7 +134,7 @@ function UpdateAccountDialog({ open, onOpenChange, onSuccess }: Props) {
       }
       await updateUser({
         user: {
-          name: currentUser?.name,
+          name: currentUser.name,
           username: state.username,
           displayName: state.displayName,
           email: state.email,

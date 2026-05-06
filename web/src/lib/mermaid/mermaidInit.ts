@@ -1,5 +1,5 @@
-import mermaid from "mermaid";
 import elkLayouts from "@mermaid-js/layout-elk";
+import mermaid from "mermaid";
 
 let elkRegistered = false;
 

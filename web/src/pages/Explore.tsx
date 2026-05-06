@@ -31,9 +31,7 @@ const Explore = () => {
 
   return (
     <PagedMemoList
-      renderer={(memo: Memo) => (
-        <MemoPreviewCard key={`${memo.name}-${memo.updateTime}`} memo={memo} showCreator showVisibility />
-      )}
+      renderer={(memo: Memo) => <MemoPreviewCard key={`${memo.name}-${memo.updateTime}`} memo={memo} showCreator showVisibility />}
       listSort={listSort}
       orderBy={orderBy}
       filter={memoFilter}

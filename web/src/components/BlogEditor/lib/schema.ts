@@ -80,9 +80,7 @@ export const blogEditorSchema = new Schema({
         {
           tag: "ol",
           getAttrs: (dom: HTMLElement) => ({
-            order: (dom as HTMLOListElement).hasAttribute("start")
-              ? +(dom as HTMLOListElement).getAttribute("start")!
-              : 1,
+            order: (dom as HTMLOListElement).hasAttribute("start") ? +(dom as HTMLOListElement).getAttribute("start")! : 1,
             tight: (dom as HTMLElement).hasAttribute("data-tight"),
           }),
         },
@@ -280,18 +278,11 @@ export const blogEditorSchema = new Schema({
       toDOM: (node) => ["a", node.attrs],
     },
     em: {
-      parseDOM: [
-        { tag: "i" },
-        { tag: "em" },
-        { style: "font-style=italic" },
-      ],
+      parseDOM: [{ tag: "i" }, { tag: "em" }, { style: "font-style=italic" }],
       toDOM: () => ["em"],
     },
     strong: {
-      parseDOM: [
-        { tag: "strong" },
-        { tag: "b", getAttrs: (dom: HTMLElement) => (dom.style.fontWeight !== "normal" ? {} : false) },
-      ],
+      parseDOM: [{ tag: "strong" }, { tag: "b", getAttrs: (dom: HTMLElement) => (dom.style.fontWeight !== "normal" ? {} : false) }],
       toDOM: () => ["strong"],
     },
     code: {
