@@ -445,8 +445,7 @@
       "saturday": "周六",
       "sunday": "周日",
       "week-start-day": "周开始日"
-    },
-    "backup": "备份"
+    }
   },
   "tag": {
     "all-tags": "全部标签",
