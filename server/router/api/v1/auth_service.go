@@ -419,7 +419,7 @@ func (s *APIV1Service) buildRefreshTokenCookie(ctx context.Context, refreshToken
 		attrs = append(attrs, "Expires="+expireTime.UTC().Format("Mon, 02 Jan 2006 15:04:05 GMT"))
 	}
 
-	secureCookie := s.shouldUseSecureRefreshCookie()
+	secureCookie := s.shouldUseSecureRefreshCookie(ctx)
 	if secureCookie {
 		attrs = append(attrs, "SameSite=Lax", "Secure")
 	} else {
@@ -428,31 +428,45 @@ func (s *APIV1Service) buildRefreshTokenCookie(ctx context.Context, refreshToken
 	return strings.Join(attrs, "; ")
 }
 
-func (s *APIV1Service) shouldUseSecureRefreshCookie() bool {
+func (s *APIV1Service) shouldUseSecureRefreshCookie(ctx context.Context) bool {
 	if s.Profile == nil {
 		return true
 	}
 	instanceURL := strings.TrimSpace(s.Profile.InstanceURL)
-	lowerInstanceURL := strings.ToLower(instanceURL)
-	if strings.HasPrefix(lowerInstanceURL, "https://") {
-		return true
+	if instanceURL != "" {
+		return shouldUseSecureCookieForURL(instanceURL, true)
 	}
-	if strings.HasPrefix(lowerInstanceURL, "http://") && isLocalHTTPInstanceURL(instanceURL) {
-		return false
+	if origin := getRequestOrigin(ctx); origin != "" {
+		return shouldUseSecureCookieForURL(origin, true)
 	}
-	if s.Profile.IsDev() && instanceURL == "" {
+	if s.Profile.IsDev() {
 		return false
 	}
 	return true
 }
 
-func isLocalHTTPInstanceURL(instanceURL string) bool {
-	parsed, err := url.Parse(instanceURL)
-	if err != nil {
-		return false
+func getRequestOrigin(ctx context.Context) string {
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if origins := md.Get("origin"); len(origins) > 0 {
+			return strings.TrimSpace(origins[0])
+		}
 	}
-	hostname := strings.ToLower(parsed.Hostname())
-	return hostname == "localhost" || hostname == "127.0.0.1" || hostname == "::1"
+	return ""
+}
+
+func shouldUseSecureCookieForURL(rawURL string, defaultSecure bool) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return defaultSecure
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "https":
+		return true
+	case "http":
+		return false
+	default:
+		return defaultSecure
+	}
 }
 
 func (s *APIV1Service) fetchCurrentUser(ctx context.Context) (*store.User, error) {

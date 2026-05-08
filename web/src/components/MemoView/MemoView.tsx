@@ -72,7 +72,7 @@ const MemoView: React.FC<MemoViewProps> = (props: MemoViewProps) => {
       <article
         className={cn(
           MEMO_CARD_BASE_CLASSES,
-          props.fullHeight ? "h-[90vh] overflow-y-auto" : "h-[40vh] md:h-[33.33vh] overflow-y-auto",
+          props.fullHeight ? "max-h-[90svh] overflow-y-auto" : "max-h-[70svh] md:max-h-[33.33svh] overflow-y-auto",
           className,
         )}
         ref={cardRef}

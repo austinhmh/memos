@@ -56,7 +56,7 @@ export const EditorPreview = memo(({ content, scrollRef }: EditorPreviewProps) =
       <div ref={scrollRef} className="flex-1 overflow-y-auto border rounded-md p-4 bg-background min-h-0">
         {content ? (
           <MemoViewContext.Provider value={mockMemoViewContext}>
-            <div className="markdown-content relative w-full max-w-full wrap-break-word text-base leading-6">
+            <div className="markdown-content relative w-full max-w-full wrap-break-word">
               <ReactMarkdown
                 remarkPlugins={[
                   remarkDisableSetext,

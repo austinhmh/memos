@@ -475,6 +475,32 @@ func TestCreateMemoWithCustomTimestamps(t *testing.T) {
 	require.True(t, time.Now().Unix()-memoWithoutTimestamps.CreateTime.AsTime().Unix() < 5, "create_time should be recent (within 5 seconds)")
 }
 
+func TestUpdateMemoContentRefreshesUpdateTimeForRegularUser(t *testing.T) {
+	ctx := context.Background()
+	ts := NewTestService(t)
+	defer ts.Cleanup()
+
+	user, err := ts.CreateRegularUser(ctx, "memo-content-updater")
+	require.NoError(t, err)
+	userCtx := ts.CreateUserContext(ctx, user.ID)
+
+	memo, err := ts.Service.CreateMemo(userCtx, &apiv1.CreateMemoRequest{
+		Memo: &apiv1.Memo{Content: "original content", Visibility: apiv1.Visibility_PRIVATE},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, memo.UpdateTime)
+	originalUpdateTime := memo.UpdateTime.AsTime()
+
+	time.Sleep(time.Second)
+	updatedMemo, err := ts.Service.UpdateMemo(userCtx, &apiv1.UpdateMemoRequest{
+		Memo:       &apiv1.Memo{Name: memo.Name, Content: "updated content"},
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"content"}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "updated content", updatedMemo.Content)
+	require.True(t, updatedMemo.UpdateTime.AsTime().After(originalUpdateTime))
+}
+
 func TestGetMemoCommentHidesInvisibleParent(t *testing.T) {
 	ctx := context.Background()
 	ts := NewTestService(t)

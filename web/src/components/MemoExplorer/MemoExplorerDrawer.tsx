@@ -29,11 +29,14 @@ const MemoExplorerDrawer = (props: Props) => {
           <MenuIcon className="size-5 text-foreground" />
         </Button>
       </SheetTrigger>
-      <SheetContent side="right" className="w-80 max-w-full bg-background">
+      <SheetContent
+        side="right"
+        className="w-[min(20rem,calc(100vw-var(--sal)-var(--sar)))] max-w-[calc(100vw-var(--sal)-var(--sar))] bg-background overflow-y-auto pt-[calc(0.5rem+var(--sat))] pb-[calc(1rem+var(--sab))]"
+      >
         <SheetHeader>
           <SheetTitle />
         </SheetHeader>
-        <MemoExplorer className="px-4" context={context} features={features} statisticsData={statisticsData} tagCount={tagCount} />
+        <MemoExplorer className="px-4 pb-4" context={context} features={features} statisticsData={statisticsData} tagCount={tagCount} />
       </SheetContent>
     </Sheet>
   );

@@ -320,7 +320,7 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
             content: normalizedContent,
           } as Record<string, unknown>),
           updateMask: create(FieldMaskSchema, {
-            paths: ["content", "update_time"],
+            paths: ["content"],
           }),
         });
 

@@ -379,6 +379,7 @@ func (s *APIV1Service) UpdateMemo(ctx context.Context, request *v1pb.UpdateMemoR
 	update := &store.UpdateMemo{
 		ID: memo.ID,
 	}
+	shouldRefreshUpdatedTs := false
 	for _, path := range request.UpdateMask.Paths {
 		if path == "content" {
 			contentLengthLimit, err := s.getContentLengthLimit(ctx)
@@ -394,6 +395,7 @@ func (s *APIV1Service) UpdateMemo(ctx context.Context, request *v1pb.UpdateMemoR
 			}
 			update.Content = &memo.Content
 			update.Payload = memo.Payload
+			shouldRefreshUpdatedTs = true
 		} else if path == "visibility" {
 			instanceMemoRelatedSetting, err := s.Store.GetInstanceMemoRelatedSetting(ctx)
 			if err != nil {
@@ -447,6 +449,7 @@ func (s *APIV1Service) UpdateMemo(ctx context.Context, request *v1pb.UpdateMemoR
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to set memo attachments")
 			}
+			shouldRefreshUpdatedTs = true
 		} else if path == "relations" {
 			_, err := s.SetMemoRelations(ctx, &v1pb.SetMemoRelationsRequest{
 				Name:      request.Memo.Name,
@@ -455,7 +458,13 @@ func (s *APIV1Service) UpdateMemo(ctx context.Context, request *v1pb.UpdateMemoR
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to set memo relations")
 			}
+			shouldRefreshUpdatedTs = true
 		}
+	}
+
+	if shouldRefreshUpdatedTs && update.UpdatedTs == nil {
+		updatedTs := time.Now().Unix()
+		update.UpdatedTs = &updatedTs
 	}
 
 	if err = s.Store.UpdateMemo(ctx, update); err != nil {

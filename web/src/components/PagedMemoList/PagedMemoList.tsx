@@ -135,7 +135,7 @@ const PagedMemoList = (props: Props) => {
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   return (
-    <div className="flex flex-col justify-start items-center w-full max-w-3xl mx-auto px-4 sm:px-6">
+    <div className="flex flex-col justify-start items-center w-full max-w-3xl mx-auto [--sal:env(safe-area-inset-left)] [--sar:env(safe-area-inset-right)] pl-[max(1rem,var(--sal))] pr-[max(1rem,var(--sar))] sm:pl-[max(1.5rem,var(--sal))] sm:pr-[max(1.5rem,var(--sar))] pb-[calc(1rem+var(--sab))]">
       {showMemoEditor && (
         <div className="w-full mb-3">
           <MemoEditor compact className="mb-2" cacheKey="home-memo-editor" placeholder={t("editor.any-thoughts")} />

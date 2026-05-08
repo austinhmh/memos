@@ -7,12 +7,36 @@
 }
 
 @layer base {
+  :root {
+    --app-font-scale: 1;
+    --app-root-font-size: calc(16px * var(--app-font-scale));
+    --app-font-size: 1rem;
+    --app-content-font-size: var(--app-font-size);
+    --sat: env(safe-area-inset-top);
+    --sar: env(safe-area-inset-right);
+    --sab: env(safe-area-inset-bottom);
+    --sal: env(safe-area-inset-left);
+    --blog-editor-document-width: 52em;
+    --blog-editor-gutter: clamp(1rem, 8vw, 5.5rem);
+    --blog-editor-mobile-gutter-left: calc(1rem + var(--sal));
+    --blog-editor-mobile-gutter-right: calc(1rem + var(--sar));
+  }
+
+  html {
+    font-size: var(--app-root-font-size);
+  }
+
   * {
     @apply border-border outline-none ring-0;
   }
   body {
     @apply bg-background text-foreground;
     font-family: "Fira Code", var(--font-sans);
+    font-size: var(--app-font-size);
+    line-height: 1.5;
+    overflow-x: hidden;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
   }
 
   /* ========================================
@@ -65,10 +89,11 @@
    * ======================================== */
 
   .markdown-content {
-    font-size: 1rem;
+    font-size: var(--app-content-font-size);
     line-height: 1.5;
     color: var(--foreground);
     word-wrap: break-word;
+    overflow-wrap: anywhere;
   }
 
   /* ========================================
@@ -227,7 +252,7 @@
 
   .markdown-content pre {
     font-family: var(--font-mono);
-    font-size: 0.875rem;
+    font-size: 0.875em;
     background: var(--muted);
     padding: 0.5rem 0.75rem;
     border-radius: 0.375rem;
@@ -279,10 +304,10 @@
 
   .markdown-content table {
     display: block;
-    width: 100%;
     width: max-content;
     max-width: 100%;
-    overflow: auto;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
     border-spacing: 0;
     border-collapse: collapse;
   }
@@ -361,14 +386,20 @@
   .blog-editor {
     position: relative;
     width: 100%;
-    padding: 2rem 10%;
+    max-width: calc(var(--blog-editor-document-width) + var(--blog-editor-gutter) * 2);
+    margin-inline: auto;
+    padding: clamp(1rem, 3vw, 2rem) var(--blog-editor-gutter);
+    overflow: visible;
   }
 
   .blog-editor-content {
-    font-size: 1rem;
+    font-size: var(--app-content-font-size);
     line-height: 1.7;
     color: var(--foreground);
     word-wrap: break-word;
+    overflow-wrap: anywhere;
+    max-width: 100%;
+    min-width: 0;
     min-height: 6rem;
   }
 
@@ -378,7 +409,7 @@
 
   .blog-editor-content.ProseMirror {
     outline: none;
-    min-height: calc(100vh - 12rem);
+    min-height: min(42rem, calc(100svh - 10rem));
   }
 
   .blog-editor-content.blog-editor-prosemirror {
@@ -589,10 +620,11 @@
 
   .blog-editor-content pre {
     font-family: var(--font-mono, ui-monospace, monospace);
-    font-size: 0.875rem;
+    font-size: 0.875em;
     background: var(--muted);
     padding: 1em 1.25em;
     border-radius: 6px;
+    max-width: 100%;
     overflow-x: auto;
     margin-bottom: 0.75em;
     line-height: 1.6;
@@ -629,9 +661,13 @@
   /* Tables */
   .blog-editor-content table {
     border-collapse: collapse;
-    width: 100%;
+    display: block;
+    box-sizing: border-box;
+    width: max-content;
+    max-width: 100%;
     margin-bottom: 1em;
-    overflow: auto;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .blog-editor-content th,
@@ -699,9 +735,9 @@
   /* Status indicator */
   .blog-editor-status {
     position: fixed;
-    bottom: 1rem;
-    right: 1.5rem;
-    font-size: 0.75rem;
+    bottom: calc(1rem + var(--sab));
+    right: max(1rem, var(--sar));
+    font-size: 0.75em;
     color: var(--muted-foreground);
     opacity: 0.6;
     pointer-events: none;
@@ -782,6 +818,8 @@
 
   .mermaid-diagram-render {
     width: 100%;
+    max-width: 100%;
+    min-width: 0;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -885,6 +923,8 @@
   .blog-editor .code-block,
   .blog-editor-content .code-block {
     margin: 1em 0;
+    max-width: 100%;
+    min-width: 0;
     background: var(--muted);
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -898,12 +938,15 @@
     line-height: 1.5;
     padding: 1em;
     margin: 0;
+    max-width: 100%;
     overflow-x: auto;
   }
 
   .blog-editor .mermaid-diagram-wrapper,
   .blog-editor-content .mermaid-diagram-wrapper {
     margin: 0.5em 0 1em;
+    max-width: 100%;
+    min-width: 0;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -1033,15 +1076,83 @@
   }
 }
 
+@media (max-width: 767px) {
+  .blog-editor {
+    max-width: none;
+    margin-inline: 0;
+    padding: 0.75rem var(--blog-editor-mobile-gutter-right) calc(1rem + var(--sab)) var(--blog-editor-mobile-gutter-left);
+    overflow: visible;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: auto;
+  }
+
+  .blog-editor-content {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .blog-editor-content.ProseMirror {
+    min-height: clamp(8rem, 35svh, 16rem);
+  }
+
+  .blog-editor-padding {
+    min-height: 2rem;
+  }
+
+  .blog-editor-status {
+    right: max(1rem, var(--sar));
+    bottom: calc(0.75rem + var(--sab));
+    font-size: 0.75em;
+  }
+
+  .markdown-content pre,
+  .blog-editor-content pre,
+  .blog-editor .code-block pre,
+  .blog-editor-content .code-block pre,
+  .mermaid-code-editor pre,
+  .mermaid-error-container pre,
+  .code-block-wrapper pre {
+    max-width: 100%;
+    white-space: pre;
+    overflow-x: auto;
+    overflow-wrap: normal;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .markdown-content table,
+  .blog-editor-content table,
+  .blog-editor .code-block,
+  .blog-editor-content .code-block,
+  .mermaid-preview-container,
+  .mermaid-error-container,
+  .mermaid-diagram-render,
+  .blog-editor .mermaid-diagram-wrapper,
+  .blog-editor-content .mermaid-diagram-wrapper {
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .mermaid-diagram-render svg,
+  .blog-editor .mermaid-diagram-wrapper svg,
+  .blog-editor-content .mermaid-diagram-wrapper svg {
+    max-width: 100%;
+    height: auto;
+  }
+}
+
 /* Slash Command Menu */
 .slash-menu {
   background: var(--popover);
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-  max-height: 320px;
+  max-width: calc(100vw - 1rem);
+  max-height: min(320px, calc(100svh - 1rem));
   overflow-y: auto;
-  min-width: 200px;
+  min-width: min(240px, calc(100vw - 1rem));
   padding: 4px;
   z-index: 999;
   pointer-events: auto;

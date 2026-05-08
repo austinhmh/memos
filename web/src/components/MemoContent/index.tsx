@@ -47,7 +47,7 @@ const MemoContent = (props: MemoContentProps) => {
       <div
         ref={memoContentContainerRef}
         className={cn(
-          "markdown-content relative w-full max-w-full wrap-break-word text-base leading-6",
+          "markdown-content relative w-full max-w-full wrap-break-word",
           showCompactMode === "ALL" && lineClampClass,
           showCompactMode === "ALL" && maxHeightClass,
           contentClassName,

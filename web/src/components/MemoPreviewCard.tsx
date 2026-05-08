@@ -94,28 +94,32 @@ const MemoPreviewCard: React.FC<MemoPreviewCardProps> = ({ memo: memoData, showC
     navigateTo(`/${memoData.name}`, { state: { from: parentPage || "/" } });
   };
 
+  const handleEdit = () => {
+    navigateTo(`/${memoData.name}`, { state: { from: parentPage || "/" } });
+  };
+
   return (
     <article
       className={cn(
-        "group relative w-full bg-card border border-border rounded-lg px-5 py-4",
+        "group relative w-full bg-card border border-border rounded-lg px-3 py-3 sm:px-5 sm:py-4",
         "cursor-pointer transition-all duration-200",
         "hover:shadow-md hover:border-primary/20",
       )}
       onClick={handleClick}
     >
-      <div className="flex flex-row items-center gap-2 mb-2">
+      <div className="flex flex-row items-center gap-2 mb-2 min-w-0">
         {isLongForm && <FileTextIcon className="w-4 h-4 text-primary/60 shrink-0" />}
         {showCreator && creator && (
-          <div className="flex items-center gap-2 mr-2">
+          <div className="flex items-center gap-2 mr-2 min-w-0">
             <UserAvatar className="shrink-0" avatarUrl={creator.avatarUrl} />
             <span className="text-sm text-muted-foreground truncate">{creator.displayName || creator.username}</span>
           </div>
         )}
-        <span className="text-xs text-muted-foreground">
+        <span className="text-xs text-muted-foreground shrink-0">
           <relative-time datetime={displayTime?.toISOString()} lang={i18n.language} format="auto"></relative-time>
         </span>
-        {isLongForm && <span className="text-xs text-muted-foreground">· {readingTime} min read</span>}
-        <div className="flex-1" />
+        {isLongForm && <span className="hidden text-xs text-muted-foreground sm:inline">· {readingTime} min read</span>}
+        <div className="flex-1 min-w-0" />
         {showPinned && memoData.pinned && <BookmarkIcon className="w-4 h-4 text-primary shrink-0" />}
         {showVisibility &&
           (canEditVisibility ? (
@@ -156,8 +160,8 @@ const MemoPreviewCard: React.FC<MemoPreviewCardProps> = ({ memo: memoData, showC
             <span className="text-xs">{commentAmount}</span>
           </div>
         )}
-        <div className="opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
-          <MemoActionMenu memo={memoData} />
+        <div className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+          <MemoActionMenu memo={memoData} onEdit={handleEdit} />
         </div>
       </div>
 

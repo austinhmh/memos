@@ -1,5 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from "react";
 import getCaretCoordinates from "textarea-caret";
+import { APP_FONT_SCALE_CHANGE_EVENT } from "@/hooks/useAppFontScale";
 import { cn } from "@/lib/utils";
 import { EDITOR_HEIGHT } from "../constants";
 import type { EditorProps } from "../types";
@@ -46,6 +47,14 @@ const Editor = forwardRef(function Editor(props: EditorProps, ref: React.Forward
       editorRef.current.style.height = `${editorRef.current.scrollHeight ?? 0}px`;
     }
   }, []);
+
+  useEffect(() => {
+    const handleFontScaleChange = () => {
+      window.requestAnimationFrame(updateEditorHeight);
+    };
+    window.addEventListener(APP_FONT_SCALE_CHANGE_EVENT, handleFontScaleChange);
+    return () => window.removeEventListener(APP_FONT_SCALE_CHANGE_EVENT, handleFontScaleChange);
+  }, [updateEditorHeight]);
 
   const updateContent = useCallback(() => {
     if (editorRef.current) {
@@ -203,15 +212,15 @@ const Editor = forwardRef(function Editor(props: EditorProps, ref: React.Forward
   return (
     <div
       className={cn(
-        "flex flex-col justify-start items-start relative w-full bg-inherit",
+        "flex flex-col justify-start items-start relative w-full bg-inherit min-h-0",
         // Focus mode: flex-1 to grow and fill space; Normal: h-auto with max-height
-        isFocusMode ? "flex-1" : compact ? "h-auto max-h-[30vh]" : `h-auto ${EDITOR_HEIGHT.normal}`,
+        isFocusMode ? "flex-1" : compact ? "h-auto max-h-[min(45svh,22rem)]" : `h-auto ${EDITOR_HEIGHT.normal}`,
         className,
       )}
     >
       <textarea
         className={cn(
-          "w-full my-1 text-base resize-none overflow-x-hidden overflow-y-auto bg-transparent outline-none placeholder:opacity-70 whitespace-pre-wrap break-words",
+          "w-full my-1 resize-none overflow-x-hidden overflow-y-auto bg-transparent outline-none placeholder:opacity-70 whitespace-pre-wrap break-words text-[length:var(--app-content-font-size)] leading-normal",
           // Focus mode: flex-1 h-0 to grow within flex container; Normal: h-full to fill wrapper
           isFocusMode ? "flex-1 h-0" : "h-full",
         )}

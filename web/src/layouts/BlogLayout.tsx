@@ -9,7 +9,7 @@ const BlogLayout = () => {
   const lg = useMediaQuery("lg");
 
   return (
-    <section className="@container w-full min-h-full flex flex-col justify-start items-center">
+    <section className="@container w-full min-h-full flex flex-col justify-start items-center overflow-x-hidden">
       {!md && (
         <MobileHeader>
           <span className="text-sm font-medium">Blog</span>
@@ -20,8 +20,8 @@ const BlogLayout = () => {
           <BlogExplorer className="px-3 py-6" />
         </div>
       )}
-      <div className={cn("w-full min-h-full", lg ? "pl-72" : md ? "pl-56" : "")}>
-        <div className="w-full mx-auto px-2 sm:px-4 md:pt-6 pb-8">
+      <div className={cn("w-full min-h-full min-w-0", lg ? "pl-72" : md ? "pl-56" : "")}>
+        <div className="w-full min-w-0 mx-auto px-0 sm:px-4 md:pt-6 pb-8">
           <Outlet />
         </div>
       </div>

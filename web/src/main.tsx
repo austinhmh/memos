@@ -18,6 +18,7 @@ import Spinner from "@/components/Spinner";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { InstanceProvider, useInstance } from "@/contexts/InstanceContext";
 import { ViewProvider } from "@/contexts/ViewContext";
+import { useAppFontScale } from "@/hooks/useAppFontScale";
 import { queryClient } from "@/lib/query-client";
 import router from "./router";
 import { applyLocaleEarly } from "./utils/i18n";
@@ -48,7 +49,7 @@ function AppInitializer({ children }: { children: React.ReactNode }) {
 
   if (!authInitialized || !instanceInitialized) {
     return (
-      <div className="w-full h-screen flex items-center justify-center bg-transparent">
+      <div className="w-full min-h-svh flex items-center justify-center bg-transparent">
         <Spinner size="lg" />
       </div>
     );
@@ -58,6 +59,8 @@ function AppInitializer({ children }: { children: React.ReactNode }) {
 }
 
 function Main() {
+  useAppFontScale();
+
   return (
     <ErrorBoundary>
       <RandomBackground />

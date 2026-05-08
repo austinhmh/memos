@@ -132,14 +132,21 @@ export const SlashMenu = ({ view, items, menuState }: SlashMenuProps) => {
 
   let currentGroup = "";
 
+  const menuWidth = Math.min(240, Math.max(0, window.innerWidth - 16));
+  const menuHeight = Math.min(320, Math.max(0, window.innerHeight - 16));
+  const maxLeft = Math.max(8, window.innerWidth - menuWidth - 8);
+  const maxTop = Math.max(8, window.innerHeight - menuHeight - 8);
+  const limitedLeft = Math.max(8, Math.min(maxLeft, left));
+  const limitedTop = Math.max(8, Math.min(maxTop, top));
+
   return createPortal(
     <div
       ref={menuRef}
       className="slash-menu"
       style={{
         position: "fixed",
-        left: `${left}px`,
-        top: `${top}px`,
+        left: `${limitedLeft}px`,
+        top: `${limitedTop}px`,
         zIndex: 9999,
       }}
     >

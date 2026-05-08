@@ -3,11 +3,12 @@ import { Suspense, useCallback, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import MemoActionMenu from "@/components/MemoActionMenu";
-import { MemoDetailSidebar } from "@/components/MemoDetailSidebar";
+import { MemoDetailSidebar, MemoDetailSidebarDrawer } from "@/components/MemoDetailSidebar";
 import MemoEditor from "@/components/MemoEditor";
 import MemoTableOfContents from "@/components/MemoTableOfContents";
 import MemoView from "@/components/MemoView";
 import { AttachmentList } from "@/components/MemoView/components/metadata";
+import MobileHeader from "@/components/MobileHeader";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import VisibilityIcon from "@/components/VisibilityIcon";
@@ -127,9 +128,15 @@ const BlogDetail = () => {
   ] as const;
 
   return (
-    <section className="@container w-full min-h-full flex flex-col">
+    <section className="@container w-full min-h-full flex flex-col overflow-x-hidden">
+      {!md && (
+        <MobileHeader>
+          <MemoDetailSidebarDrawer memo={memo} parentPage={locationState?.from || "/blog"} />
+        </MobileHeader>
+      )}
+
       {/* Top bar */}
-      <div className="w-full flex items-center justify-between px-4 sm:px-6 pt-3 md:pt-6 pb-2">
+      <div className="w-full flex items-center justify-between gap-3 px-4 sm:px-6 pt-3 md:pt-6 pb-2">
         <button
           type="button"
           className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
@@ -145,11 +152,11 @@ const BlogDetail = () => {
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  className="inline-flex items-center px-2 py-1 text-sm text-muted-foreground rounded-md hover:bg-accent transition-colors"
+                  className="inline-flex max-w-[42vw] items-center px-2 py-1 text-sm text-muted-foreground rounded-md hover:bg-accent transition-colors"
                 >
-                  <VisibilityIcon visibility={memo.visibility} className="opacity-60 mr-1.5" />
-                  <span>{visibilityOptions.find((o) => o.value === memo.visibility)?.label}</span>
-                  <ChevronDownIcon className="ml-0.5 w-4 h-4 opacity-60" />
+                  <VisibilityIcon visibility={memo.visibility} className="opacity-60 mr-1.5 shrink-0" />
+                  <span className="truncate">{visibilityOptions.find((o) => o.value === memo.visibility)?.label}</span>
+                  <ChevronDownIcon className="ml-0.5 w-4 h-4 opacity-60 shrink-0" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
@@ -167,9 +174,9 @@ const BlogDetail = () => {
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <div className="inline-flex items-center px-2 py-1 text-sm text-muted-foreground">
-              <VisibilityIcon visibility={memo.visibility} className="opacity-60 mr-1.5" />
-              <span>{visibilityOptions.find((o) => o.value === memo.visibility)?.label}</span>
+            <div className="inline-flex max-w-[42vw] items-center px-2 py-1 text-sm text-muted-foreground">
+              <VisibilityIcon visibility={memo.visibility} className="opacity-60 mr-1.5 shrink-0" />
+              <span className="truncate">{visibilityOptions.find((o) => o.value === memo.visibility)?.label}</span>
             </div>
           )}
           <MemoActionMenu memo={memo} readonly={readonly} isDetailPage deleteSuccessPath="/blog" />
@@ -177,12 +184,12 @@ const BlogDetail = () => {
       </div>
 
       {/* Three-column layout */}
-      <div ref={containerRef} className="flex-1 flex min-h-0 w-full">
+      <div ref={containerRef} className="flex-1 flex min-h-0 w-full overflow-x-hidden">
         {/* Left: TOC */}
         {md && (
           <>
             <div
-              className="shrink-0 sticky top-0 self-start max-h-screen overflow-y-auto hide-scrollbar pt-4 px-3"
+              className="shrink-0 sticky top-0 self-start max-h-svh overflow-y-auto hide-scrollbar pt-4 px-3"
               style={{ width: `${leftWidth}%` }}
             >
               <MemoTableOfContents content={memo.content} />
@@ -195,7 +202,7 @@ const BlogDetail = () => {
         )}
 
         {/* Center: main content */}
-        <div className="flex-1 min-w-0 px-4 sm:px-6 pb-8 overflow-y-auto">
+        <div className="flex-1 min-w-0 px-4 sm:px-6 pb-8 md:overflow-y-auto">
           <h1 className="text-2xl font-bold mb-4">{titleLine}</h1>
 
           {canEdit ? (
@@ -225,14 +232,29 @@ const BlogDetail = () => {
               <div className="pt-6 pb-16 w-full">
                 <div className="relative mx-auto grow w-full flex flex-col justify-start items-start gap-y-1">
                   {comments.length === 0 ? (
-                    showCreateCommentButton && (
-                      <div className="w-full flex flex-row justify-center items-center py-6">
-                        <Button variant="ghost" onClick={() => setShowCommentEditor(true)}>
-                          <span className="text-muted-foreground">{t("memo.comment.write-a-comment")}</span>
-                          <MessageCircleIcon className="ml-2 w-5 h-auto text-muted-foreground" />
-                        </Button>
-                      </div>
-                    )
+                    <>
+                      {showCreateCommentButton && (
+                        <div className="w-full flex flex-row justify-center items-center py-6">
+                          <Button variant="ghost" onClick={() => setShowCommentEditor(true)}>
+                            <span className="text-muted-foreground">{t("memo.comment.write-a-comment")}</span>
+                            <MessageCircleIcon className="ml-2 w-5 h-auto text-muted-foreground" />
+                          </Button>
+                        </div>
+                      )}
+                      {showCommentEditor && (
+                        <div className="w-full mt-2">
+                          <MemoEditor
+                            cacheKey={`${memo.name}-${memo.updateTime}-comment`}
+                            placeholder={t("editor.add-your-comment-here")}
+                            parentMemoName={memo.name}
+                            autoFocus
+                            compact
+                            onConfirm={async () => setShowCommentEditor(false)}
+                            onCancel={() => setShowCommentEditor(false)}
+                          />
+                        </div>
+                      )}
+                    </>
                   ) : (
                     <>
                       <div className="w-full flex flex-row justify-between items-center h-8 pl-3 mb-2">
@@ -256,6 +278,19 @@ const BlogDetail = () => {
                           compact
                         />
                       ))}
+                      {showCommentEditor && (
+                        <div className="w-full mt-2">
+                          <MemoEditor
+                            cacheKey={`${memo.name}-${memo.updateTime}-comment`}
+                            placeholder={t("editor.add-your-comment-here")}
+                            parentMemoName={memo.name}
+                            autoFocus
+                            compact
+                            onConfirm={async () => setShowCommentEditor(false)}
+                            onCancel={() => setShowCommentEditor(false)}
+                          />
+                        </div>
+                      )}
                     </>
                   )}
                 </div>
@@ -272,7 +307,7 @@ const BlogDetail = () => {
               onMouseDown={() => handleMouseDown("right")}
             />
             <div
-              className="shrink-0 sticky top-0 self-start max-h-screen overflow-y-auto hide-scrollbar pt-4 px-3"
+              className="shrink-0 sticky top-0 self-start max-h-svh overflow-y-auto hide-scrollbar pt-4 px-3"
               style={{ width: `${rightWidth}%` }}
             >
               <MemoDetailSidebar className="py-2" memo={memo} parentPage={locationState?.from || "/blog"} />

@@ -136,7 +136,7 @@ const MemoDetail = () => {
   const displayTime = memo.displayTime ? timestampDate(memo.displayTime) : undefined;
 
   return (
-    <section className="@container w-full min-h-full flex flex-col">
+    <section className="@container w-full min-h-full flex flex-col overflow-x-hidden">
       {!md && (
         <MobileHeader>
           <MemoDetailSidebarDrawer memo={memo} parentPage={locationState?.from} />
@@ -144,22 +144,26 @@ const MemoDetail = () => {
       )}
 
       {/* Top bar */}
-      <div className="w-full flex items-center justify-between px-4 sm:px-6 pt-3 md:pt-6 pb-2">
+      <div className="w-full flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between px-4 sm:px-6 pt-3 md:pt-6 pb-2 min-w-0">
         <button
           type="button"
-          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+          className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
           onClick={handleBack}
         >
-          <ArrowLeftIcon className="w-4 h-4" />
-          <span>Back</span>
+          <ArrowLeftIcon className="w-4 h-4 shrink-0" />
+          <span className="truncate">Back</span>
         </button>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0 sm:justify-end">
           {creator && (
-            <Link className="flex items-center gap-1.5 hover:opacity-80" to={`/u/${encodeURIComponent(creator.username)}`} viewTransition>
-              <span className="text-sm text-muted-foreground">{creator.displayName || creator.username}</span>
+            <Link
+              className="flex min-w-0 items-center gap-1.5 hover:opacity-80"
+              to={`/u/${encodeURIComponent(creator.username)}`}
+              viewTransition
+            >
+              <span className="min-w-0 truncate text-sm text-muted-foreground">{creator.displayName || creator.username}</span>
             </Link>
           )}
-          <span className="text-xs text-muted-foreground">
+          <span className="text-xs text-muted-foreground shrink-0">
             <relative-time datetime={displayTime?.toISOString()} lang={i18n.language} format="auto"></relative-time>
           </span>
         </div>
@@ -169,7 +173,7 @@ const MemoDetail = () => {
       {parentMemo && (
         <div className="w-full px-4 sm:px-6 mb-3">
           <Link
-            className="inline-flex items-center px-3 py-1 border border-border rounded-lg text-sm text-muted-foreground hover:shadow hover:opacity-80"
+            className="inline-flex max-w-full items-center px-3 py-1 border border-border rounded-lg text-sm text-muted-foreground hover:shadow hover:opacity-80"
             to={`/${parentMemo.name}`}
             state={locationState}
             viewTransition
@@ -181,12 +185,12 @@ const MemoDetail = () => {
       )}
 
       {/* Three-column layout */}
-      <div ref={containerRef} className="flex-1 flex min-h-0 w-full">
+      <div ref={containerRef} className="flex-1 flex min-h-0 w-full overflow-x-hidden">
         {/* Left: TOC */}
         {md && (
           <>
             <div
-              className="shrink-0 sticky top-0 self-start max-h-screen overflow-y-auto hide-scrollbar pt-4 px-3"
+              className="shrink-0 sticky top-0 self-start max-h-svh overflow-y-auto hide-scrollbar pt-4 px-3"
               style={{ width: `${leftWidth}%` }}
             >
               <MemoTableOfContents content={memo.content} />
@@ -199,7 +203,7 @@ const MemoDetail = () => {
         )}
 
         {/* Center: main content */}
-        <div className="flex-1 min-w-0 px-4 sm:px-6 pb-8 overflow-y-auto">
+        <div className="flex-1 min-w-0 px-4 sm:px-6 pb-8 md:overflow-y-auto">
           <MemoViewContext.Provider value={memoViewContextValue}>
             <div className="w-full">
               {canEdit ? (
@@ -231,7 +235,7 @@ const MemoDetail = () => {
               onMouseDown={() => handleMouseDown("right")}
             />
             <div
-              className="shrink-0 sticky top-0 self-start max-h-screen overflow-y-auto hide-scrollbar pt-4 px-3"
+              className="shrink-0 sticky top-0 self-start max-h-svh overflow-y-auto hide-scrollbar pt-4 px-3"
               style={{ width: `${rightWidth}%` }}
             >
               <MemoDetailSidebar className="py-2" memo={memo} parentPage={locationState?.from} />
@@ -302,14 +306,29 @@ const MemoDetail = () => {
           <div className="pt-6 pb-16 w-full">
             <div className="relative mx-auto grow w-full flex flex-col justify-start items-start gap-y-1">
               {comments.length === 0 ? (
-                showCreateCommentButton && (
-                  <div className="w-full flex flex-row justify-center items-center py-6">
-                    <Button variant="ghost" onClick={() => setShowCommentEditor(true)}>
-                      <span className="text-muted-foreground">{t("memo.comment.write-a-comment")}</span>
-                      <MessageCircleIcon className="ml-2 w-5 h-auto text-muted-foreground" />
-                    </Button>
-                  </div>
-                )
+                <>
+                  {showCreateCommentButton && (
+                    <div className="w-full flex flex-row justify-center items-center py-6">
+                      <Button variant="ghost" onClick={() => setShowCommentEditor(true)}>
+                        <span className="text-muted-foreground">{t("memo.comment.write-a-comment")}</span>
+                        <MessageCircleIcon className="ml-2 w-5 h-auto text-muted-foreground" />
+                      </Button>
+                    </div>
+                  )}
+                  {showCommentEditor && (
+                    <div className="w-full mt-2">
+                      <MemoEditor
+                        cacheKey={`${memo.name}-${memo.updateTime}-comment`}
+                        placeholder={t("editor.add-your-comment-here")}
+                        parentMemoName={memo.name}
+                        autoFocus
+                        compact
+                        onConfirm={async () => setShowCommentEditor(false)}
+                        onCancel={() => setShowCommentEditor(false)}
+                      />
+                    </div>
+                  )}
+                </>
               ) : (
                 <>
                   <div className="w-full flex flex-row justify-between items-center h-8 pl-3 mb-2">

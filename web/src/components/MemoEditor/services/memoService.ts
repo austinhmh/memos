@@ -49,11 +49,6 @@ function buildUpdateMask(
     patch.location = state.metadata.location;
   }
 
-  // Auto-update timestamp if content changed
-  if (["content", "attachments", "relations", "location"].some((key) => mask.has(key))) {
-    mask.add("update_time");
-  }
-
   // Handle custom timestamps
   if (state.timestamps.createTime) {
     const prevCreateTime = prevMemo.createTime ? timestampDate(prevMemo.createTime) : undefined;

@@ -1,12 +1,14 @@
 package v1
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/metadata"
 
 	"github.com/usememos/memos/internal/profile"
 )
@@ -130,7 +132,11 @@ func TestBuildRefreshTokenCookieUsesSecureByDefault(t *testing.T) {
 
 	httpService := &APIV1Service{Profile: &profile.Profile{Mode: "prod", InstanceURL: "http://example.com"}}
 	httpCookie := httpService.buildRefreshTokenCookie(t.Context(), "refresh", expiresAt)
-	require.True(t, strings.Contains(httpCookie, "Secure"))
+	require.False(t, strings.Contains(httpCookie, "Secure"))
+
+	lanHTTPService := &APIV1Service{Profile: &profile.Profile{Mode: "prod", InstanceURL: "http://10.224.125.61:8081"}}
+	lanHTTPCookie := lanHTTPService.buildRefreshTokenCookie(t.Context(), "refresh", expiresAt)
+	require.False(t, strings.Contains(lanHTTPCookie, "Secure"))
 
 	localhostService := &APIV1Service{Profile: &profile.Profile{Mode: "prod", InstanceURL: "http://localhost:8081"}}
 	localhostCookie := localhostService.buildRefreshTokenCookie(t.Context(), "refresh", expiresAt)
@@ -150,9 +156,22 @@ func TestBuildRefreshTokenCookieUsesSecureByDefault(t *testing.T) {
 
 	devRemoteHTTPService := &APIV1Service{Profile: &profile.Profile{Mode: "dev", InstanceURL: "http://example.com"}}
 	devRemoteHTTPCookie := devRemoteHTTPService.buildRefreshTokenCookie(t.Context(), "refresh", expiresAt)
-	require.True(t, strings.Contains(devRemoteHTTPCookie, "Secure"))
+	require.False(t, strings.Contains(devRemoteHTTPCookie, "Secure"))
 
 	nilProfileService := &APIV1Service{}
 	nilProfileCookie := nilProfileService.buildRefreshTokenCookie(t.Context(), "refresh", expiresAt)
 	require.True(t, strings.Contains(nilProfileCookie, "Secure"))
+}
+
+func TestBuildRefreshTokenCookieUsesRequestOriginWhenInstanceURLMissing(t *testing.T) {
+	expiresAt := time.Now().Add(time.Hour)
+	service := &APIV1Service{Profile: &profile.Profile{Mode: "prod"}}
+
+	httpOriginCtx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("origin", "http://10.224.125.61:8081"))
+	httpOriginCookie := service.buildRefreshTokenCookie(httpOriginCtx, "refresh", expiresAt)
+	require.False(t, strings.Contains(httpOriginCookie, "Secure"))
+
+	httpsOriginCtx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("origin", "https://example.com"))
+	httpsOriginCookie := service.buildRefreshTokenCookie(httpsOriginCtx, "refresh", expiresAt)
+	require.True(t, strings.Contains(httpsOriginCookie, "Secure"))
 }

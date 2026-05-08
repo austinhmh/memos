@@ -55,11 +55,11 @@ function PreviewImageDialog({ open, onOpenChange, imgUrls, initialIndex = 0 }: P
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="!w-[100vw] !h-[100vh] !max-w-[100vw] !max-h-[100vw] p-0 border-0 shadow-none bg-transparent [&>button]:hidden"
+        className="!w-[100dvw] !h-[100dvh] !max-w-[100dvw] !max-h-[100dvh] p-0 border-0 shadow-none bg-transparent [&>button]:hidden"
         aria-describedby="image-preview-description"
       >
         {/* Close button */}
-        <div className="fixed top-4 right-4 z-50">
+        <div className="fixed top-[calc(1rem+var(--sat))] right-[max(1rem,var(--sar))] z-50">
           <Button
             onClick={handleClose}
             variant="secondary"
@@ -72,7 +72,10 @@ function PreviewImageDialog({ open, onOpenChange, imgUrls, initialIndex = 0 }: P
         </div>
 
         {/* Image container */}
-        <div className="w-full h-full flex items-center justify-center p-4 sm:p-8 overflow-auto" onClick={handleBackdropClick}>
+        <div
+          className="w-full h-full flex items-center justify-center p-4 sm:p-8 pb-[calc(1rem+var(--sab))] overflow-auto"
+          onClick={handleBackdropClick}
+        >
           <img
             src={imgUrls[safeIndex]}
             alt={`Preview image ${safeIndex + 1} of ${imgUrls.length}`}
