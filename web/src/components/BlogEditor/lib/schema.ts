@@ -232,24 +232,85 @@ export const blogEditorSchema = new Schema({
     image: {
       inline: true,
       attrs: {
-        src: {},
+        src: { default: "" },
+        width: { default: undefined },
+        height: { default: undefined },
         alt: { default: null },
+        source: { default: null },
+        layoutClass: { default: null },
         title: { default: null },
+        marks: { default: undefined },
       },
+      content: "text*",
+      marks: "",
       group: "inline",
-      draggable: true,
+      selectable: true,
+      draggable: false,
       atom: true,
       parseDOM: [
         {
+          tag: "div[class~=image]",
+          getAttrs: (dom: HTMLElement) => {
+            const img = dom.getElementsByTagName("img")[0];
+            const className = dom.className;
+            const layoutClassMatched = className && className.match(/image-(.*)$/);
+            const width = img?.getAttribute("width");
+            const height = img?.getAttribute("height");
+            return {
+              src: img?.getAttribute("src"),
+              alt: img?.getAttribute("alt"),
+              title: img?.getAttribute("title"),
+              source: img?.getAttribute("source"),
+              width: width ? parseInt(width, 10) : undefined,
+              height: height ? parseInt(height, 10) : undefined,
+              layoutClass: layoutClassMatched ? layoutClassMatched[1] : null,
+            };
+          },
+        },
+        {
           tag: "img[src]",
-          getAttrs: (dom: HTMLElement) => ({
-            src: dom.getAttribute("src"),
-            title: dom.getAttribute("title"),
-            alt: dom.getAttribute("alt"),
-          }),
+          getAttrs: (dom: HTMLElement) => {
+            if (dom.parentElement?.classList.contains("image") || dom.parentElement?.classList.contains("emoji")) {
+              return false;
+            }
+
+            let width = dom.getAttribute("width");
+            let height = dom.getAttribute("height");
+            if (!width && dom.style.width?.endsWith("px")) {
+              width = dom.style.width.slice(0, -2);
+            }
+            if (!height && dom.style.height?.endsWith("px")) {
+              height = dom.style.height.slice(0, -2);
+            }
+
+            return {
+              src: dom.getAttribute("src"),
+              alt: dom.getAttribute("alt"),
+              title: dom.getAttribute("title"),
+              width: width ? parseInt(width, 10) : undefined,
+              height: height ? parseInt(height, 10) : undefined,
+            };
+          },
         },
       ],
-      toDOM: (node) => ["img", { src: node.attrs.src, alt: node.attrs.alt, title: node.attrs.title, loading: "lazy" }],
+      toDOM: (node) => {
+        const className = node.attrs.layoutClass ? `image image-${node.attrs.layoutClass}` : "image";
+        return [
+          "div",
+          { class: className },
+          [
+            "img",
+            {
+              ...node.attrs,
+              src: node.attrs.src,
+              width: node.attrs.width,
+              height: node.attrs.height,
+              contentEditable: "false",
+              loading: "lazy",
+            },
+          ],
+        ];
+      },
     },
     hard_break: {
       inline: true,

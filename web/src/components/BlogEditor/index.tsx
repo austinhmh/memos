@@ -10,11 +10,14 @@ import { type Command, EditorState, type Plugin, TextSelection } from "prosemirr
 import { EditorView } from "prosemirror-view";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
-import { memoServiceClient } from "@/connect";
+import { attachmentServiceClient, memoServiceClient } from "@/connect";
 import { useAuth } from "@/contexts/AuthContext";
 import { memoKeys, syncMemoToDetailCache, syncMemoToListCaches } from "@/hooks/useMemoQueries";
 import { userKeys } from "@/hooks/useUserQueries";
+import useDictionary from "@/outline-shims/app/hooks/useDictionary";
 import { isMac } from "@/outline-shims/shared/utils/browser";
+import { dataUrlToFile, getDataTransferFiles } from "@/outline-shims/shared/utils/files";
+import { fileNameFromUrl } from "@/outline-shims/shared/utils/urls";
 import backspaceToParagraph from "@/outline-vendor/shared/editor/commands/backspaceToParagraph";
 import {
   enterInCode,
@@ -31,10 +34,15 @@ import toggleBlockType from "@/outline-vendor/shared/editor/commands/toggleBlock
 import { toggleCheckboxItems } from "@/outline-vendor/shared/editor/commands/toggleCheckboxItems";
 import toggleList from "@/outline-vendor/shared/editor/commands/toggleList";
 import toggleWrap from "@/outline-vendor/shared/editor/commands/toggleWrap";
+import uploadPlaceholderPlugin from "@/outline-vendor/shared/editor/lib/uploadPlaceholder";
+import { UploadPlugin } from "@/outline-vendor/shared/editor/plugins/UploadPlugin";
 import { getCurrentBlock } from "@/outline-vendor/shared/editor/queries/getCurrentBlock";
 import { isInCode } from "@/outline-vendor/shared/editor/queries/isInCode";
+import type { Attachment } from "@/types/proto/api/v1/attachment_service_pb";
+import { AttachmentSchema } from "@/types/proto/api/v1/attachment_service_pb";
 import type { Memo } from "@/types/proto/api/v1/memo_service_pb";
 import { MemoSchema } from "@/types/proto/api/v1/memo_service_pb";
+import { getAttachmentUrl } from "@/utils/attachment";
 import { getThemeWithFallback, resolveTheme } from "@/utils/theme";
 import { SlashMenu } from "./components/SlashMenu";
 import { loadDoc, parseInWorker } from "./lib/docCache";
@@ -61,6 +69,7 @@ interface BlogEditorProps {
 }
 
 const AUTOSAVE_DELAY = 2000;
+const PASTED_IMAGE_FILENAME = "pasted-image.png";
 const SERIALIZE_IDLE_TIMEOUT = 1200;
 
 type IdleTaskWindow = Window &
@@ -102,6 +111,35 @@ const cancelIdleTask = (handle?: number) => {
 const schema = blogEditorSchema;
 const parser = createMdParser(schema);
 const serializer = createMdSerializer();
+
+const toUploadableFile = async (file: File | string) => {
+  if (file instanceof File) {
+    return file;
+  }
+
+  if (file.startsWith("data:")) {
+    return dataUrlToFile(file, PASTED_IMAGE_FILENAME);
+  }
+
+  const response = await fetch(file);
+  const blob = await response.blob();
+  return new File([blob], fileNameFromUrl(file) || PASTED_IMAGE_FILENAME, { type: blob.type || "image/png" });
+};
+
+const createBlogEditorAttachment = async (file: File, memoName: string): Promise<Attachment> => {
+  const buffer = new Uint8Array(await file.arrayBuffer());
+  const attachment = await attachmentServiceClient.createAttachment({
+    attachment: create(AttachmentSchema, {
+      filename: file.name || PASTED_IMAGE_FILENAME,
+      size: BigInt(file.size),
+      type: file.type || "image/png",
+      content: buffer,
+      memo: memoName,
+    }),
+  });
+
+  return attachment;
+};
 
 const areTagsEqual = (a: string[], b: string[]) => {
   if (a.length !== b.length) {
@@ -256,6 +294,7 @@ const buildBlogEditorKeymap = (manualSave: Command): Record<string, Command> => 
 
 const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: BlogEditorProps) => {
   const queryClient = useQueryClient();
+  const dictionary = useDictionary();
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -468,6 +507,15 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
     [handleManualSave],
   );
 
+  const uploadFile = useCallback(
+    async (file: File | string) => {
+      const uploadableFile = await toUploadableFile(file);
+      const attachment = await createBlogEditorAttachment(uploadableFile, memo.name);
+      return getAttachmentUrl(attachment);
+    },
+    [memo.name],
+  );
+
   useEffect(() => {
     let cancelled = false;
 
@@ -487,6 +535,21 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
         plugins: [
           keymap(buildBlogEditorKeymap(manualSaveCommand)),
           history(),
+          uploadPlaceholderPlugin,
+          new UploadPlugin({
+            dictionary,
+            uploadFile,
+            onFileUploadStart: () => {
+              if (mountedRef.current) {
+                setIsSaving(true);
+              }
+            },
+            onFileUploadStop: () => {
+              if (mountedRef.current) {
+                setIsSaving(false);
+              }
+            },
+          }),
           buildMarkdownInputRules(schema),
           createSlashMenuPlugin(setSlashMenuState),
           createMermaidPlugin({ isDark: isDarkRef.current }),
@@ -555,6 +618,7 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
         const event = e as ClipboardEvent;
         const v = viewRef.current;
         if (!v || !v.editable || !event.clipboardData) return;
+        if (getDataTransferFiles(event).length > 0) return;
 
         const text = event.clipboardData.getData("text/plain");
         const html = event.clipboardData.getData("text/html");
@@ -606,7 +670,7 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
         viewRef.current = null;
       }
     };
-  }, [memo.name, flushPendingSave, manualSaveCommand]);
+  }, [memo.name, flushPendingSave, manualSaveCommand, dictionary, uploadFile]);
 
   useEffect(() => {
     const view = viewRef.current;

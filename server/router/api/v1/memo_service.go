@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"strings"
 	"time"
 
@@ -1008,11 +1009,15 @@ func (s *APIV1Service) cleanupUnreferencedAttachments(ctx context.Context, memoI
 }
 
 // extractAttachmentUID extracts the UID from an attachment URL.
-// Supports formats: /file/attachments/{uid}/{filename}
-func extractAttachmentUID(url string) string {
-	// Match /file/attachments/{uid}/...
-	if strings.HasPrefix(url, "/file/attachments/") {
-		parts := strings.Split(strings.TrimPrefix(url, "/file/attachments/"), "/")
+// Supports formats: /file/attachments/{uid}/{filename} and absolute local URLs.
+func extractAttachmentUID(rawURL string) string {
+	path := rawURL
+	if parsed, err := url.Parse(rawURL); err == nil && parsed.Path != "" {
+		path = parsed.Path
+	}
+
+	if strings.HasPrefix(path, "/file/attachments/") {
+		parts := strings.Split(strings.TrimPrefix(path, "/file/attachments/"), "/")
 		if len(parts) > 0 && parts[0] != "" {
 			return parts[0]
 		}

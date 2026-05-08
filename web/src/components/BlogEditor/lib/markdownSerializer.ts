@@ -63,10 +63,13 @@ export function createMdSerializer(): MarkdownSerializer {
       state.closeBlock(node);
     },
     image(state, node) {
-      const alt = state.esc((node.attrs.alt as string) || "");
-      const src = (node.attrs.src as string).replace(/[()]/g, "\\$&");
-      const title = node.attrs.title ? ` "${String(node.attrs.title).replace(/"/g, '\\"')}"` : "";
-      state.write(`![${alt}](${src}${title})`);
+      state.write(
+        " ![" +
+          state.esc(((node.attrs.alt as string | null) || "").replace("\n", ""), false) +
+          "](" +
+          state.esc((node.attrs.src as string) || "", false) +
+          ")",
+      );
     },
     hard_break(state, _node, parent, index) {
       for (let i = index + 1; i < parent.childCount; i++) {

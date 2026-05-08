@@ -1,11 +1,13 @@
-import { Attachment } from "@/types/proto/api/v1/attachment_service_pb";
+import type { Attachment } from "@/types/proto/api/v1/attachment_service_pb";
+
+const getAttachmentFilePath = (attachment: Attachment) => `/file/${attachment.name}/${encodeURIComponent(attachment.filename)}`;
 
 export const getAttachmentUrl = (attachment: Attachment) => {
   if (attachment.externalLink) {
     return attachment.externalLink;
   }
 
-  return `${window.location.origin}/file/${attachment.name}/${attachment.filename}`;
+  return getAttachmentFilePath(attachment);
 };
 
 export const getAttachmentThumbnailUrl = (attachment: Attachment) => {
@@ -13,7 +15,7 @@ export const getAttachmentThumbnailUrl = (attachment: Attachment) => {
     return attachment.externalLink;
   }
 
-  return `${window.location.origin}/file/${attachment.name}/${attachment.filename}?thumbnail=true`;
+  return `${getAttachmentFilePath(attachment)}?thumbnail=true`;
 };
 
 export const getAttachmentType = (attachment: Attachment) => {

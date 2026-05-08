@@ -83,15 +83,15 @@ const insertFiles = async function (
         !options.isAttachment &&
         !!schema.nodes.video;
       const isPdf = FileHelper.isPdf(file.type) && !options.isAttachment;
-      const getDimensions = isImage
-        ? FileHelper.getImageDimensions
+      const dimensions = await (isImage
+        ? FileHelper.getImageDimensions(file).catch(() => undefined)
         : isVideo
-          ? FileHelper.getVideoDimensions
-          : undefined;
+          ? FileHelper.getVideoDimensions(file).catch(() => undefined)
+          : undefined);
 
       return {
         id: uuidv4(),
-        dimensions: await getDimensions?.(file),
+        dimensions,
         source: await FileHelper.getImageSourceAttr(file),
         isImage,
         isVideo,
@@ -127,8 +127,7 @@ const insertFiles = async function (
           return;
         }
         if (upload.isImage) {
-          const newImg = new Image();
-          newImg.onload = async () => {
+          const insertImage = (dimensions?: { width: number; height: number }) => {
             const result = findPlaceholder(view.state, upload.id);
             if (result === null) {
               return;
@@ -147,7 +146,7 @@ const insertFiles = async function (
                   schema.nodes.image.create({
                     src,
                     source: upload.source,
-                    ...(upload.dimensions ?? {}),
+                    ...(dimensions ?? upload.dimensions ?? {}),
                     ...options.attrs,
                   })
                 )
@@ -155,10 +154,18 @@ const insertFiles = async function (
             );
           };
 
-          newImg.onerror = () => {
-            throw new Error(`Error loading image: ${src}`);
-          };
+          if (upload.dimensions) {
+            insertImage(upload.dimensions);
+            return;
+          }
 
+          const newImg = new Image();
+          newImg.onload = () => {
+            const width = newImg.naturalWidth || newImg.width;
+            const height = newImg.naturalHeight || newImg.height;
+            insertImage(width && height ? { width, height } : undefined);
+          };
+          newImg.onerror = () => insertImage();
           newImg.src = src;
         } else if (upload.isVideo) {
           const result = findPlaceholder(view.state, upload.id);

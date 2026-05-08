@@ -702,6 +702,30 @@
     outline-offset: 2px;
   }
 
+  .blog-editor-content .image.placeholder {
+    display: inline-block;
+    max-width: 100%;
+    opacity: 0.65;
+    filter: grayscale(0.25);
+  }
+
+  .blog-editor-content .image.placeholder img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+  }
+
+  .blog-editor-content .file.placeholder {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px dashed var(--border);
+    border-radius: 0.5rem;
+    color: var(--muted-foreground);
+    background: var(--muted);
+  }
+
   /* Strikethrough */
   .blog-editor-content s,
   .blog-editor-content del {

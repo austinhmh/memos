@@ -353,9 +353,10 @@ const x = 1;
     expect(types).toContain("checkbox_list_open");
   });
 
-  it("handles HTML blocks", () => {
+  it("treats HTML blocks as plain text", () => {
     const input = "<div>hello</div>";
     const tokens = parse(input);
-    expect(tokens.some((t) => t.type === "html_block")).toBe(true);
+    expect(tokens.some((t) => t.type === "html_block")).toBe(false);
+    expect(tokens.some((t) => t.type === "paragraph_open")).toBe(true);
   });
 });
