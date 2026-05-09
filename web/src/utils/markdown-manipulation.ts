@@ -78,6 +78,51 @@ export function toggleTaskAtIndex(markdown: string, taskIndex: number, checked: 
   return toggleTaskAtLine(markdown, task.lineNumber, checked);
 }
 
+export function removeTaskAtLine(markdown: string, lineNumber: number): string {
+  const lines = markdown.split("\n");
+
+  if (lineNumber < 0 || lineNumber >= lines.length) {
+    return markdown;
+  }
+
+  if (!/^\s*[-*+]\s+\[[ xX]\]\s+/.test(lines[lineNumber])) {
+    return markdown;
+  }
+
+  lines.splice(lineNumber, 1);
+
+  if (lineNumber < lines.length && lines[lineNumber].trim() === "") {
+    lines.splice(lineNumber, 1);
+  }
+
+  return lines.join("\n");
+}
+
+export function removeTaskAtIndex(markdown: string, taskIndex: number): string {
+  return removeTaskAtLine(markdown, getTaskLineNumber(markdown, taskIndex));
+}
+
+export function updateTaskContentAtLine(markdown: string, lineNumber: number, content: string): string {
+  const lines = markdown.split("\n");
+  const normalizedContent = content.replace(/\s*\n+\s*/g, " ").trim();
+
+  if (!normalizedContent || lineNumber < 0 || lineNumber >= lines.length) {
+    return markdown;
+  }
+
+  const match = lines[lineNumber].match(/^(\s*[-*+]\s+\[[ xX]\]\s+)(.*)$/);
+  if (!match) {
+    return markdown;
+  }
+
+  lines[lineNumber] = `${match[1]}${normalizedContent}`;
+  return lines.join("\n");
+}
+
+export function updateTaskContentAtIndex(markdown: string, taskIndex: number, content: string): string {
+  return updateTaskContentAtLine(markdown, getTaskLineNumber(markdown, taskIndex), content);
+}
+
 export function removeCompletedTasks(markdown: string): string {
   const tasks = extractTasksFromAst(markdown);
   const completedLineNumbers = new Set(tasks.filter((t) => t.checked).map((t) => t.lineNumber));

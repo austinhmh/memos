@@ -1,11 +1,23 @@
 import { create } from "@bufbuild/protobuf";
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 import dayjs from "dayjs";
-import { ArchiveIcon, CheckCircle2Icon, CircleIcon, ExternalLinkIcon, ListTodoIcon, SearchIcon } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import {
+  ArchiveIcon,
+  CheckCircle2Icon,
+  CheckIcon,
+  CircleIcon,
+  ExternalLinkIcon,
+  ListTodoIcon,
+  SearchIcon,
+  Trash2Icon,
+  XIcon,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "react-hot-toast";
 import Empty from "@/components/Empty";
+import { AttachmentCard } from "@/components/MemoView/components/metadata";
 import MobileHeader from "@/components/MobileHeader";
+import PreviewImageDialog from "@/components/PreviewImageDialog";
 import Skeleton from "@/components/Skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,9 +30,11 @@ import useNavigateTo from "@/hooks/useNavigateTo";
 import i18n from "@/i18n";
 import { cn } from "@/lib/utils";
 import { Routes } from "@/router";
+import type { Attachment } from "@/types/proto/api/v1/attachment_service_pb";
 import { State } from "@/types/proto/api/v1/common_pb";
 import { type Memo, MemoSchema, Visibility } from "@/types/proto/api/v1/memo_service_pb";
-import { extractTasks, type TaskItem, toggleTaskAtIndex } from "@/utils/markdown-manipulation";
+import { getAttachmentType, getAttachmentUrl } from "@/utils/attachment";
+import { extractTasks, removeTaskAtIndex, type TaskItem, toggleTaskAtIndex, updateTaskContentAtIndex } from "@/utils/markdown-manipulation";
 
 interface TodoTask extends TaskItem {
   memo: Memo;
@@ -139,25 +153,150 @@ interface TodoTaskRowProps {
   task: TodoTask;
   onToggle: (task: TodoTask, checked: boolean) => void;
   onOpenMemo: (memo: Memo) => void;
+  onDelete: (task: TodoTask) => void;
+  onUpdateContent: (task: TodoTask, content: string) => void;
   disabled?: boolean;
 }
 
-const TodoTaskRow = ({ task, onToggle, onOpenMemo, disabled }: TodoTaskRowProps) => {
+interface TodoAttachmentPreviewProps {
+  attachments: Attachment[];
+  disabled?: boolean;
+}
+
+const TodoAttachmentPreview = ({ attachments, disabled }: TodoAttachmentPreviewProps) => {
+  const imageAttachments = useMemo(() => attachments.filter((attachment) => getAttachmentType(attachment) === "image/*"), [attachments]);
+  const [previewImage, setPreviewImage] = useState<{ open: boolean; index: number }>({ open: false, index: 0 });
+  const imageUrls = useMemo(() => imageAttachments.map((attachment) => getAttachmentUrl(attachment)), [imageAttachments]);
+
+  if (imageAttachments.length === 0) {
+    return null;
+  }
+
+  const visibleAttachments = imageAttachments.slice(0, 4);
+  const remainingCount = imageAttachments.length - visibleAttachments.length;
+
+  const handlePreview = (attachment: Attachment) => {
+    if (disabled) {
+      return;
+    }
+
+    const index = imageAttachments.findIndex((item) => item.name === attachment.name);
+    setPreviewImage({ open: true, index: Math.max(index, 0) });
+  };
+
+  return (
+    <>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        {visibleAttachments.map((attachment) => (
+          <button
+            key={attachment.name}
+            type="button"
+            className="size-14 overflow-hidden rounded-lg border border-border bg-muted/40 transition-colors hover:border-primary/40 disabled:pointer-events-none disabled:opacity-60"
+            onClick={() => handlePreview(attachment)}
+            disabled={disabled}
+            aria-label={`Preview ${attachment.filename}`}
+          >
+            <AttachmentCard attachment={attachment} className="rounded-none" />
+          </button>
+        ))}
+        {remainingCount > 0 && <span className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">+{remainingCount}</span>}
+      </div>
+      <PreviewImageDialog
+        open={previewImage.open}
+        onOpenChange={(open: boolean) => setPreviewImage((prev) => ({ ...prev, open }))}
+        imgUrls={imageUrls}
+        initialIndex={previewImage.index}
+      />
+    </>
+  );
+};
+
+const TodoTaskRow = ({ task, onToggle, onOpenMemo, onDelete, onUpdateContent, disabled }: TodoTaskRowProps) => {
   const displayDate = getMemoDisplayDate(task.memo);
   const tag = getPrimaryTag(task.memo);
+  const [editing, setEditing] = useState(false);
+  const [draftContent, setDraftContent] = useState(task.content);
+
+  useEffect(() => {
+    setDraftContent(task.content);
+  }, [task.content]);
+
+  const submitEdit = () => {
+    const content = draftContent.trim();
+    if (!content) {
+      toast.error("Todo cannot be empty");
+      return;
+    }
+
+    if (content !== task.content) {
+      onUpdateContent(task, content);
+    }
+    setEditing(false);
+  };
+
+  const cancelEdit = () => {
+    setDraftContent(task.content);
+    setEditing(false);
+  };
 
   return (
     <div className="group flex items-start gap-3 rounded-lg border border-border/70 bg-background px-3 py-2.5 transition-colors hover:border-primary/30 hover:bg-accent/30">
       <Checkbox
         checked={task.checked}
-        disabled={disabled}
+        disabled={disabled || editing}
         onCheckedChange={(checked) => onToggle(task, checked === true)}
         className="mt-0.5"
       />
       <div className="min-w-0 flex-1">
-        <button type="button" className="block w-full text-left" onClick={() => onOpenMemo(task.memo)}>
-          <span className={cn("text-sm leading-5", task.checked && "text-muted-foreground line-through")}>{task.content}</span>
-        </button>
+        {editing ? (
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Input
+              autoFocus
+              value={draftContent}
+              disabled={disabled}
+              onChange={(event) => setDraftContent(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  submitEdit();
+                }
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  cancelEdit();
+                }
+              }}
+            />
+            <div className="flex items-center gap-1">
+              <Button
+                type="button"
+                variant="default"
+                size="icon"
+                className="size-7"
+                onClick={submitEdit}
+                disabled={disabled}
+                aria-label="Save todo"
+              >
+                <CheckIcon className="size-4" />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-7"
+                onClick={cancelEdit}
+                disabled={disabled}
+                aria-label="Cancel edit"
+              >
+                <XIcon className="size-4" />
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <button type="button" className="block w-full text-left" onClick={() => setEditing(true)} disabled={disabled}>
+            <span className={cn("text-sm leading-5", task.checked && "text-muted-foreground line-through")}>{task.content}</span>
+          </button>
+        )}
+        <TodoAttachmentPreview attachments={task.memo.attachments} disabled={disabled} />
         <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
           {tag && <Badge variant="secondary">#{tag}</Badge>}
           <span>memo {getMemoUid(task.memo)}</span>
@@ -169,15 +308,28 @@ const TodoTaskRow = ({ task, onToggle, onOpenMemo, disabled }: TodoTaskRowProps)
           )}
         </div>
       </div>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="size-7 opacity-0 transition-opacity group-hover:opacity-100"
-        onClick={() => onOpenMemo(task.memo)}
-        aria-label="Open source memo"
-      >
-        <ExternalLinkIcon className="size-4" />
-      </Button>
+      <div className="flex shrink-0 items-center gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7 text-muted-foreground hover:text-destructive"
+          onClick={() => onDelete(task)}
+          disabled={disabled || editing}
+          aria-label="Delete todo"
+        >
+          <Trash2Icon className="size-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7"
+          onClick={() => onOpenMemo(task.memo)}
+          disabled={disabled || editing}
+          aria-label="Open source memo"
+        >
+          <ExternalLinkIcon className="size-4" />
+        </Button>
+      </div>
     </div>
   );
 };
@@ -186,10 +338,19 @@ interface TodoSectionCardProps {
   section: TodoSection;
   onToggleTask: (task: TodoTask, checked: boolean) => void;
   onOpenMemo: (memo: Memo) => void;
+  onDeleteTask: (task: TodoTask) => void;
+  onUpdateTaskContent: (task: TodoTask, content: string) => void;
   updatingMemoName?: string;
 }
 
-const TodoSectionCard = ({ section, onToggleTask, onOpenMemo, updatingMemoName }: TodoSectionCardProps) => {
+const TodoSectionCard = ({
+  section,
+  onToggleTask,
+  onOpenMemo,
+  onDeleteTask,
+  onUpdateTaskContent,
+  updatingMemoName,
+}: TodoSectionCardProps) => {
   const stats = getTaskStats(section.tasks);
 
   return (
@@ -211,12 +372,45 @@ const TodoSectionCard = ({ section, onToggleTask, onOpenMemo, updatingMemoName }
             task={task}
             onToggle={onToggleTask}
             onOpenMemo={onOpenMemo}
+            onDelete={onDeleteTask}
+            onUpdateContent={onUpdateTaskContent}
             disabled={updatingMemoName === task.memo.name}
           />
         ))}
       </div>
     </section>
   );
+};
+
+const hasImageReferences = (content: string, attachments: Attachment[]) => {
+  if (attachments.length === 0) {
+    return false;
+  }
+
+  return attachments.some((attachment) => content.includes(getAttachmentUrl(attachment)) || content.includes(attachment.name));
+};
+
+const updateMemoContent = async (updateMemo: ReturnType<typeof useUpdateMemo>, task: TodoTask, content: string, errorMessage: string) => {
+  const nextContent = content.trim() ? content : " ";
+  if (nextContent === task.memo.content) {
+    return;
+  }
+
+  const shouldKeepAttachments = hasImageReferences(nextContent, task.memo.attachments);
+
+  try {
+    await updateMemo.mutateAsync({
+      update: {
+        name: task.memo.name,
+        content: nextContent,
+        ...(shouldKeepAttachments ? { attachments: task.memo.attachments } : {}),
+      },
+      updateMask: shouldKeepAttachments ? ["content", "attachments"] : ["content"],
+    });
+  } catch (error) {
+    console.error(errorMessage, error);
+    toast.error(errorMessage);
+  }
 };
 
 const Todo = () => {
@@ -276,23 +470,26 @@ const Todo = () => {
 
   const handleToggleTask = useCallback(
     async (task: TodoTask, checked: boolean) => {
-      const content = toggleTaskAtIndex(task.memo.content, task.taskIndex, checked);
-      if (content === task.memo.content) {
-        return;
-      }
+      await updateMemoContent(updateMemo, task, toggleTaskAtIndex(task.memo.content, task.taskIndex, checked), "Failed to update todo");
+    },
+    [updateMemo],
+  );
 
-      try {
-        await updateMemo.mutateAsync({
-          update: {
-            name: task.memo.name,
-            content,
-          },
-          updateMask: ["content"],
-        });
-      } catch (error) {
-        console.error("Failed to update todo task:", error);
-        toast.error("Failed to update todo");
-      }
+  const handleDeleteTask = useCallback(
+    async (task: TodoTask) => {
+      await updateMemoContent(updateMemo, task, removeTaskAtIndex(task.memo.content, task.taskIndex), "Failed to delete todo");
+    },
+    [updateMemo],
+  );
+
+  const handleUpdateTaskContent = useCallback(
+    async (task: TodoTask, content: string) => {
+      await updateMemoContent(
+        updateMemo,
+        task,
+        updateTaskContentAtIndex(task.memo.content, task.taskIndex, content),
+        "Failed to update todo",
+      );
     },
     [updateMemo],
   );
@@ -387,6 +584,8 @@ const Todo = () => {
                 section={section}
                 onToggleTask={handleToggleTask}
                 onOpenMemo={handleOpenMemo}
+                onDeleteTask={handleDeleteTask}
+                onUpdateTaskContent={handleUpdateTaskContent}
                 updatingMemoName={updateMemo.isPending ? updateMemo.variables?.update.name : undefined}
               />
             ))}
