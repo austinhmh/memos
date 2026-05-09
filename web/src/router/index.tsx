@@ -21,6 +21,7 @@ const Attachments = lazyWithRetry(() => import("@/pages/Attachments"), "Attachme
 const Setting = lazyWithRetry(() => import("@/pages/Setting"), "Setting");
 const SignIn = lazyWithRetry(() => import("@/pages/SignIn"), "SignIn");
 const SignUp = lazyWithRetry(() => import("@/pages/SignUp"), "SignUp");
+const Todo = lazyWithRetry(() => import("@/pages/Todo"), "Todo");
 const UserProfile = lazyWithRetry(() => import("@/pages/UserProfile"), "UserProfile");
 const MemoDetailRedirect = lazyWithRetry(() => import("./MemoDetailRedirect"), "MemoDetailRedirect");
 
@@ -67,6 +68,7 @@ const router = createBrowserRouter([
             children: [
               { path: "", element: <Home /> },
               { path: Routes.EXPLORE, element: <LazyRoute component={Explore} /> },
+              { path: Routes.TODO, element: <LazyRoute component={Todo} /> },
               { path: Routes.ARCHIVED, element: <LazyRoute component={Archived} /> },
               { path: "u/:username", element: <LazyRoute component={UserProfile} /> },
             ],

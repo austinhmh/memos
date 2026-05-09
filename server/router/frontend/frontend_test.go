@@ -2,8 +2,11 @@ package frontend
 
 import (
 	"context"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"path"
+	"strings"
 	"testing"
 
 	"github.com/labstack/echo/v4"
@@ -50,6 +53,32 @@ func TestServeStaticLikeMissingResourcesReturnNotFound(t *testing.T) {
 		require.Equal(t, http.StatusNotFound, rec.Code, path)
 		require.NotContains(t, rec.Body.String(), "<!doctype html>", path)
 	}
+}
+
+func TestServeEmbedsUnderscorePrefixedAssets(t *testing.T) {
+	assets, err := fs.ReadDir(embeddedFiles, "dist/assets")
+	if err != nil {
+		t.Skip("frontend release assets are not present")
+	}
+
+	var underscoreAssetPath string
+	for _, asset := range assets {
+		if strings.HasPrefix(asset.Name(), "_") && !asset.IsDir() {
+			underscoreAssetPath = "/assets/" + asset.Name()
+			break
+		}
+	}
+	require.NotEmpty(t, underscoreAssetPath)
+
+	e := echo.New()
+	NewFrontendService(nil, nil).Serve(context.Background(), e)
+
+	req := httptest.NewRequest(http.MethodGet, path.Clean(underscoreAssetPath), nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.NotContains(t, rec.Body.String(), "<!doctype html>")
 }
 
 func TestServeDoesNotSkipAdjacentNativeRoutePrefixes(t *testing.T) {

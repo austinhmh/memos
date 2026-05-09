@@ -15,7 +15,7 @@ import (
 	"github.com/usememos/memos/store"
 )
 
-//go:embed dist/*
+//go:embed all:dist
 var embeddedFiles embed.FS
 
 type FrontendService struct {

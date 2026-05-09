@@ -8,7 +8,7 @@ const PUBLIC_ROUTES = [
   "/memos/", // Individual memo detail pages (dynamic)
 ] as const;
 
-const PRIVATE_ROUTES = [ROUTES.ROOT, ROUTES.ATTACHMENTS, ROUTES.INBOX, ROUTES.ARCHIVED, ROUTES.SETTING] as const;
+const PRIVATE_ROUTES = [ROUTES.ROOT, ROUTES.ATTACHMENTS, ROUTES.INBOX, ROUTES.TODO, ROUTES.ARCHIVED, ROUTES.SETTING] as const;
 
 function isPublicRoute(path: string): boolean {
   return PUBLIC_ROUTES.some((route) => path.startsWith(route));
