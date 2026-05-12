@@ -22,18 +22,15 @@ interface TaskInfo {
 
 const markdownImagePattern = /!\[[^\]]*\]\([^)]*\)/g;
 
-function preserveMarkdownImageReferences(nextContent: string, previousContent: string): string {
-  const previousImages = previousContent.match(markdownImagePattern) ?? [];
-  if (previousImages.length === 0) {
-    return nextContent;
-  }
+export function hasMarkdownImageReferences(content: string): boolean {
+  return /!\[[^\]]*\]\([^)]*\)/.test(content);
+}
 
-  const missingImages = previousImages.filter((image) => !nextContent.includes(image));
-  if (missingImages.length === 0) {
-    return nextContent;
-  }
-
-  return [nextContent, ...missingImages].join(" ");
+export function stripMarkdownImageReferences(content: string): string {
+  return content
+    .replace(markdownImagePattern, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 // Extract all task list items from markdown using AST parsing
@@ -121,8 +118,11 @@ export function removeTaskAtIndex(markdown: string, taskIndex: number): string {
 export function updateTaskContentAtLine(markdown: string, lineNumber: number, content: string): string {
   const lines = markdown.split("\n");
   const normalizedContent = content.replace(/\s*\n+\s*/g, " ").trim();
+  const sanitizedContent = hasMarkdownImageReferences(normalizedContent)
+    ? stripMarkdownImageReferences(normalizedContent)
+    : normalizedContent;
 
-  if (!normalizedContent || lineNumber < 0 || lineNumber >= lines.length) {
+  if (!sanitizedContent || lineNumber < 0 || lineNumber >= lines.length) {
     return markdown;
   }
 
@@ -131,7 +131,7 @@ export function updateTaskContentAtLine(markdown: string, lineNumber: number, co
     return markdown;
   }
 
-  lines[lineNumber] = `${match[1]}${preserveMarkdownImageReferences(normalizedContent, match[2])}`;
+  lines[lineNumber] = `${match[1]}${sanitizedContent}`;
   return lines.join("\n");
 }
 
@@ -225,7 +225,7 @@ export function extractTasks(markdown: string): TaskItem[] {
 
       // Extract content (text after the checkbox)
       const contentMatch = line.match(/^\s*[-*+]\s+\[[ xX]\]\s+(.*)/);
-      const content = contentMatch ? contentMatch[1] : "";
+      const content = contentMatch ? stripMarkdownImageReferences(contentMatch[1]) : "";
 
       tasks.push({
         lineNumber,

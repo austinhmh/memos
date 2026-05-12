@@ -475,6 +475,50 @@ func TestCreateMemoWithCustomTimestamps(t *testing.T) {
 	require.True(t, time.Now().Unix()-memoWithoutTimestamps.CreateTime.AsTime().Unix() < 5, "create_time should be recent (within 5 seconds)")
 }
 
+func TestUpdateMemoContentWithExplicitAttachmentsKeepsUnreferencedAttachment(t *testing.T) {
+	ctx := context.Background()
+	ts := NewTestService(t)
+	defer ts.Cleanup()
+
+	user, err := ts.CreateRegularUser(ctx, "todo-attachment-owner")
+	require.NoError(t, err)
+	userCtx := ts.CreateUserContext(ctx, user.ID)
+
+	memo, err := ts.Service.CreateMemo(userCtx, &apiv1.CreateMemoRequest{
+		Memo: &apiv1.Memo{Content: "- [ ] sync monitor", Visibility: apiv1.Visibility_PRIVATE},
+	})
+	require.NoError(t, err)
+
+	attachment, err := ts.Service.CreateAttachment(userCtx, &apiv1.CreateAttachmentRequest{
+		Attachment: &apiv1.Attachment{
+			Filename: "image.png",
+			Size:     8,
+			Type:     "image/png",
+			Content:  []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A},
+		},
+	})
+	require.NoError(t, err)
+
+	updatedMemo, err := ts.Service.UpdateMemo(userCtx, &apiv1.UpdateMemoRequest{
+		Memo: &apiv1.Memo{
+			Name:        memo.Name,
+			Content:     "- [ ] sync monitor fixed",
+			Attachments: []*apiv1.Attachment{{Name: attachment.Name}},
+		},
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"content", "attachments"}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "- [ ] sync monitor fixed", updatedMemo.Content)
+	require.Len(t, updatedMemo.Attachments, 1)
+	require.Equal(t, attachment.Name, updatedMemo.Attachments[0].Name)
+
+	attachmentUID := attachment.Name[len("attachments/"):]
+	storedAttachment, err := ts.Store.GetAttachment(ctx, &store.FindAttachment{UID: &attachmentUID})
+	require.NoError(t, err)
+	require.NotNil(t, storedAttachment)
+	require.NotNil(t, storedAttachment.MemoID)
+}
+
 func TestUpdateMemoContentRefreshesUpdateTimeForRegularUser(t *testing.T) {
 	ctx := context.Background()
 	ts := NewTestService(t)

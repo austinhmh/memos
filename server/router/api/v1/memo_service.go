@@ -387,6 +387,14 @@ func (s *APIV1Service) UpdateMemo(ctx context.Context, request *v1pb.UpdateMemoR
 		ID: memo.ID,
 	}
 	shouldRefreshUpdatedTs := false
+	hasAttachmentUpdate := false
+	for _, path := range request.UpdateMask.Paths {
+		if path == "attachments" {
+			hasAttachmentUpdate = true
+			break
+		}
+	}
+	shouldCleanupUnreferencedAttachments := false
 	for _, path := range request.UpdateMask.Paths {
 		if path == "content" {
 			contentLengthLimit, err := s.getContentLengthLimit(ctx)
@@ -403,6 +411,7 @@ func (s *APIV1Service) UpdateMemo(ctx context.Context, request *v1pb.UpdateMemoR
 			update.Content = &memo.Content
 			update.Payload = memo.Payload
 			shouldRefreshUpdatedTs = true
+			shouldCleanupUnreferencedAttachments = !hasAttachmentUpdate
 		} else if path == "visibility" {
 			instanceMemoRelatedSetting, err := s.Store.GetInstanceMemoRelatedSetting(ctx)
 			if err != nil {
@@ -478,8 +487,9 @@ func (s *APIV1Service) UpdateMemo(ctx context.Context, request *v1pb.UpdateMemoR
 		return nil, status.Errorf(codes.Internal, "failed to update memo")
 	}
 
-	// Cleanup unreferenced attachments if content was updated
-	if update.Content != nil || update.Payload != nil {
+	// Cleanup unreferenced attachments only for content-only updates.
+	// If attachments are explicitly submitted in the same request, treat that list as user intent.
+	if shouldCleanupUnreferencedAttachments {
 		if err := s.cleanupUnreferencedAttachments(ctx, memo.ID); err != nil {
 			// Log error but don't fail the update
 			slog.Error("Failed to cleanup unreferenced attachments (non-fatal)",
