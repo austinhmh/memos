@@ -24,7 +24,7 @@ func GetImage(urlStr string) (*Image, error) {
 		return nil, err
 	}
 
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, validated.url.String(), nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, validated.URL.String(), nil)
 	if err != nil {
 		return nil, err
 	}

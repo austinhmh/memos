@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { renderMermaid } from "@/lib/mermaid/mermaidInit";
 import { normalizeMermaidCode } from "@/lib/mermaid/normalizeMermaidCode";
+import { sanitizeSvg } from "@/lib/sanitize-svg";
 import { cn } from "@/lib/utils";
 import { getThemeWithFallback, resolveTheme, setupSystemThemeListener } from "@/utils/theme";
 import { extractCodeContent } from "./utils";
@@ -43,7 +44,11 @@ export const MermaidBlock = ({ children, className }: MermaidBlockProps) => {
         const { svg: renderedSvg } = await renderMermaid(normalizedCode, {
           theme: getMermaidTheme(currentTheme),
         });
-        setSvg(renderedSvg);
+        const safeSvg = sanitizeSvg(renderedSvg);
+        if (!safeSvg) {
+          throw new Error("Unsafe Mermaid SVG output");
+        }
+        setSvg(safeSvg);
         setError("");
       } catch (err) {
         console.error("Failed to render mermaid diagram:", err);

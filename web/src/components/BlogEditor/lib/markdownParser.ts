@@ -10,6 +10,7 @@ import { markdownHighlight } from "@/lib/markdown/rules/highlight";
 import { markdownMath } from "@/lib/markdown/rules/math";
 import { markdownTag } from "@/lib/markdown/rules/tag";
 import { markdownUnderlines } from "@/lib/markdown/rules/underlines";
+import { sanitizeUrl } from "@/lib/sanitize-url";
 
 function listIsTight(tokens: readonly { type: string; hidden?: boolean }[], i: number): boolean {
   while (++i < tokens.length) {
@@ -102,14 +103,14 @@ function getProseMirrorTokenizer(): MarkdownIt {
         let bookmarkUrl: string | null = null;
 
         if (children.length === 3 && children[0].type === "link_open" && children[1].type === "text" && children[2].type === "link_close") {
-          const href = children[0].attrGet("href") || "";
+          const href = sanitizeUrl(children[0].attrGet("href")) || "";
           if (href && children[1].content === href && !href.startsWith("#")) {
             bookmarkUrl = href;
           }
         }
 
         if (!bookmarkUrl && children.length === 1 && children[0].type === "text" && bareUrlPattern.test(children[0].content.trim())) {
-          bookmarkUrl = children[0].content.trim();
+          bookmarkUrl = sanitizeUrl(children[0].content.trim()) || null;
         }
 
         if (bookmarkUrl) {
@@ -173,7 +174,7 @@ export function createMdParser(schema: Schema): MarkdownParser {
     image: {
       node: "image",
       getAttrs: (tok: Token) => ({
-        src: tok.attrGet("src"),
+        src: sanitizeUrl(tok.attrGet("src")) || "",
         title: tok.attrGet("title") || null,
         alt: tok.children?.[0]?.content ?? null,
       }),
@@ -200,7 +201,7 @@ export function createMdParser(schema: Schema): MarkdownParser {
     link: {
       mark: "link",
       getAttrs: (tok: Token) => ({
-        href: tok.attrGet("href"),
+        href: sanitizeUrl(tok.attrGet("href")) || "",
         title: tok.attrGet("title") || null,
       }),
     },
@@ -208,7 +209,7 @@ export function createMdParser(schema: Schema): MarkdownParser {
     bookmark: {
       node: "bookmark",
       getAttrs: (tok: Token) => ({
-        url: tok.attrGet("url") || "",
+        url: sanitizeUrl(tok.attrGet("url")) || "",
       }),
     },
   };

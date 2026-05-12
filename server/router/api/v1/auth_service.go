@@ -131,8 +131,14 @@ func (s *APIV1Service) SignIn(ctx context.Context, request *v1pb.SignInRequest) 
 				slog.Warn("invalid oauth2 identity provider configuration", "idpID", identityProvider.Id, "error", err)
 				return nil, status.Errorf(codes.InvalidArgument, "identity provider is misconfigured")
 			}
-			// Pass code_verifier for PKCE support (empty string if not provided for backward compatibility)
-			token, err := oauth2IdentityProvider.ExchangeToken(ctx, ssoCredentials.RedirectUri, ssoCredentials.Code, ssoCredentials.CodeVerifier)
+			allowedRedirectURI, err := s.allowedOAuthRedirectURI(ctx)
+			if err != nil {
+				return nil, status.Errorf(codes.InvalidArgument, "failed to build OAuth redirect URI: %v", err)
+			}
+			if err := validateOAuthRedirectURI(ssoCredentials.RedirectUri, allowedRedirectURI); err != nil {
+				return nil, status.Errorf(codes.InvalidArgument, "invalid OAuth redirect URI: %v", err)
+			}
+			token, err := oauth2IdentityProvider.ExchangeToken(ctx, allowedRedirectURI, ssoCredentials.Code, ssoCredentials.CodeVerifier)
 			if err != nil {
 				return nil, status.Errorf(codes.Internal, "failed to exchange token, error: %v", err)
 			}
@@ -467,6 +473,57 @@ func shouldUseSecureCookieForURL(rawURL string, defaultSecure bool) bool {
 	default:
 		return defaultSecure
 	}
+}
+
+func (s *APIV1Service) allowedOAuthRedirectURI(ctx context.Context) (string, error) {
+	if s.Profile == nil {
+		return "", errors.New("instance URL is not configured")
+	}
+	baseURL := strings.TrimSpace(s.Profile.InstanceURL)
+	if baseURL == "" && s.Profile.IsDev() {
+		origin := strings.TrimSpace(getRequestOrigin(ctx))
+		if allowed, _ := s.corsAllowOrigin(origin); allowed {
+			baseURL = origin
+		}
+	}
+	if baseURL == "" {
+		return "", errors.New("instance URL is not configured")
+	}
+	parsed, err := url.Parse(baseURL)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to parse instance URL")
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", errors.Errorf("unsupported instance URL scheme %q", parsed.Scheme)
+	}
+	if parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", errors.New("instance URL must be an origin without user info, query, or fragment")
+	}
+	parsed.Path = "/auth/callback"
+	parsed.RawPath = ""
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String(), nil
+}
+
+func validateOAuthRedirectURI(clientRedirectURI, allowedRedirectURI string) error {
+	if clientRedirectURI == "" {
+		return errors.New("redirect_uri is required")
+	}
+	clientParsed, err := url.Parse(clientRedirectURI)
+	if err != nil {
+		return errors.Wrap(err, "failed to parse redirect_uri")
+	}
+	allowedParsed, err := url.Parse(allowedRedirectURI)
+	if err != nil {
+		return errors.Wrap(err, "failed to parse allowed redirect_uri")
+	}
+	clientParsed.RawPath = ""
+	allowedParsed.RawPath = ""
+	if clientParsed.String() != allowedParsed.String() {
+		return errors.New("redirect_uri does not match server configured callback")
+	}
+	return nil
 }
 
 func (s *APIV1Service) fetchCurrentUser(ctx context.Context) (*store.User, error) {

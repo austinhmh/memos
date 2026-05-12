@@ -3,6 +3,7 @@ package v1
 import (
 	"context"
 	"fmt"
+	"regexp"
 
 	"github.com/pkg/errors"
 	"google.golang.org/grpc/codes"
@@ -14,6 +15,8 @@ import (
 	storepb "github.com/usememos/memos/proto/gen/store"
 	"github.com/usememos/memos/store"
 )
+
+const maxIdentifierFilterLength = 1024
 
 func (s *APIV1Service) CreateIdentityProvider(ctx context.Context, request *v1pb.CreateIdentityProviderRequest) (*v1pb.IdentityProvider, error) {
 	currentUser, err := s.fetchCurrentUser(ctx)
@@ -29,6 +32,9 @@ func (s *APIV1Service) CreateIdentityProvider(ctx context.Context, request *v1pb
 
 	if request == nil || request.IdentityProvider == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "identity_provider is required")
+	}
+	if err := validateIdentifierFilter(request.IdentityProvider.IdentifierFilter); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid identifier_filter: %v", err)
 	}
 	if err := validateIdentityProviderConfig(request.IdentityProvider.Type, request.IdentityProvider.Config); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid identity provider config: %v", err)
@@ -123,6 +129,9 @@ func (s *APIV1Service) UpdateIdentityProvider(ctx context.Context, request *v1pb
 		case "title":
 			update.Name = &request.IdentityProvider.Title
 		case "identifier_filter":
+			if err := validateIdentifierFilter(request.IdentityProvider.IdentifierFilter); err != nil {
+				return nil, status.Errorf(codes.InvalidArgument, "invalid identifier_filter: %v", err)
+			}
 			update.IdentifierFilter = &request.IdentityProvider.IdentifierFilter
 		case "config":
 			if err := validateIdentityProviderConfig(request.IdentityProvider.Type, request.IdentityProvider.Config); err != nil {
@@ -252,6 +261,19 @@ func convertIdentityProviderConfigToStore(identityProviderType v1pb.IdentityProv
 				},
 			},
 		}
+	}
+	return nil
+}
+
+func validateIdentifierFilter(identifierFilter string) error {
+	if len(identifierFilter) > maxIdentifierFilterLength {
+		return errors.Errorf("length exceeds %d bytes", maxIdentifierFilterLength)
+	}
+	if identifierFilter == "" {
+		return nil
+	}
+	if _, err := regexp.Compile(identifierFilter); err != nil {
+		return err
 	}
 	return nil
 }

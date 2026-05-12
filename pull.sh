@@ -139,7 +139,6 @@ docker run -d \
     -e MEMOS_MODE=prod \
     -e MEMOS_PORT=5230 \
     "${INSTANCE_URL_ARGS[@]}" \
-    --user root \
     --restart always \
     "$RUN_IMAGE"
 
@@ -158,12 +157,8 @@ if docker ps -f "name=^${CONTAINER_NAME}$" --format "{{.Status}}" | grep -q "Up"
 
     # 检查是否有数据库错误
     if docker logs "$CONTAINER_NAME" 2>&1 | grep -q "readonly database"; then
-        echo "警告: 检测到数据库只读错误，尝试修复权限 ..."
-        docker stop "$CONTAINER_NAME"
-        chmod -R 777 "$DATA_DIR" 2>/dev/null || true
-        docker start "$CONTAINER_NAME"
-        sleep 2
-        echo "权限已修复并重启"
+        echo "错误: 检测到数据库只读错误。请将数据目录授权给镜像内的非 root 用户（UID/GID 10001），例如: sudo chown -R 10001:10001 \"$DATA_DIR\""
+        exit 1
     fi
 
     echo "访问地址:  http://localhost:8081"

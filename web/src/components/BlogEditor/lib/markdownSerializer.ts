@@ -1,5 +1,6 @@
 import { MarkdownSerializer, type MarkdownSerializerState } from "prosemirror-markdown";
 import type { Mark, Node } from "prosemirror-model";
+import { sanitizeUrl } from "@/lib/sanitize-url";
 
 type NodeSerializer = (state: MarkdownSerializerState, node: Node, parent: Node, index: number) => void;
 type MarkSpec = {
@@ -142,7 +143,7 @@ export function createMdSerializer(): MarkdownSerializer {
       state.text(node.text!, true);
     },
     bookmark(state, node) {
-      state.write((node.attrs.url as string) || "");
+      state.write(sanitizeUrl(node.attrs.url as string) || "");
       state.closeBlock(node);
     },
   };
@@ -154,7 +155,7 @@ export function createMdSerializer(): MarkdownSerializer {
       open: "[",
       close: (state, mark) =>
         "](" +
-        (mark.attrs.href as string).replace(/[()"]/g, "\\$&") +
+        (sanitizeUrl(mark.attrs.href as string) || "").replace(/[()]/g, "\\$&").replace(/"/g, '\\"') +
         (mark.attrs.title ? ` "${String(mark.attrs.title).replace(/"/g, '\\"')}"` : "") +
         ")",
       mixable: true,

@@ -7,16 +7,13 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
-	"net/netip"
-	"net/url"
-	"strconv"
 	"time"
 
 	"github.com/pkg/errors"
 	"golang.org/x/oauth2"
 
+	"github.com/usememos/memos/internal/netutil"
 	"github.com/usememos/memos/plugin/idp"
 	storepb "github.com/usememos/memos/proto/gen/store"
 )
@@ -26,44 +23,37 @@ type IdentityProvider struct {
 	config *storepb.OAuth2Config
 }
 
-var errInternalIP = errors.New("internal IP addresses are not allowed")
+var errInternalIP = netutil.ErrNonPublicAddress
 
-var disallowedPublicIPRanges = []netip.Prefix{
-	netip.MustParsePrefix("0.0.0.0/8"),
-	netip.MustParsePrefix("100.64.0.0/10"),
-	netip.MustParsePrefix("192.0.0.0/24"),
-	netip.MustParsePrefix("192.0.2.0/24"),
-	netip.MustParsePrefix("198.18.0.0/15"),
-	netip.MustParsePrefix("198.51.100.0/24"),
-	netip.MustParsePrefix("203.0.113.0/24"),
-	netip.MustParsePrefix("240.0.0.0/4"),
-	netip.MustParsePrefix("255.255.255.255/32"),
-	netip.MustParsePrefix("64:ff9b::/96"),
-	netip.MustParsePrefix("64:ff9b:1::/48"),
-	netip.MustParsePrefix("100::/64"),
-	netip.MustParsePrefix("2001::/32"),
-	netip.MustParsePrefix("2001:db8::/32"),
-	netip.MustParsePrefix("2002::/16"),
+const (
+	oauth2RequestTimeout    = 5 * time.Second
+	maxUserInfoResponseSize = 1 << 20
+)
+
+var validateExternalURLFunc = func(ctx context.Context, rawURL string) error {
+	_, err := netutil.ExternalURLValidator{AllowedPorts: map[int]struct{}{80: {}, 443: {}}}.Validate(ctx, rawURL)
+	return err
 }
 
-const oauth2RequestTimeout = 5 * time.Second
-
-var validateExternalURLFunc = validateExternalURL
-
 var newHTTPClient = func() *http.Client {
+	validator := netutil.ExternalURLValidator{AllowedPorts: map[int]struct{}{80: {}, 443: {}}}
 	return &http.Client{
 		Timeout:   oauth2RequestTimeout,
-		Transport: newSafeTransport(),
+		Transport: netutil.NewExternalTransport(validator),
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 10 {
 				return errors.New("too many redirects")
 			}
-			if err := validateExternalURLFunc(req.Context(), req.URL.String()); err != nil {
-				return errors.Wrap(err, "redirect to internal IP")
+			if _, err := validator.Validate(req.Context(), req.URL.String()); err != nil {
+				return errors.Wrap(err, "redirect to non-public address")
 			}
 			return nil
 		},
 	}
+}
+
+func validateExternalURL(ctx context.Context, rawURL string) error {
+	return validateExternalURLFunc(ctx, rawURL)
 }
 
 // NewIdentityProvider initializes a new OAuth2 Identity Provider with the given configuration.
@@ -180,16 +170,19 @@ func (p *IdentityProvider) UserInfo(token string) (*idp.IdentityProviderUserInfo
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxUserInfoResponseSize+1))
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to read response body")
+	}
+	if len(body) > maxUserInfoResponseSize {
+		return nil, errors.New("user info response body too large")
 	}
 
 	var claims map[string]any
 	if err := json.Unmarshal(body, &claims); err != nil {
 		return nil, errors.Wrap(err, "failed to unmarshal response body")
 	}
-	slog.Info("user info claims", "claims", claims)
+	slog.Info("received user info claims", "claim_count", len(claims))
 	userInfo := &idp.IdentityProviderUserInfo{}
 	if v, ok := claims[p.config.FieldMapping.Identifier].(string); ok {
 		userInfo.Identifier = v
@@ -217,122 +210,6 @@ func (p *IdentityProvider) UserInfo(token string) (*idp.IdentityProviderUserInfo
 			userInfo.AvatarURL = v
 		}
 	}
-	slog.Info("user info", "userInfo", userInfo)
+	slog.Info("mapped user info", "identifier", userInfo.Identifier, "has_email", userInfo.Email != "", "has_avatar", userInfo.AvatarURL != "")
 	return userInfo, nil
-}
-
-func isDisallowedIP(ip net.IP) bool {
-	addr, ok := netip.AddrFromSlice(ip)
-	if !ok {
-		return true
-	}
-	addr = addr.Unmap()
-	if !addr.IsGlobalUnicast() || addr.IsPrivate() || addr.IsLoopback() || addr.IsLinkLocalUnicast() || addr.IsLinkLocalMulticast() || addr.IsMulticast() || addr.IsUnspecified() {
-		return true
-	}
-	for _, prefix := range disallowedPublicIPRanges {
-		if prefix.Contains(addr) {
-			return true
-		}
-	}
-	return false
-}
-
-func validateExternalURL(ctx context.Context, rawURL string) error {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return errors.Wrap(err, "failed to parse URL")
-	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return errors.Errorf("unsupported scheme %q, only http/https allowed", parsed.Scheme)
-	}
-	host := parsed.Hostname()
-	if host == "" {
-		return errors.New("empty hostname")
-	}
-	if err := validateExternalURLPort(parsed); err != nil {
-		return err
-	}
-	if ip := net.ParseIP(host); ip != nil {
-		if isDisallowedIP(ip) {
-			return errors.Wrap(errInternalIP, ip.String())
-		}
-		return nil
-	}
-	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
-	if err != nil {
-		return errors.Wrap(err, "failed to resolve hostname")
-	}
-	return validateResolvedIPs(host, ips)
-}
-
-func validateExternalURLPort(parsed *url.URL) error {
-	port := parsed.Port()
-	if port == "" {
-		if parsed.RawPath != "" {
-			return errors.Errorf("invalid port %q", parsed.RawPath)
-		}
-		return nil
-	}
-	portNumber, err := strconv.Atoi(port)
-	if err != nil || portNumber < 1 || portNumber > 65535 {
-		return errors.Errorf("invalid port %q", port)
-	}
-	if portNumber != 80 && portNumber != 443 {
-		return errors.Errorf("unsupported port %d, only 80/443 allowed", portNumber)
-	}
-	return nil
-}
-
-func validateResolvedIPs(host string, ips []net.IP) error {
-	if len(ips) == 0 {
-		return errors.New("hostname resolved to no IPs")
-	}
-	for _, ip := range ips {
-		if isDisallowedIP(ip) {
-			return errors.Wrapf(errInternalIP, "host=%s, ip=%s", host, ip.String())
-		}
-	}
-	return nil
-}
-
-func lookupExternalIPs(ctx context.Context, host string) ([]net.IP, error) {
-	if ip := net.ParseIP(host); ip != nil {
-		if isDisallowedIP(ip) {
-			return nil, errors.Wrap(errInternalIP, ip.String())
-		}
-		return []net.IP{ip}, nil
-	}
-	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to resolve hostname")
-	}
-	if err := validateResolvedIPs(host, ips); err != nil {
-		return nil, err
-	}
-	return ips, nil
-}
-
-func newSafeTransport() *http.Transport {
-	return &http.Transport{
-		Proxy: nil,
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			host, port, err := net.SplitHostPort(addr)
-			if err != nil {
-				return nil, err
-			}
-			ips, err := lookupExternalIPs(ctx, host)
-			if err != nil {
-				return nil, err
-			}
-			var d net.Dialer
-			for _, ip := range ips {
-				conn, err := d.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
-				if err == nil {
-					return conn, nil
-				}
-			}
-			return nil, errors.Errorf("failed to connect to %s", host)
-		},
-	}
 }

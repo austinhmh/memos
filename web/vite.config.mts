@@ -13,7 +13,7 @@ if (process.env.DEV_PROXY_SERVER && process.env.DEV_PROXY_SERVER.length > 0) {
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
-    host: "0.0.0.0",
+    host: process.env.VITE_DEV_HOST || "127.0.0.1",
     port: 3001,
     proxy: {
       "^/api": {

@@ -349,12 +349,18 @@ func (s *APIV1Service) GetMemo(ctx context.Context, request *v1pb.GetMemoRequest
 }
 
 func (s *APIV1Service) UpdateMemo(ctx context.Context, request *v1pb.UpdateMemoRequest) (*v1pb.Memo, error) {
+	if request.Memo == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "memo is required")
+	}
 	memoUID, err := ExtractMemoUIDFromName(request.Memo.Name)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid memo name: %v", err)
 	}
 	if request.UpdateMask == nil || len(request.UpdateMask.Paths) == 0 {
 		return nil, status.Errorf(codes.InvalidArgument, "update mask is required")
+	}
+	if err := validateUpdateMemoMask(request.UpdateMask.Paths); err != nil {
+		return nil, err
 	}
 
 	memo, err := s.Store.GetMemo(ctx, &store.FindMemo{UID: &memoUID})
@@ -513,6 +519,27 @@ func (s *APIV1Service) UpdateMemo(ctx context.Context, request *v1pb.UpdateMemoR
 	}
 
 	return memoMessage, nil
+}
+
+func validateUpdateMemoMask(paths []string) error {
+	allowedPaths := map[string]struct{}{
+		"content":      {},
+		"visibility":   {},
+		"pinned":       {},
+		"state":        {},
+		"create_time":  {},
+		"update_time":  {},
+		"display_time": {},
+		"location":     {},
+		"attachments":  {},
+		"relations":    {},
+	}
+	for _, path := range paths {
+		if _, ok := allowedPaths[path]; !ok {
+			return status.Errorf(codes.InvalidArgument, "unsupported update mask path: %s", path)
+		}
+	}
+	return nil
 }
 
 func (s *APIV1Service) DeleteMemo(ctx context.Context, request *v1pb.DeleteMemoRequest) (*emptypb.Empty, error) {
@@ -697,6 +724,20 @@ func (s *APIV1Service) ListMemoComments(ctx context.Context, request *v1pb.ListM
 		memoFilter = fmt.Sprintf(`creator_id == %d || visibility in ["PUBLIC", "PROTECTED"]`, currentUser.ID)
 	}
 	memoRelationComment := store.MemoRelationComment
+	limit := normalizePageSize(request.PageSize)
+	offset := 0
+	if request.PageToken != "" {
+		var pageToken v1pb.PageToken
+		if err := unmarshalPageToken(request.PageToken, &pageToken); err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid page token: %v", err)
+		}
+		limit = normalizePageSize(pageToken.Limit)
+		offset = int(pageToken.Offset)
+	}
+	if offset < 0 {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid page token offset")
+	}
+	storeLimit := limit + 1
 	memoRelations, err := s.Store.ListMemoRelations(ctx, &store.FindMemoRelation{
 		RelatedMemoID:           &memo.ID,
 		Type:                    &memoRelationComment,
@@ -705,6 +746,8 @@ func (s *APIV1Service) ListMemoComments(ctx context.Context, request *v1pb.ListM
 		MemoCreatorRowStatus:    &normalStatus,
 		RelatedRowStatus:        &normalStatus,
 		RelatedCreatorRowStatus: &normalStatus,
+		Limit:                   &storeLimit,
+		Offset:                  &offset,
 	})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to list memo relations")
@@ -718,27 +761,12 @@ func (s *APIV1Service) ListMemoComments(ctx context.Context, request *v1pb.ListM
 		return response, nil
 	}
 
-	totalSize := len(memoRelations)
-	limit := normalizePageSize(request.PageSize)
-	offset := 0
-	if request.PageToken != "" {
-		var pageToken v1pb.PageToken
-		if err := unmarshalPageToken(request.PageToken, &pageToken); err != nil {
-			return nil, status.Errorf(codes.InvalidArgument, "invalid page token: %v", err)
-		}
-		limit = normalizePageSize(pageToken.Limit)
-		offset = int(pageToken.Offset)
+	hasMore := len(memoRelations) == storeLimit
+	if hasMore {
+		memoRelations = memoRelations[:limit]
 	}
-	if offset < 0 || offset > len(memoRelations) {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid page token offset")
-	}
-	end := offset + limit
-	if end > len(memoRelations) {
-		end = len(memoRelations)
-	}
-	paginatedRelations := memoRelations[offset:end]
-	memoRelationIDs := make([]int32, 0, len(paginatedRelations))
-	for _, m := range paginatedRelations {
+	memoRelationIDs := make([]int32, 0, len(memoRelations))
+	for _, m := range memoRelations {
 		memoRelationIDs = append(memoRelationIDs, m.MemoID)
 	}
 	memos, err := s.Store.ListMemos(ctx, &store.FindMemo{IDList: memoRelationIDs, RowStatus: &normalStatus, CreatorRowStatus: &normalStatus})
@@ -789,8 +817,8 @@ func (s *APIV1Service) ListMemoComments(ctx context.Context, request *v1pb.ListM
 	}
 
 	nextPageToken := ""
-	if end < len(memoRelations) {
-		nextPageToken, err = getPageToken(limit, end)
+	if hasMore {
+		nextPageToken, err = getPageToken(limit, offset+limit)
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "failed to get next page token: %v", err)
 		}
@@ -799,7 +827,7 @@ func (s *APIV1Service) ListMemoComments(ctx context.Context, request *v1pb.ListM
 	response := &v1pb.ListMemoCommentsResponse{
 		Memos:         memosResponse,
 		NextPageToken: nextPageToken,
-		TotalSize:     int32(totalSize),
+		TotalSize:     int32(len(memosResponse)),
 	}
 	return response, nil
 }

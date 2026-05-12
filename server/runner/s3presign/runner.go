@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/usememos/memos/plugin/storage/s3"
 	storepb "github.com/usememos/memos/proto/gen/store"
 	"github.com/usememos/memos/store"
 )
@@ -71,6 +72,9 @@ func (r *Runner) CheckAndPresign(ctx context.Context) {
 
 		// Process batch of attachments.
 		for _, attachment := range attachments {
+			if attachment.Payload == nil {
+				continue
+			}
 			s3ObjectPayload := attachment.Payload.GetS3Object()
 			if s3ObjectPayload == nil {
 				continue
@@ -78,6 +82,10 @@ func (r *Runner) CheckAndPresign(ctx context.Context) {
 
 			if s3ObjectPayload.S3Config == nil {
 				s3ObjectPayload.S3Config = instanceStorageSetting.GetS3Config()
+			}
+			if err := s3.ValidateAttachmentObjectKey(s3ObjectPayload.Key); err != nil {
+				slog.Error("Skipping attachment with unsafe S3 key", "attachmentID", attachment.ID, "error", err)
+				continue
 			}
 			if s3ObjectPayload.S3Config == nil {
 				slog.Error("S3 config is not found", "attachmentID", attachment.ID)

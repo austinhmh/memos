@@ -4,6 +4,7 @@ import { Plugin, PluginKey, TextSelection } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import { Decoration, DecorationSet } from "prosemirror-view";
 import { normalizeMermaidCode } from "@/lib/mermaid/normalizeMermaidCode";
+import { sanitizeSvg } from "@/lib/sanitize-svg";
 
 export const mermaidPluginKey = new PluginKey<MermaidState>("mermaid");
 
@@ -245,13 +246,17 @@ class MermaidRenderer {
 
       const normalized = normalizeMermaidCode(text);
       const { svg, bindFunctions } = await mermaidLib.render(tempId, normalized);
+      const safeSvg = sanitizeSvg(svg);
+      if (!safeSvg) {
+        throw new Error("Unsafe Mermaid SVG output");
+      }
 
       if (text) {
-        Cache.set(renderKey, svg);
+        Cache.set(renderKey, safeSvg);
       }
       this.lastRenderedKey = renderKey;
       element.classList.remove("parse-error", "empty");
-      element.innerHTML = svg;
+      element.innerHTML = safeSvg;
       bindFunctions?.(element);
       delete element.dataset.renderState;
       element.setAttribute("aria-busy", "false");

@@ -1,18 +1,19 @@
+import { sanitizeExternalImageUrl, sanitizeExternalUrl } from "@/lib/sanitize-url";
 import type { Attachment } from "@/types/proto/api/v1/attachment_service_pb";
 
 const getAttachmentFilePath = (attachment: Attachment) => `/file/${attachment.name}/${encodeURIComponent(attachment.filename)}`;
 
-export const getAttachmentUrl = (attachment: Attachment) => {
+export const getAttachmentUrl = (attachment: Attachment): string => {
   if (attachment.externalLink) {
-    return attachment.externalLink;
+    return sanitizeExternalUrl(attachment.externalLink);
   }
 
   return getAttachmentFilePath(attachment);
 };
 
-export const getAttachmentThumbnailUrl = (attachment: Attachment) => {
+export const getAttachmentThumbnailUrl = (attachment: Attachment): string => {
   if (attachment.externalLink) {
-    return attachment.externalLink;
+    return sanitizeExternalImageUrl(attachment.externalLink);
   }
 
   return `${getAttachmentFilePath(attachment)}?thumbnail=true`;

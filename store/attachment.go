@@ -207,9 +207,15 @@ func (s *Store) DeleteAttachment(ctx context.Context, delete *DeleteAttachment) 
 		deleteThumbnailCache(s.profile.Data, attachment.UID)
 	} else if attachment.StorageType == storepb.AttachmentStorageType_S3 {
 		if err := func() error {
+			if attachment.Payload == nil {
+				return errors.Errorf("attachment payload is missing")
+			}
 			s3ObjectPayload := attachment.Payload.GetS3Object()
 			if s3ObjectPayload == nil {
 				return errors.Errorf("No s3 object found")
+			}
+			if err := s3.ValidateAttachmentObjectKey(s3ObjectPayload.Key); err != nil {
+				return err
 			}
 			instanceStorageSetting, err := s.GetInstanceStorageSetting(ctx)
 			if err != nil {

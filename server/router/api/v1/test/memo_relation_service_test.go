@@ -167,6 +167,38 @@ func TestSetMemoRelations(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "not found")
 	})
+
+	t.Run("SetMemoRelations rejects mismatched relation memo", func(t *testing.T) {
+		ts := NewTestService(t)
+		defer ts.Cleanup()
+
+		user1, err := ts.CreateRegularUser(ctx, "relation-mismatch-user1")
+		require.NoError(t, err)
+		user1Ctx := ts.CreateUserContext(ctx, user1.ID)
+		user2, err := ts.CreateRegularUser(ctx, "relation-mismatch-user2")
+		require.NoError(t, err)
+		user2Ctx := ts.CreateUserContext(ctx, user2.ID)
+
+		privateMemo, err := ts.Service.CreateMemo(user1Ctx, &apiv1.CreateMemoRequest{
+			Memo: &apiv1.Memo{Content: "private source", Visibility: apiv1.Visibility_PRIVATE},
+		})
+		require.NoError(t, err)
+		attackerMemo, err := ts.Service.CreateMemo(user2Ctx, &apiv1.CreateMemoRequest{
+			Memo: &apiv1.Memo{Content: "attacker target", Visibility: apiv1.Visibility_PUBLIC},
+		})
+		require.NoError(t, err)
+
+		_, err = ts.Service.SetMemoRelations(user2Ctx, &apiv1.SetMemoRelationsRequest{
+			Name: attackerMemo.Name,
+			Relations: []*apiv1.MemoRelation{{
+				Memo:        &apiv1.MemoRelation_Memo{Name: privateMemo.Name},
+				RelatedMemo: &apiv1.MemoRelation_Memo{Name: attackerMemo.Name},
+				Type:        apiv1.MemoRelation_REFERENCE,
+			}},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "relation memo must match request name")
+	})
 }
 
 func TestSetMemoRelationsRejectsInvisibleRelatedMemoAndPreservesExistingRelations(t *testing.T) {

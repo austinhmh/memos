@@ -3,7 +3,6 @@ package v1
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"fmt"
 	"io"
 	"mime"
@@ -13,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/lithammer/shortuuid/v4"
 	"github.com/pkg/errors"
@@ -21,6 +21,7 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/usememos/memos/internal/base"
 	"github.com/usememos/memos/internal/profile"
 	"github.com/usememos/memos/internal/util"
 	"github.com/usememos/memos/plugin/filter"
@@ -79,6 +80,11 @@ func (s *APIV1Service) CreateAttachment(ctx context.Context, request *v1pb.Creat
 	if request.Attachment.Type == "" {
 		request.Attachment.Type = "application/octet-stream"
 	}
+	serverDetectedType := detectAttachmentContentType(request.Attachment.Filename, request.Attachment.Content)
+	if err := validateAttachmentContentType(request.Attachment.Type, serverDetectedType); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	request.Attachment.Type = serverDetectedType
 	if !isValidMimeType(request.Attachment.Type) {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid MIME type format")
 	}
@@ -87,9 +93,13 @@ func (s *APIV1Service) CreateAttachment(ctx context.Context, request *v1pb.Creat
 	}
 
 	// Use provided attachment_id or generate a new one
-	attachmentUID := request.AttachmentId
+	attachmentUID := strings.TrimSpace(request.AttachmentId)
 	if attachmentUID == "" {
 		attachmentUID = shortuuid.New()
+	} else if !base.UIDMatcher.MatchString(attachmentUID) {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid attachment_id format")
+	} else if len(attachmentUID) < 8 && !isSuperUser(user) {
+		return nil, status.Errorf(codes.InvalidArgument, "custom attachment_id must be at least 8 characters")
 	}
 
 	create := &store.Attachment{
@@ -103,7 +113,7 @@ func (s *APIV1Service) CreateAttachment(ctx context.Context, request *v1pb.Creat
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get instance storage setting: %v", err)
 	}
-	size := binary.Size(request.Attachment.Content)
+	size := len(request.Attachment.Content)
 	uploadSizeLimit := int(instanceStorageSetting.UploadSizeLimitMb) * MebiByte
 	if uploadSizeLimit == 0 {
 		uploadSizeLimit = MaxUploadBufferSizeBytes
@@ -139,7 +149,10 @@ func (s *APIV1Service) CreateAttachment(ctx context.Context, request *v1pb.Creat
 
 	attachment, err := s.Store.CreateAttachment(ctx, create)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to create attachment: %v", err)
+		if cleanupErr := cleanupAttachmentBlob(ctx, s.Profile, s.Store, create); cleanupErr != nil {
+			return nil, status.Errorf(codes.Internal, "failed to create attachment and cleanup blob")
+		}
+		return nil, status.Errorf(codes.Internal, "failed to create attachment")
 	}
 
 	return convertAttachmentFromStore(attachment), nil
@@ -169,6 +182,9 @@ func (s *APIV1Service) ListAttachments(ctx context.Context, request *v1pb.ListAt
 		// Simple implementation: page token is the offset as string
 		// In production, you might want to use encrypted tokens
 		if parsed, err := fmt.Sscanf(request.PageToken, "%d", &offset); err != nil || parsed != 1 {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid page token")
+		}
+		if offset < 0 {
 			return nil, status.Errorf(codes.InvalidArgument, "invalid page token")
 		}
 	}
@@ -246,6 +262,9 @@ func (s *APIV1Service) GetAttachment(ctx context.Context, request *v1pb.GetAttac
 }
 
 func (s *APIV1Service) UpdateAttachment(ctx context.Context, request *v1pb.UpdateAttachmentRequest) (*v1pb.Attachment, error) {
+	if request.Attachment == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "attachment is required")
+	}
 	attachmentUID, err := ExtractAttachmentUIDFromName(request.Attachment.Name)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid attachment id: %v", err)
@@ -288,11 +307,14 @@ func (s *APIV1Service) UpdateAttachment(ctx context.Context, request *v1pb.Updat
 		update.ExpectedMemoID = attachment.MemoID
 	}
 	for _, field := range request.UpdateMask.Paths {
-		if field == "filename" {
+		switch field {
+		case "filename":
 			if !validateFilename(request.Attachment.Filename) {
 				return nil, status.Errorf(codes.InvalidArgument, "filename contains invalid characters or format")
 			}
 			update.Filename = &request.Attachment.Filename
+		default:
+			return nil, status.Errorf(codes.InvalidArgument, "invalid update path: %s", field)
 		}
 	}
 
@@ -434,7 +456,11 @@ func SaveAttachmentBlob(ctx context.Context, profile *profile.Profile, stores *s
 			filepathTemplate = filepath.Join(filepathTemplate, "{filename}")
 		}
 		filepathTemplate = replaceFilenameWithPathTemplate(filepathTemplate, create.Filename)
-		key, err := s3Client.UploadObject(ctx, filepathTemplate, create.Type, bytes.NewReader(create.Blob))
+		key, err := s3.NormalizeAttachmentObjectKeyTemplate(filepathTemplate)
+		if err != nil {
+			return errors.Wrap(err, "unsafe S3 attachment key")
+		}
+		key, err = s3Client.UploadObject(ctx, key, create.Type, bytes.NewReader(create.Blob))
 		if err != nil {
 			return errors.Wrap(err, "Failed to upload via s3 client")
 		}
@@ -445,8 +471,7 @@ func SaveAttachmentBlob(ctx context.Context, profile *profile.Profile, stores *s
 		create.Payload = &storepb.AttachmentPayload{
 			Payload: &storepb.AttachmentPayload_S3Object_{
 				S3Object: &storepb.AttachmentPayload_S3Object{
-					S3Config: s3Config,
-					Key:      key,
+					Key: key,
 				},
 			},
 		}
@@ -455,7 +480,53 @@ func SaveAttachmentBlob(ctx context.Context, profile *profile.Profile, stores *s
 	return nil
 }
 
-func (s *APIV1Service) GetAttachmentBlob(attachment *store.Attachment) ([]byte, error) {
+func cleanupAttachmentBlob(ctx context.Context, profile *profile.Profile, stores *store.Store, attachment *store.Attachment) error {
+	if attachment == nil {
+		return nil
+	}
+	switch attachment.StorageType {
+	case storepb.AttachmentStorageType_LOCAL:
+		if attachment.Reference == "" {
+			return nil
+		}
+		p, err := util.SafeJoinUnderBase(profile.Data, attachment.Reference)
+		if err != nil {
+			return err
+		}
+		if err := util.EnsurePathWithinBase(profile.Data, p); err != nil {
+			return err
+		}
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	case storepb.AttachmentStorageType_S3:
+		if attachment.Payload == nil {
+			return nil
+		}
+		s3Object := attachment.Payload.GetS3Object()
+		if s3Object == nil || s3Object.Key == "" {
+			return nil
+		}
+		if err := s3.ValidateAttachmentObjectKey(s3Object.Key); err != nil {
+			return err
+		}
+		storageSetting, err := stores.GetInstanceStorageSetting(ctx)
+		if err != nil {
+			return err
+		}
+		if storageSetting.S3Config == nil {
+			return nil
+		}
+		client, err := s3.NewClient(ctx, storageSetting.S3Config)
+		if err != nil {
+			return err
+		}
+		return client.DeleteObject(ctx, s3Object.Key)
+	}
+	return nil
+}
+
+func (s *APIV1Service) GetAttachmentBlob(ctx context.Context, attachment *store.Attachment) ([]byte, error) {
 	// For local storage, read the file from the local disk.
 	if attachment.StorageType == storepb.AttachmentStorageType_LOCAL {
 		attachmentPath, err := util.SafeJoinUnderBase(s.Profile.Data, attachment.Reference)
@@ -492,10 +563,13 @@ func (s *APIV1Service) GetAttachmentBlob(attachment *store.Attachment) ([]byte, 
 		if s3Object.Key == "" {
 			return nil, errors.New("S3 object key is missing")
 		}
+		if err := s3.ValidateAttachmentObjectKey(s3Object.Key); err != nil {
+			return nil, err
+		}
 
 		s3Config := s3Object.S3Config
 		if s3Config == nil {
-			instanceStorageSetting, err := s.Store.GetInstanceStorageSetting(context.Background())
+			instanceStorageSetting, err := s.Store.GetInstanceStorageSetting(ctx)
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to get instance storage setting")
 			}
@@ -505,12 +579,12 @@ func (s *APIV1Service) GetAttachmentBlob(attachment *store.Attachment) ([]byte, 
 			return nil, errors.New("S3 config is missing")
 		}
 
-		s3Client, err := s3.NewClient(context.Background(), s3Config)
+		s3Client, err := s3.NewClient(ctx, s3Config)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to create S3 client")
 		}
 
-		blob, err := s3Client.GetObject(context.Background(), s3Object.Key)
+		blob, err := s3Client.GetObject(ctx, s3Object.Key)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get object from S3")
 		}
@@ -552,6 +626,15 @@ func replaceFilenameWithPathTemplate(path, filename string) string {
 }
 
 func validateFilename(filename string) bool {
+	if !utf8.ValidString(filename) || len(filename) > 255 {
+		return false
+	}
+	for _, r := range filename {
+		if r < 0x20 || r == 0x7f {
+			return false
+		}
+	}
+
 	// Reject path traversal attempts and make sure no additional directories are created
 	if !filepath.IsLocal(filename) || strings.ContainsAny(filename, "/\\") {
 		return false
@@ -579,6 +662,38 @@ func validateFilename(filename string) bool {
 	}
 
 	return true
+}
+
+func detectAttachmentContentType(filename string, content []byte) string {
+	detected := http.DetectContentType(content)
+	mediaType, _, err := mime.ParseMediaType(detected)
+	if err == nil && mediaType != "" && mediaType != "application/octet-stream" {
+		return mediaType
+	}
+	extType := mime.TypeByExtension(filepath.Ext(filename))
+	mediaType, _, err = mime.ParseMediaType(extType)
+	if err == nil && mediaType != "" {
+		return mediaType
+	}
+	if mediaType != "" {
+		return mediaType
+	}
+	return "application/octet-stream"
+}
+
+func validateAttachmentContentType(clientType string, serverType string) error {
+	clientType = strings.ToLower(strings.TrimSpace(clientType))
+	serverType = strings.ToLower(strings.TrimSpace(serverType))
+	if clientType == "" || serverType == "" || clientType == serverType || serverType == "application/octet-stream" || clientType == "application/octet-stream" {
+		return nil
+	}
+	if strings.HasPrefix(serverType, "text/") && strings.HasPrefix(clientType, "text/") {
+		return nil
+	}
+	if strings.HasPrefix(serverType, "image/jpeg") && clientType == "image/jpg" {
+		return nil
+	}
+	return errors.Errorf("MIME type %q does not match detected content type %q", clientType, serverType)
 }
 
 func isValidMimeType(mimeType string) bool {

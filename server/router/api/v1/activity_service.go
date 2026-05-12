@@ -23,15 +23,21 @@ func (s *APIV1Service) ListActivities(ctx context.Context, request *v1pb.ListAct
 		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
 	}
 
-	// Set default page size if not specified
-	pageSize := request.PageSize
-	if pageSize <= 0 || pageSize > 1000 {
-		pageSize = 100
+	pageSize := normalizePageSize(request.PageSize)
+	offset := 0
+	if request.PageToken != "" {
+		pageToken := &v1pb.PageToken{}
+		if err := unmarshalPageToken(request.PageToken, pageToken); err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid page token")
+		}
+		if pageToken.Offset < 0 {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid page token")
+		}
+		offset = int(pageToken.Offset)
 	}
 
-	_ = pageSize
-
-	findActivity := &store.FindActivity{}
+	limit := pageSize + 1
+	findActivity := &store.FindActivity{Limit: &limit, Offset: &offset}
 	if !isSuperUser(user) {
 		findActivity.CreatorID = &user.ID
 	}
@@ -41,6 +47,10 @@ func (s *APIV1Service) ListActivities(ctx context.Context, request *v1pb.ListAct
 		return nil, status.Errorf(codes.Internal, "failed to list activities: %v", err)
 	}
 
+	hasMore := len(activities) == limit
+	if hasMore {
+		activities = activities[:pageSize]
+	}
 	var activityMessages []*v1pb.Activity
 	for _, activity := range activities {
 		activityMessage, err := s.convertActivityFromStore(ctx, activity)
@@ -53,9 +63,18 @@ func (s *APIV1Service) ListActivities(ctx context.Context, request *v1pb.ListAct
 		activityMessages = append(activityMessages, activityMessage)
 	}
 
+	nextPageToken := ""
+	if hasMore {
+		var err error
+		nextPageToken, err = getPageToken(pageSize, offset+pageSize)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to generate next page token")
+		}
+	}
+
 	return &v1pb.ListActivitiesResponse{
-		Activities: activityMessages,
-		// TODO: Implement next_page_token for pagination
+		Activities:    activityMessages,
+		NextPageToken: nextPageToken,
 	}, nil
 }
 

@@ -1,10 +1,13 @@
 package v1
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"image"
 	"net"
 	"net/http"
 	"net/url"
@@ -12,6 +15,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/ast"
@@ -30,6 +37,8 @@ import (
 	"github.com/usememos/memos/server/auth"
 	"github.com/usememos/memos/store"
 )
+
+const maxAvatarBytes = 2 << 20
 
 func (s *APIV1Service) ListUsers(ctx context.Context, request *v1pb.ListUsersRequest) (*v1pb.ListUsersResponse, error) {
 	currentUser, err := s.fetchCurrentUser(ctx)
@@ -315,23 +324,8 @@ func (s *APIV1Service) UpdateUser(ctx context.Context, request *v1pb.UpdateUserR
 		case "email":
 			update.Email = &request.User.Email
 		case "avatar_url":
-			// Validate avatar MIME type to prevent XSS during upload
-			if request.User.AvatarUrl != "" {
-				imageType, _, err := extractImageInfo(request.User.AvatarUrl)
-				if err != nil {
-					return nil, status.Errorf(codes.InvalidArgument, "invalid avatar format: %v", err)
-				}
-				// Only allow safe image formats for avatars
-				allowedAvatarTypes := map[string]bool{
-					"image/png":  true,
-					"image/jpeg": true,
-					"image/jpg":  true,
-					"image/gif":  true,
-					"image/webp": true,
-				}
-				if !allowedAvatarTypes[imageType] {
-					return nil, status.Errorf(codes.InvalidArgument, "invalid avatar image type: %s. Only PNG, JPEG, GIF, and WebP are allowed", imageType)
-				}
+			if err := validateAvatarDataURI(request.User.AvatarUrl); err != nil {
+				return nil, status.Errorf(codes.InvalidArgument, "invalid avatar: %v", err)
 			}
 			update.AvatarURL = &request.User.AvatarUrl
 		case "description":
@@ -493,6 +487,9 @@ func (s *APIV1Service) GetUserSetting(ctx context.Context, request *v1pb.GetUser
 }
 
 func (s *APIV1Service) UpdateUserSetting(ctx context.Context, request *v1pb.UpdateUserSettingRequest) (*v1pb.UserSetting, error) {
+	if request.Setting == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "setting is required")
+	}
 	// Parse resource name: users/{user}/settings/{setting}
 	userID, settingKey, err := ExtractUserIDAndSettingKeyFromName(request.Setting.Name)
 	if err != nil {
@@ -556,7 +553,7 @@ func (s *APIV1Service) UpdateUserSetting(ctx context.Context, request *v1pb.Upda
 		case "locale":
 			updatedGeneral.Locale = incomingGeneral.Locale
 		default:
-			// Ignore unsupported fields
+			return nil, status.Errorf(codes.InvalidArgument, "invalid update path: %s", field)
 		}
 	}
 
@@ -834,6 +831,9 @@ func (s *APIV1Service) ListUserWebhooks(ctx context.Context, request *v1pb.ListU
 }
 
 func (s *APIV1Service) CreateUserWebhook(ctx context.Context, request *v1pb.CreateUserWebhookRequest) (*v1pb.UserWebhook, error) {
+	if request.Webhook == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "webhook is required")
+	}
 	userID, err := ExtractUserIDFromName(request.Parent)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid parent: %v", err)
@@ -878,6 +878,9 @@ func (s *APIV1Service) UpdateUserWebhook(ctx context.Context, request *v1pb.Upda
 	if request.Webhook == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "webhook is required")
 	}
+	if request.UpdateMask == nil || len(request.UpdateMask.Paths) == 0 {
+		return nil, status.Errorf(codes.InvalidArgument, "update mask is required")
+	}
 
 	webhookID, userID, err := parseUserWebhookName(request.Webhook.Name)
 	if err != nil {
@@ -921,33 +924,21 @@ func (s *APIV1Service) UpdateUserWebhook(ctx context.Context, request *v1pb.Upda
 		Url:   targetWebhook.Url,
 	}
 
-	if request.UpdateMask != nil {
-		for _, path := range request.UpdateMask.Paths {
-			switch path {
-			case "url":
-				if request.Webhook.Url != "" {
-					trimmedURL := strings.TrimSpace(request.Webhook.Url)
-					if err := validateWebhookURL(trimmedURL); err != nil {
-						return nil, status.Errorf(codes.InvalidArgument, "invalid webhook URL: %v", err)
-					}
-					updatedWebhook.Url = trimmedURL
+	for _, path := range request.UpdateMask.Paths {
+		switch path {
+		case "url":
+			if request.Webhook.Url != "" {
+				trimmedURL := strings.TrimSpace(request.Webhook.Url)
+				if err := validateWebhookURL(trimmedURL); err != nil {
+					return nil, status.Errorf(codes.InvalidArgument, "invalid webhook URL: %v", err)
 				}
-			case "display_name":
-				updatedWebhook.Title = request.Webhook.DisplayName
-			default:
-				// Ignore unsupported fields
+				updatedWebhook.Url = trimmedURL
 			}
+		case "display_name":
+			updatedWebhook.Title = request.Webhook.DisplayName
+		default:
+			return nil, status.Errorf(codes.InvalidArgument, "invalid update path: %s", path)
 		}
-	} else {
-		// If no update mask is provided, update all fields
-		if request.Webhook.Url != "" {
-			trimmedURL := strings.TrimSpace(request.Webhook.Url)
-			if err := validateWebhookURL(trimmedURL); err != nil {
-				return nil, status.Errorf(codes.InvalidArgument, "invalid webhook URL: %v", err)
-			}
-			updatedWebhook.Url = trimmedURL
-		}
-		updatedWebhook.Title = request.Webhook.DisplayName
 	}
 
 	err = s.Store.UpdateUserWebhook(ctx, userID, updatedWebhook)
@@ -1090,14 +1081,55 @@ func convertUserRoleToStore(role v1pb.User_Role) store.Role {
 
 // extractImageInfo extracts image type and base64 data from a data URI.
 // Data URI format: data:image/png;base64,iVBORw0KGgo...
+func validateAvatarDataURI(dataURI string) error {
+	if dataURI == "" {
+		return nil
+	}
+	imageType, base64Data, err := extractImageInfo(dataURI)
+	if err != nil {
+		return err
+	}
+	allowedAvatarTypes := map[string]bool{
+		"image/png":  true,
+		"image/jpeg": true,
+		"image/jpg":  true,
+		"image/gif":  true,
+		"image/webp": true,
+	}
+	if !allowedAvatarTypes[imageType] {
+		return errors.Errorf("unsupported avatar image type %s", imageType)
+	}
+	if base64.StdEncoding.DecodedLen(len(base64Data)) > maxAvatarBytes {
+		return errors.New("avatar image is too large")
+	}
+	imageData, err := base64.StdEncoding.DecodeString(base64Data)
+	if err != nil {
+		return errors.Wrap(err, "failed to decode avatar image")
+	}
+	if len(imageData) > maxAvatarBytes {
+		return errors.New("avatar image is too large")
+	}
+	if imageType != "image/webp" {
+		if _, _, err := image.DecodeConfig(bytes.NewReader(imageData)); err != nil {
+			return errors.Wrap(err, "failed to decode avatar image config")
+		}
+	}
+	return nil
+}
+
 func extractImageInfo(dataURI string) (string, string, error) {
-	dataURIRegex := regexp.MustCompile(`^data:(?P<type>.+);base64,(?P<base64>.+)`)
+	dataURIRegex := regexp.MustCompile(`^data:(?P<type>[-+./\w]+);base64,(?P<base64>[A-Za-z0-9+/=\r\n]+)$`)
 	matches := dataURIRegex.FindStringSubmatch(dataURI)
 	if len(matches) != 3 {
 		return "", "", errors.New("invalid data URI format")
 	}
-	imageType := matches[1]
-	base64Data := matches[2]
+	imageType := strings.ToLower(matches[1])
+	base64Data := strings.Map(func(r rune) rune {
+		if r == '\r' || r == '\n' {
+			return -1
+		}
+		return r
+	}, matches[2])
 	return imageType, base64Data, nil
 }
 
@@ -1421,9 +1453,12 @@ func (s *APIV1Service) UpdateUserNotification(ctx context.Context, request *v1pb
 		return nil, status.Errorf(codes.InvalidArgument, "notification is required")
 	}
 
-	notificationID, err := ExtractNotificationIDFromName(request.Notification.Name)
+	nameUserID, notificationID, err := ExtractUserIDAndNotificationIDFromName(request.Notification.Name)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid notification name: %v", err)
+	}
+	if request.UpdateMask == nil || len(request.UpdateMask.Paths) == 0 {
+		return nil, status.Errorf(codes.InvalidArgument, "update mask is required")
 	}
 
 	currentUser, err := s.fetchCurrentUser(ctx)
@@ -1433,6 +1468,9 @@ func (s *APIV1Service) UpdateUserNotification(ctx context.Context, request *v1pb
 
 	if currentUser == nil {
 		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
+	}
+	if currentUser.ID != nameUserID {
+		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
 	}
 	// Verify ownership before updating
 	inboxes, err := s.Store.ListInboxes(ctx, &store.FindInbox{
@@ -1489,7 +1527,7 @@ func (s *APIV1Service) UpdateUserNotification(ctx context.Context, request *v1pb
 // DeleteUserNotification permanently deletes a notification.
 // Only the notification owner can delete their notifications.
 func (s *APIV1Service) DeleteUserNotification(ctx context.Context, request *v1pb.DeleteUserNotificationRequest) (*emptypb.Empty, error) {
-	notificationID, err := ExtractNotificationIDFromName(request.Name)
+	nameUserID, notificationID, err := ExtractUserIDAndNotificationIDFromName(request.Name)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid notification name: %v", err)
 	}
@@ -1501,6 +1539,9 @@ func (s *APIV1Service) DeleteUserNotification(ctx context.Context, request *v1pb
 
 	if currentUser == nil {
 		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
+	}
+	if currentUser.ID != nameUserID {
+		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
 	}
 	// Verify ownership before deletion
 	inboxes, err := s.Store.ListInboxes(ctx, &store.FindInbox{
@@ -1565,18 +1606,29 @@ func (*APIV1Service) convertInboxToUserNotification(_ context.Context, inbox *st
 // ExtractNotificationIDFromName extracts the notification ID from a resource name.
 // Expected format: users/{user_id}/notifications/{notification_id}.
 func ExtractNotificationIDFromName(name string) (int32, error) {
+	_, notificationID, err := ExtractUserIDAndNotificationIDFromName(name)
+	return notificationID, err
+}
+
+// ExtractUserIDAndNotificationIDFromName extracts the user ID and notification ID from a resource name.
+// Expected format: users/{user_id}/notifications/{notification_id}.
+func ExtractUserIDAndNotificationIDFromName(name string) (int32, int32, error) {
 	pattern := regexp.MustCompile(`^users/(\d+)/notifications/(\d+)$`)
 	matches := pattern.FindStringSubmatch(name)
 	if len(matches) != 3 {
-		return 0, errors.Errorf("invalid notification name: %s", name)
+		return 0, 0, errors.Errorf("invalid notification name: %s", name)
 	}
 
-	id, err := strconv.Atoi(matches[2])
+	userID, err := strconv.Atoi(matches[1])
 	if err != nil {
-		return 0, errors.Errorf("invalid notification id: %s", matches[2])
+		return 0, 0, errors.Errorf("invalid user id: %s", matches[1])
+	}
+	notificationID, err := strconv.Atoi(matches[2])
+	if err != nil {
+		return 0, 0, errors.Errorf("invalid notification id: %s", matches[2])
 	}
 
-	return int32(id), nil
+	return int32(userID), int32(notificationID), nil
 }
 
 // validateWebhookURL checks that the webhook URL is safe (no SSRF).

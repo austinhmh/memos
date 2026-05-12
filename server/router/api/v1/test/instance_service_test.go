@@ -6,8 +6,12 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	v1pb "github.com/usememos/memos/proto/gen/api/v1"
+	storepb "github.com/usememos/memos/proto/gen/store"
 	"github.com/usememos/memos/store"
 )
 
@@ -213,5 +217,237 @@ func TestGetInstanceSetting(t *testing.T) {
 		// Should return an error
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid instance setting name")
+	})
+}
+
+func TestUpdateInstanceSettingUpdateMask(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("storage upload size update preserves s3 config", func(t *testing.T) {
+		ts := NewTestService(t)
+		defer ts.Cleanup()
+
+		hostUser, err := ts.CreateHostUser(ctx, "storagehost")
+		require.NoError(t, err)
+		userCtx := ts.CreateUserContext(ctx, hostUser.ID)
+
+		_, err = ts.Store.UpsertInstanceSetting(ctx, &storepb.InstanceSetting{
+			Key: storepb.InstanceSettingKey_STORAGE,
+			Value: &storepb.InstanceSetting_StorageSetting{
+				StorageSetting: &storepb.InstanceStorageSetting{
+					StorageType:       storepb.InstanceStorageSetting_S3,
+					FilepathTemplate:  "assets/{filename}",
+					UploadSizeLimitMb: 30,
+					S3Config: &storepb.StorageS3Config{
+						AccessKeyId:     "access-key",
+						AccessKeySecret: "access-secret",
+						Endpoint:        "https://s3.example.com",
+						Region:          "us-east-1",
+						Bucket:          "memos",
+						UsePathStyle:    true,
+					},
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		resp, err := ts.Service.UpdateInstanceSetting(userCtx, &v1pb.UpdateInstanceSettingRequest{
+			Setting: &v1pb.InstanceSetting{
+				Name: "instance/settings/STORAGE",
+				Value: &v1pb.InstanceSetting_StorageSetting_{
+					StorageSetting: &v1pb.InstanceSetting_StorageSetting{
+						UploadSizeLimitMb: 64,
+					},
+				},
+			},
+			UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"storage_setting.upload_size_limit_mb"}},
+		})
+		require.NoError(t, err)
+
+		storageSetting := resp.GetStorageSetting()
+		require.NotNil(t, storageSetting)
+		require.Equal(t, int64(64), storageSetting.UploadSizeLimitMb)
+		require.Equal(t, v1pb.InstanceSetting_StorageSetting_StorageType(storepb.InstanceStorageSetting_S3), storageSetting.StorageType)
+		require.Equal(t, "assets/{filename}", storageSetting.FilepathTemplate)
+		require.NotNil(t, storageSetting.S3Config)
+		require.Equal(t, "access-key", storageSetting.S3Config.AccessKeyId)
+		require.Equal(t, "access-secret", storageSetting.S3Config.AccessKeySecret)
+		require.Equal(t, "https://s3.example.com", storageSetting.S3Config.Endpoint)
+		require.Equal(t, "us-east-1", storageSetting.S3Config.Region)
+		require.Equal(t, "memos", storageSetting.S3Config.Bucket)
+		require.True(t, storageSetting.S3Config.UsePathStyle)
+
+		persisted, err := ts.Store.GetInstanceStorageSetting(ctx)
+		require.NoError(t, err)
+		require.Equal(t, int64(64), persisted.UploadSizeLimitMb)
+		require.NotNil(t, persisted.S3Config)
+		require.Equal(t, "access-key", persisted.S3Config.AccessKeyId)
+	})
+
+	t.Run("general custom profile title update preserves other fields", func(t *testing.T) {
+		ts := NewTestService(t)
+		defer ts.Cleanup()
+
+		hostUser, err := ts.CreateHostUser(ctx, "generalhost")
+		require.NoError(t, err)
+		userCtx := ts.CreateUserContext(ctx, hostUser.ID)
+
+		_, err = ts.Store.UpsertInstanceSetting(ctx, &storepb.InstanceSetting{
+			Key: storepb.InstanceSettingKey_GENERAL,
+			Value: &storepb.InstanceSetting_GeneralSetting{
+				GeneralSetting: &storepb.InstanceGeneralSetting{
+					DisallowUserRegistration: true,
+					DisallowPasswordAuth:     true,
+					AdditionalScript:         "console.log('old')",
+					AdditionalStyle:          "body { color: red; }",
+					WeekStartDayOffset:       1,
+					DisallowChangeUsername:   true,
+					DisallowChangeNickname:   true,
+					CustomProfile: &storepb.InstanceCustomProfile{
+						Title:       "Old title",
+						Description: "Old description",
+						LogoUrl:     "https://example.com/logo.png",
+					},
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		resp, err := ts.Service.UpdateInstanceSetting(userCtx, &v1pb.UpdateInstanceSettingRequest{
+			Setting: &v1pb.InstanceSetting{
+				Name: "instance/settings/GENERAL",
+				Value: &v1pb.InstanceSetting_GeneralSetting_{
+					GeneralSetting: &v1pb.InstanceSetting_GeneralSetting{
+						CustomProfile: &v1pb.InstanceSetting_GeneralSetting_CustomProfile{
+							Title: "New title",
+						},
+					},
+				},
+			},
+			UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"general_setting.custom_profile.title"}},
+		})
+		require.NoError(t, err)
+
+		generalSetting := resp.GetGeneralSetting()
+		require.NotNil(t, generalSetting)
+		require.True(t, generalSetting.DisallowUserRegistration)
+		require.True(t, generalSetting.DisallowPasswordAuth)
+		require.Equal(t, "console.log('old')", generalSetting.AdditionalScript)
+		require.Equal(t, "body { color: red; }", generalSetting.AdditionalStyle)
+		require.Equal(t, int32(1), generalSetting.WeekStartDayOffset)
+		require.True(t, generalSetting.DisallowChangeUsername)
+		require.True(t, generalSetting.DisallowChangeNickname)
+		require.NotNil(t, generalSetting.CustomProfile)
+		require.Equal(t, "New title", generalSetting.CustomProfile.Title)
+		require.Equal(t, "Old description", generalSetting.CustomProfile.Description)
+		require.Equal(t, "https://example.com/logo.png", generalSetting.CustomProfile.LogoUrl)
+	})
+
+	t.Run("memo related reactions update preserves policy fields", func(t *testing.T) {
+		ts := NewTestService(t)
+		defer ts.Cleanup()
+
+		hostUser, err := ts.CreateHostUser(ctx, "memohost")
+		require.NoError(t, err)
+		userCtx := ts.CreateUserContext(ctx, hostUser.ID)
+
+		_, err = ts.Store.UpsertInstanceSetting(ctx, &storepb.InstanceSetting{
+			Key: storepb.InstanceSettingKey_MEMO_RELATED,
+			Value: &storepb.InstanceSetting_MemoRelatedSetting{
+				MemoRelatedSetting: &storepb.InstanceMemoRelatedSetting{
+					DisallowPublicVisibility: true,
+					DisplayWithUpdateTime:    true,
+					ContentLengthLimit:       512 * 1024,
+					EnableDoubleClickEdit:    true,
+					Reactions:                []string{"old"},
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		resp, err := ts.Service.UpdateInstanceSetting(userCtx, &v1pb.UpdateInstanceSettingRequest{
+			Setting: &v1pb.InstanceSetting{
+				Name: "instance/settings/MEMO_RELATED",
+				Value: &v1pb.InstanceSetting_MemoRelatedSetting_{
+					MemoRelatedSetting: &v1pb.InstanceSetting_MemoRelatedSetting{
+						Reactions: []string{"new", "ok"},
+					},
+				},
+			},
+			UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"memo_related_setting.reactions"}},
+		})
+		require.NoError(t, err)
+
+		memoRelatedSetting := resp.GetMemoRelatedSetting()
+		require.NotNil(t, memoRelatedSetting)
+		require.True(t, memoRelatedSetting.DisallowPublicVisibility)
+		require.True(t, memoRelatedSetting.DisplayWithUpdateTime)
+		require.Equal(t, int32(512*1024), memoRelatedSetting.ContentLengthLimit)
+		require.True(t, memoRelatedSetting.EnableDoubleClickEdit)
+		require.Equal(t, []string{"new", "ok"}, memoRelatedSetting.Reactions)
+	})
+
+	t.Run("unknown update path returns invalid argument", func(t *testing.T) {
+		ts := NewTestService(t)
+		defer ts.Cleanup()
+
+		hostUser, err := ts.CreateHostUser(ctx, "invalidpathhost")
+		require.NoError(t, err)
+		userCtx := ts.CreateUserContext(ctx, hostUser.ID)
+
+		_, err = ts.Service.UpdateInstanceSetting(userCtx, &v1pb.UpdateInstanceSettingRequest{
+			Setting: &v1pb.InstanceSetting{
+				Name: "instance/settings/GENERAL",
+				Value: &v1pb.InstanceSetting_GeneralSetting_{
+					GeneralSetting: &v1pb.InstanceSetting_GeneralSetting{},
+				},
+			},
+			UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"general_setting.unknown"}},
+		})
+		require.Error(t, err)
+		require.Equal(t, codes.InvalidArgument, status.Code(err))
+	})
+
+	t.Run("empty update mask keeps full replacement compatibility", func(t *testing.T) {
+		ts := NewTestService(t)
+		defer ts.Cleanup()
+
+		hostUser, err := ts.CreateHostUser(ctx, "fullreplacehost")
+		require.NoError(t, err)
+		userCtx := ts.CreateUserContext(ctx, hostUser.ID)
+
+		_, err = ts.Store.UpsertInstanceSetting(ctx, &storepb.InstanceSetting{
+			Key: storepb.InstanceSettingKey_STORAGE,
+			Value: &storepb.InstanceSetting_StorageSetting{
+				StorageSetting: &storepb.InstanceStorageSetting{
+					StorageType:       storepb.InstanceStorageSetting_S3,
+					FilepathTemplate:  "assets/{filename}",
+					UploadSizeLimitMb: 30,
+					S3Config: &storepb.StorageS3Config{
+						AccessKeyId: "access-key",
+					},
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		resp, err := ts.Service.UpdateInstanceSetting(userCtx, &v1pb.UpdateInstanceSettingRequest{
+			Setting: &v1pb.InstanceSetting{
+				Name: "instance/settings/STORAGE",
+				Value: &v1pb.InstanceSetting_StorageSetting_{
+					StorageSetting: &v1pb.InstanceSetting_StorageSetting{
+						UploadSizeLimitMb: 64,
+					},
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		storageSetting := resp.GetStorageSetting()
+		require.NotNil(t, storageSetting)
+		require.Equal(t, int64(64), storageSetting.UploadSizeLimitMb)
+		require.Equal(t, v1pb.InstanceSetting_StorageSetting_STORAGE_TYPE_UNSPECIFIED, storageSetting.StorageType)
+		require.Empty(t, storageSetting.FilepathTemplate)
+		require.Nil(t, storageSetting.S3Config)
 	})
 }

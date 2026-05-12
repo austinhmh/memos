@@ -32,11 +32,23 @@ func (c *Config) Validate() error {
 	if c.SMTPHost == "" {
 		return errors.New("SMTP host is required")
 	}
+	if err := validateNoCRLF("SMTP host", c.SMTPHost); err != nil {
+		return err
+	}
+	if err := validateNoCRLF("SMTP username", c.SMTPUsername); err != nil {
+		return err
+	}
 	if c.SMTPPort <= 0 || c.SMTPPort > 65535 {
 		return errors.New("SMTP port must be between 1 and 65535")
 	}
 	if c.FromEmail == "" {
 		return errors.New("from email is required")
+	}
+	if _, err := parseSingleAddress("from email", c.FromEmail); err != nil {
+		return err
+	}
+	if err := validateHeaderValue("from name", c.FromName); err != nil {
+		return err
 	}
 	return nil
 }

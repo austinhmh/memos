@@ -55,6 +55,25 @@ func TestConfigValidation(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "from email with CRLF",
+			config: &Config{
+				SMTPHost:  "smtp.gmail.com",
+				SMTPPort:  587,
+				FromEmail: "noreply@example.com\r\nBcc: attacker@example.com",
+			},
+			wantErr: true,
+		},
+		{
+			name: "from name with CRLF",
+			config: &Config{
+				SMTPHost:  "smtp.gmail.com",
+				SMTPPort:  587,
+				FromEmail: "noreply@example.com",
+				FromName:  "Memos\nInjected: yes",
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {

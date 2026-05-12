@@ -3,9 +3,11 @@ package backup
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/pkg/errors"
 
@@ -56,6 +58,9 @@ func (s *Service) readExternalAttachmentBlob(ctx context.Context, attachment *st
 		if s3Object == nil || s3Object.Key == "" {
 			return nil, false, errors.New("S3 object payload is missing")
 		}
+		if err := s3.ValidateAttachmentObjectKey(s3Object.Key); err != nil {
+			return nil, false, err
+		}
 		s3Config := s3Object.S3Config
 		if s3Config == nil {
 			storageSetting, err := s.Store.GetInstanceStorageSetting(ctx)
@@ -93,6 +98,9 @@ func (s *Service) restoreAttachmentBlobs(ctx context.Context, archive *Archive) 
 		}
 		content, ok := archive.Blobs[attachment.UID]
 		if !ok {
+			if requiresAttachmentBlob(attachment) {
+				return errors.Errorf("attachment blob %s is missing", attachment.UID)
+			}
 			continue
 		}
 		if err := s.restoreAttachmentBlob(ctx, attachment, content); err != nil {
@@ -100,6 +108,13 @@ func (s *Service) restoreAttachmentBlobs(ctx context.Context, archive *Archive) 
 		}
 	}
 	return nil
+}
+
+func requiresAttachmentBlob(attachment *store.Attachment) bool {
+	if attachment == nil {
+		return false
+	}
+	return attachment.StorageType == storepb.AttachmentStorageType_LOCAL || attachment.StorageType == storepb.AttachmentStorageType_S3
 }
 
 func (s *Service) restoreAttachmentBlob(ctx context.Context, attachment *store.Attachment, content []byte) error {
@@ -115,6 +130,7 @@ func (s *Service) restoreAttachmentBlob(ctx context.Context, attachment *store.A
 }
 
 func (s *Service) restoreLocalAttachmentBlob(attachment *store.Attachment, content []byte) error {
+	attachment.Reference = filepath.ToSlash(filepath.Join("assets", fmt.Sprintf("%d_%s_%s", s.now().Unix(), util.GenUUID(), safeRestoreFilename(attachment.Filename))))
 	attachmentPath, err := util.SafeJoinUnderBase(s.Profile.Data, attachment.Reference)
 	if err != nil {
 		return errors.Wrap(err, "unsafe local attachment path")
@@ -141,7 +157,7 @@ func (s *Service) restoreS3AttachmentBlob(ctx context.Context, attachment *store
 	if err != nil {
 		return err
 	}
-	s3Object, err := applyRestoreS3Config(attachment, storageSetting.S3Config)
+	s3Object, err := applyRestoreS3Config(attachment, storageSetting.S3Config, s.restoreAttachmentS3Key(attachment))
 	if err != nil {
 		return err
 	}
@@ -153,17 +169,38 @@ func (s *Service) restoreS3AttachmentBlob(ctx context.Context, attachment *store
 	return err
 }
 
-func applyRestoreS3Config(attachment *store.Attachment, s3Config *storepb.StorageS3Config) (*storepb.AttachmentPayload_S3Object, error) {
-	if attachment == nil || attachment.Payload == nil {
-		return nil, errors.New("attachment payload is missing")
+func (s *Service) restoreAttachmentS3Key(attachment *store.Attachment) string {
+	return fmt.Sprintf("%s%d_%s_%s", s3.AttachmentObjectPrefix, s.now().Unix(), util.GenUUID(), safeRestoreFilename(attachment.Filename))
+}
+
+func safeRestoreFilename(filename string) string {
+	filename = filepath.Base(filepath.FromSlash(strings.ReplaceAll(filename, "\\", "/")))
+	if filename == "" || filename == "." || filename == string(filepath.Separator) {
+		return "attachment"
 	}
-	s3Object := attachment.Payload.GetS3Object()
-	if s3Object == nil || s3Object.Key == "" {
-		return nil, errors.New("S3 object payload is missing")
+	return filename
+}
+
+func applyRestoreS3Config(attachment *store.Attachment, s3Config *storepb.StorageS3Config, key string) (*storepb.AttachmentPayload_S3Object, error) {
+	if attachment == nil {
+		return nil, errors.New("attachment is missing")
 	}
 	if s3Config == nil {
 		return nil, errors.New("S3 config is missing")
 	}
-	s3Object.S3Config = s3Config
+	key, err := s3.NormalizeAttachmentObjectKey(key)
+	if err != nil {
+		return nil, err
+	}
+	s3Object := &storepb.AttachmentPayload_S3Object{
+		S3Config: s3Config,
+		Key:      key,
+	}
+	attachment.Reference = key
+	attachment.Payload = &storepb.AttachmentPayload{
+		Payload: &storepb.AttachmentPayload_S3Object_{
+			S3Object: s3Object,
+		},
+	}
 	return s3Object, nil
 }

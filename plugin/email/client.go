@@ -46,26 +46,17 @@ func (c *Client) createTLSConfig() *tls.Config {
 
 // Send sends an email message via SMTP.
 func (c *Client) Send(message *Message) error {
-	// Validate configuration
 	if err := c.validateConfig(); err != nil {
 		return errors.Wrap(err, "invalid email configuration")
 	}
-
-	// Validate message
 	if message == nil {
 		return errors.New("message is required")
 	}
 	if err := message.Validate(); err != nil {
 		return errors.Wrap(err, "invalid email message")
 	}
-
-	// Format the message
 	body := message.Format(c.config.FromEmail, c.config.FromName)
-
-	// Get all recipients
 	recipients := message.GetAllRecipients()
-
-	// Create auth
 	auth := c.createAuth()
 
 	// Send based on encryption type

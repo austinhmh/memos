@@ -20,6 +20,22 @@ interface TaskInfo {
   checked: boolean;
 }
 
+const markdownImagePattern = /!\[[^\]]*\]\([^)]*\)/g;
+
+function preserveMarkdownImageReferences(nextContent: string, previousContent: string): string {
+  const previousImages = previousContent.match(markdownImagePattern) ?? [];
+  if (previousImages.length === 0) {
+    return nextContent;
+  }
+
+  const missingImages = previousImages.filter((image) => !nextContent.includes(image));
+  if (missingImages.length === 0) {
+    return nextContent;
+  }
+
+  return [nextContent, ...missingImages].join(" ");
+}
+
 // Extract all task list items from markdown using AST parsing
 // This correctly ignores task-like patterns inside code blocks
 function extractTasksFromAst(markdown: string): TaskInfo[] {
@@ -115,7 +131,7 @@ export function updateTaskContentAtLine(markdown: string, lineNumber: number, co
     return markdown;
   }
 
-  lines[lineNumber] = `${match[1]}${normalizedContent}`;
+  lines[lineNumber] = `${match[1]}${preserveMarkdownImageReferences(normalizedContent, match[2])}`;
   return lines.join("\n");
 }
 

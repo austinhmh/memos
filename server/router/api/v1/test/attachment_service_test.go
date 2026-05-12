@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -30,28 +31,14 @@ func TestCreateAttachment(t *testing.T) {
 		attachment, err := ts.Service.CreateAttachment(userCtx, &v1pb.CreateAttachmentRequest{
 			Attachment: &v1pb.Attachment{
 				Filename: "test.png",
-				Content:  []byte("fake png content"),
+				Content:  []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A},
 			},
 		})
 		require.NoError(t, err)
 		require.Equal(t, "image/png", attachment.Type)
 	})
 
-	// Test case 2: Create attachment with empty type and unknown extension, but detectable content
-	t.Run("EmptyType_UnknownExtension_ContentSniffing", func(t *testing.T) {
-		// PNG magic header: 89 50 4E 47 0D 0A 1A 0A
-		pngContent := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
-		attachment, err := ts.Service.CreateAttachment(userCtx, &v1pb.CreateAttachmentRequest{
-			Attachment: &v1pb.Attachment{
-				Filename: "test.unknown",
-				Content:  pngContent,
-			},
-		})
-		require.NoError(t, err)
-		require.Equal(t, "image/png", attachment.Type)
-	})
-
-	// Test case 3: Empty type, unknown extension, random content -> fallback to application/octet-stream
+	// Test case 2: Empty type, unknown extension, random content -> fallback to application/octet-stream
 	t.Run("EmptyType_Fallback", func(t *testing.T) {
 		randomContent := []byte{0x00, 0x01, 0x02, 0x03}
 		attachment, err := ts.Service.CreateAttachment(userCtx, &v1pb.CreateAttachmentRequest{
@@ -63,6 +50,149 @@ func TestCreateAttachment(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "application/octet-stream", attachment.Type)
 	})
+}
+
+func TestCreateAttachmentUsesServerDetectedMimeType(t *testing.T) {
+	ts := NewTestService(t)
+	defer ts.Cleanup()
+	ctx := context.Background()
+
+	user, err := ts.CreateRegularUser(ctx, "mime-user")
+	require.NoError(t, err)
+	userCtx := ts.CreateUserContext(ctx, user.ID)
+
+	pngContent := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
+	attachment, err := ts.Service.CreateAttachment(userCtx, &v1pb.CreateAttachmentRequest{
+		Attachment: &v1pb.Attachment{
+			Filename: "test.unknown",
+			Type:     "application/octet-stream",
+			Content:  pngContent,
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "image/png", attachment.Type)
+
+	_, err = ts.Service.CreateAttachment(userCtx, &v1pb.CreateAttachmentRequest{
+		Attachment: &v1pb.Attachment{
+			Filename: "html.txt",
+			Type:     "text/plain",
+			Content:  []byte("<html><script>alert(1)</script></html>"),
+		},
+	})
+	require.Error(t, err)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+}
+
+func TestCreateAttachmentRejectsShortCustomIDForRegularUser(t *testing.T) {
+	ts := NewTestService(t)
+	defer ts.Cleanup()
+	ctx := context.Background()
+
+	user, err := ts.CreateRegularUser(ctx, "short-id-user")
+	require.NoError(t, err)
+	userCtx := ts.CreateUserContext(ctx, user.ID)
+
+	_, err = ts.Service.CreateAttachment(userCtx, &v1pb.CreateAttachmentRequest{
+		AttachmentId: "abc",
+		Attachment:   &v1pb.Attachment{Filename: "safe.txt", Type: "text/plain", Content: []byte("content")},
+	})
+	require.Error(t, err)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.True(t, strings.Contains(err.Error(), "custom attachment_id"))
+}
+
+func TestAttachmentRejectsUnsafeFilenames(t *testing.T) {
+	ts := NewTestService(t)
+	defer ts.Cleanup()
+	ctx := context.Background()
+
+	user, err := ts.CreateRegularUser(ctx, "unsafe-filename-user")
+	require.NoError(t, err)
+	userCtx := ts.CreateUserContext(ctx, user.ID)
+
+	longFilename := ""
+	for range 256 {
+		longFilename += "a"
+	}
+
+	unsafeFilenames := []string{
+		"bad\x00name.png",
+		"bad\nname.png",
+		"bad\rname.png",
+		"bad\tname.png",
+		"bad\x7fname.png",
+		string([]byte{0xff, 'a', '.', 'p', 'n', 'g'}),
+		"../evil.png",
+		"back\\slash.png",
+		longFilename,
+	}
+
+	for _, filename := range unsafeFilenames {
+		t.Run("Create/"+filename, func(t *testing.T) {
+			_, err := ts.Service.CreateAttachment(userCtx, &v1pb.CreateAttachmentRequest{
+				Attachment: &v1pb.Attachment{Filename: filename, Type: "image/png", Content: []byte("content")},
+			})
+			require.Error(t, err)
+			require.Equal(t, codes.InvalidArgument, status.Code(err))
+		})
+	}
+
+	attachment, err := ts.Service.CreateAttachment(userCtx, &v1pb.CreateAttachmentRequest{
+		Attachment: &v1pb.Attachment{Filename: "safe.png", Type: "image/png", Content: []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}},
+	})
+	require.NoError(t, err)
+
+	for _, filename := range unsafeFilenames {
+		t.Run("Update/"+filename, func(t *testing.T) {
+			_, err := ts.Service.UpdateAttachment(userCtx, &v1pb.UpdateAttachmentRequest{
+				Attachment: &v1pb.Attachment{Name: attachment.Name, Filename: filename},
+				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"filename"}},
+			})
+			require.Error(t, err)
+			require.Equal(t, codes.InvalidArgument, status.Code(err))
+		})
+	}
+}
+
+func TestUpdateAttachmentRejectsNilAndUnknownUpdateMask(t *testing.T) {
+	ts := NewTestService(t)
+	defer ts.Cleanup()
+	ctx := context.Background()
+
+	user, err := ts.CreateRegularUser(ctx, "attachment-mask-user")
+	require.NoError(t, err)
+	userCtx := ts.CreateUserContext(ctx, user.ID)
+	attachment, err := ts.Service.CreateAttachment(userCtx, &v1pb.CreateAttachmentRequest{
+		Attachment: &v1pb.Attachment{Filename: "mask-safe.txt", Type: "text/plain", Content: []byte("content")},
+	})
+	require.NoError(t, err)
+
+	_, err = ts.Service.UpdateAttachment(userCtx, &v1pb.UpdateAttachmentRequest{})
+	require.Error(t, err)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+
+	for _, updateMask := range []*fieldmaskpb.FieldMask{nil, {Paths: []string{}}} {
+		_, err = ts.Service.UpdateAttachment(userCtx, &v1pb.UpdateAttachmentRequest{
+			Attachment: &v1pb.Attachment{Name: attachment.Name, Filename: "renamed.txt"},
+			UpdateMask: updateMask,
+		})
+		require.Error(t, err)
+		require.Equal(t, codes.InvalidArgument, status.Code(err))
+	}
+
+	_, err = ts.Service.UpdateAttachment(userCtx, &v1pb.UpdateAttachmentRequest{
+		Attachment: &v1pb.Attachment{Name: attachment.Name, Filename: "renamed.txt"},
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"unsupported"}},
+	})
+	require.Error(t, err)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+
+	updated, err := ts.Service.UpdateAttachment(userCtx, &v1pb.UpdateAttachmentRequest{
+		Attachment: &v1pb.Attachment{Name: attachment.Name, Filename: "renamed.txt"},
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"filename"}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "renamed.txt", updated.Filename)
 }
 
 func TestCreateAttachmentCannotAttachToOtherUsersMemo(t *testing.T) {

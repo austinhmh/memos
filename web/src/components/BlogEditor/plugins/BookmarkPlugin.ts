@@ -2,7 +2,7 @@ import type { Node } from "prosemirror-model";
 import type { EditorState, Transaction } from "prosemirror-state";
 import { NodeSelection, Plugin, PluginKey } from "prosemirror-state";
 import type { EditorView, NodeView } from "prosemirror-view";
-import { DecorationSet } from "prosemirror-view";
+import { sanitizeUrl } from "@/lib/sanitize-url";
 
 export const bookmarkPluginKey = new PluginKey<BookmarkState>("bookmark");
 
@@ -167,22 +167,19 @@ class BookmarkNodeView implements NodeView {
   };
 
   private handleCardClick = (e: MouseEvent) => {
-    const url = this.lastUrl;
+    const url = sanitizeUrl(this.lastUrl);
     if (url) {
       window.open(url, "_blank", "noopener,noreferrer");
     }
   };
 
   private normalizeUrl(url: string): string {
-    if (!url) return url;
-    if (!/^https?:\/\//i.test(url)) {
-      return "https://" + url;
-    }
-    return url;
+    return sanitizeUrl(url) || "";
   }
 
   private commitUrl(rawUrl: string) {
     const url = this.normalizeUrl(rawUrl);
+    if (!url) return;
     const pos = this.getPos();
     if (pos === undefined) return;
     const node = this.view.state.doc.nodeAt(pos);
@@ -294,11 +291,13 @@ class BookmarkNodeView implements NodeView {
   }
 
   private renderCardWithData(url: string, data: URLMetadata) {
+    const safeUrl = sanitizeUrl(url);
+    if (!safeUrl) return;
     this.cardElement.innerHTML = "";
     this.cardElement.className = "bookmark-card bookmark-card-telegram";
 
     const link = document.createElement("a");
-    link.href = url;
+    link.href = safeUrl;
     link.target = "_blank";
     link.rel = "noopener noreferrer";
     link.className = "bookmark-tg-link";
@@ -308,7 +307,7 @@ class BookmarkNodeView implements NodeView {
 
     const site = document.createElement("div");
     site.className = "bookmark-tg-site";
-    site.textContent = extractDomain(url).toUpperCase();
+    site.textContent = extractDomain(safeUrl).toUpperCase();
     body.appendChild(site);
 
     if (data.title) {
@@ -327,11 +326,12 @@ class BookmarkNodeView implements NodeView {
 
     link.appendChild(body);
 
-    if (data.image) {
+    const safeImageUrl = sanitizeUrl(data.image);
+    if (safeImageUrl) {
       const thumb = document.createElement("div");
       thumb.className = "bookmark-tg-thumb";
       const img = document.createElement("img");
-      img.src = data.image;
+      img.src = safeImageUrl;
       img.alt = "";
       img.onerror = () => {
         thumb.style.display = "none";
@@ -344,11 +344,13 @@ class BookmarkNodeView implements NodeView {
   }
 
   private renderFallbackCard(url: string) {
+    const safeUrl = sanitizeUrl(url);
+    if (!safeUrl) return;
     this.cardElement.innerHTML = "";
     this.cardElement.className = "bookmark-card bookmark-card-telegram";
 
     const link = document.createElement("a");
-    link.href = url;
+    link.href = safeUrl;
     link.target = "_blank";
     link.rel = "noopener noreferrer";
     link.className = "bookmark-tg-link";
@@ -358,12 +360,12 @@ class BookmarkNodeView implements NodeView {
 
     const site = document.createElement("div");
     site.className = "bookmark-tg-site";
-    site.textContent = extractDomain(url).toUpperCase();
+    site.textContent = extractDomain(safeUrl).toUpperCase();
     body.appendChild(site);
 
     const urlText = document.createElement("div");
     urlText.className = "bookmark-tg-url";
-    urlText.textContent = url;
+    urlText.textContent = safeUrl;
     body.appendChild(urlText);
 
     link.appendChild(body);

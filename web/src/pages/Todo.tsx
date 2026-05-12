@@ -12,7 +12,7 @@ import {
   Trash2Icon,
   XIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type ClipboardEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "react-hot-toast";
 import Empty from "@/components/Empty";
 import { AttachmentCard } from "@/components/MemoView/components/metadata";
@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { attachmentServiceClient } from "@/connect";
 import { DEFAULT_LIST_MEMOS_PAGE_SIZE } from "@/helpers/consts";
 import useCurrentUser from "@/hooks/useCurrentUser";
 import { useCreateMemo, useInfiniteMemos, useUpdateMemo } from "@/hooks/useMemoQueries";
@@ -31,6 +32,7 @@ import i18n from "@/i18n";
 import { cn } from "@/lib/utils";
 import { Routes } from "@/router";
 import type { Attachment } from "@/types/proto/api/v1/attachment_service_pb";
+import { AttachmentSchema } from "@/types/proto/api/v1/attachment_service_pb";
 import { State } from "@/types/proto/api/v1/common_pb";
 import { type Memo, MemoSchema, Visibility } from "@/types/proto/api/v1/memo_service_pb";
 import { getAttachmentType, getAttachmentUrl } from "@/utils/attachment";
@@ -154,7 +156,7 @@ interface TodoTaskRowProps {
   onToggle: (task: TodoTask, checked: boolean) => void;
   onOpenMemo: (memo: Memo) => void;
   onDelete: (task: TodoTask) => void;
-  onUpdateContent: (task: TodoTask, content: string) => void;
+  onUpdateContent: (task: TodoTask, content: string, attachments?: Attachment[]) => void;
   disabled?: boolean;
 }
 
@@ -216,9 +218,12 @@ const TodoTaskRow = ({ task, onToggle, onOpenMemo, onDelete, onUpdateContent, di
   const tag = getPrimaryTag(task.memo);
   const [editing, setEditing] = useState(false);
   const [draftContent, setDraftContent] = useState(task.content);
+  const [draftAttachments, setDraftAttachments] = useState<Attachment[]>([]);
+  const [isPastingImage, setIsPastingImage] = useState(false);
 
   useEffect(() => {
     setDraftContent(task.content);
+    setDraftAttachments([]);
   }, [task.content]);
 
   const submitEdit = () => {
@@ -228,15 +233,56 @@ const TodoTaskRow = ({ task, onToggle, onOpenMemo, onDelete, onUpdateContent, di
       return;
     }
 
-    if (content !== task.content) {
-      onUpdateContent(task, content);
+    if (content !== task.content || draftAttachments.length > 0) {
+      onUpdateContent(task, content, draftAttachments);
     }
+    setDraftAttachments([]);
     setEditing(false);
   };
 
   const cancelEdit = () => {
     setDraftContent(task.content);
+    setDraftAttachments([]);
     setEditing(false);
+  };
+
+  const handlePaste = async (event: ClipboardEvent<HTMLInputElement>) => {
+    const files = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith("image/"));
+    if (files.length === 0) {
+      return;
+    }
+
+    event.preventDefault();
+    setIsPastingImage(true);
+
+    try {
+      const uploadedAttachments: Attachment[] = [];
+      for (const file of files) {
+        const buffer = new Uint8Array(await file.arrayBuffer());
+        const attachment = await attachmentServiceClient.createAttachment({
+          attachment: create(AttachmentSchema, {
+            filename: file.name || "pasted-image.png",
+            size: BigInt(file.size),
+            type: file.type || "image/png",
+            content: buffer,
+          }),
+        });
+        uploadedAttachments.push(attachment);
+      }
+
+      setDraftAttachments((prev) => [...prev, ...uploadedAttachments]);
+      setDraftContent((prev) => {
+        const imageMarkdown = uploadedAttachments
+          .map((attachment) => `![${attachment.filename}](${getAttachmentUrl(attachment)})`)
+          .join(" ");
+        return [prev.trim(), imageMarkdown].filter(Boolean).join(" ");
+      });
+    } catch (error) {
+      console.error("Failed to paste todo image:", error);
+      toast.error("Failed to paste image");
+    } finally {
+      setIsPastingImage(false);
+    }
   };
 
   return (
@@ -253,10 +299,11 @@ const TodoTaskRow = ({ task, onToggle, onOpenMemo, onDelete, onUpdateContent, di
             <Input
               autoFocus
               value={draftContent}
-              disabled={disabled}
+              disabled={disabled || isPastingImage}
+              onPaste={handlePaste}
               onChange={(event) => setDraftContent(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === "Enter") {
+                if (event.key === "Enter" && !isPastingImage) {
                   event.preventDefault();
                   submitEdit();
                 }
@@ -273,7 +320,7 @@ const TodoTaskRow = ({ task, onToggle, onOpenMemo, onDelete, onUpdateContent, di
                 size="icon"
                 className="size-7"
                 onClick={submitEdit}
-                disabled={disabled}
+                disabled={disabled || isPastingImage}
                 aria-label="Save todo"
               >
                 <CheckIcon className="size-4" />
@@ -284,7 +331,7 @@ const TodoTaskRow = ({ task, onToggle, onOpenMemo, onDelete, onUpdateContent, di
                 size="icon"
                 className="size-7"
                 onClick={cancelEdit}
-                disabled={disabled}
+                disabled={disabled || isPastingImage}
                 aria-label="Cancel edit"
               >
                 <XIcon className="size-4" />
@@ -339,7 +386,7 @@ interface TodoSectionCardProps {
   onToggleTask: (task: TodoTask, checked: boolean) => void;
   onOpenMemo: (memo: Memo) => void;
   onDeleteTask: (task: TodoTask) => void;
-  onUpdateTaskContent: (task: TodoTask, content: string) => void;
+  onUpdateTaskContent: (task: TodoTask, content: string, attachments?: Attachment[]) => void;
   updatingMemoName?: string;
 }
 
@@ -382,30 +429,37 @@ const TodoSectionCard = ({
   );
 };
 
-const hasImageReferences = (content: string, attachments: Attachment[]) => {
-  if (attachments.length === 0) {
-    return false;
-  }
-
-  return attachments.some((attachment) => content.includes(getAttachmentUrl(attachment)) || content.includes(attachment.name));
-};
-
-const updateMemoContent = async (updateMemo: ReturnType<typeof useUpdateMemo>, task: TodoTask, content: string, errorMessage: string) => {
+const updateMemoContent = async (
+  updateMemo: ReturnType<typeof useUpdateMemo>,
+  task: TodoTask,
+  content: string,
+  errorMessage: string,
+  attachments: Attachment[] = [],
+) => {
   const nextContent = content.trim() ? content : " ";
-  if (nextContent === task.memo.content) {
+  if (nextContent === task.memo.content && attachments.length === 0) {
     return;
   }
 
-  const shouldKeepAttachments = hasImageReferences(nextContent, task.memo.attachments);
-
   try {
+    if (attachments.length > 0) {
+      await updateMemo.mutateAsync({
+        update: {
+          name: task.memo.name,
+          content: nextContent,
+          attachments: [...task.memo.attachments, ...attachments],
+        },
+        updateMask: ["content", "attachments"],
+      });
+      return;
+    }
+
     await updateMemo.mutateAsync({
       update: {
         name: task.memo.name,
         content: nextContent,
-        ...(shouldKeepAttachments ? { attachments: task.memo.attachments } : {}),
       },
-      updateMask: shouldKeepAttachments ? ["content", "attachments"] : ["content"],
+      updateMask: ["content"],
     });
   } catch (error) {
     console.error(errorMessage, error);
@@ -483,12 +537,13 @@ const Todo = () => {
   );
 
   const handleUpdateTaskContent = useCallback(
-    async (task: TodoTask, content: string) => {
+    async (task: TodoTask, content: string, attachments?: Attachment[]) => {
       await updateMemoContent(
         updateMemo,
         task,
         updateTaskContentAtIndex(task.memo.content, task.taskIndex, content),
         "Failed to update todo",
+        attachments,
       );
     },
     [updateMemo],

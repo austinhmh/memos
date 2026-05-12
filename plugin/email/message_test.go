@@ -80,7 +80,7 @@ func TestMessageFormatPlainText(t *testing.T) {
 	formatted := msg.Format("sender@example.com", "Sender Name")
 
 	// Check required headers
-	if !strings.Contains(formatted, "From: Sender Name <sender@example.com>") {
+	if !strings.Contains(formatted, `From: "Sender Name" <sender@example.com>`) {
 		t.Error("Missing or incorrect From header")
 	}
 	if !strings.Contains(formatted, "To: user@example.com") {
@@ -143,6 +143,38 @@ func TestMessageFormatMultipleRecipients(t *testing.T) {
 	// Check Reply-To header
 	if !strings.Contains(formatted, "Reply-To: reply@example.com") {
 		t.Error("Missing or incorrect Reply-To header")
+	}
+}
+
+func TestMessageValidationRejectsHeaderInjectionAndInvalidAddresses(t *testing.T) {
+	tests := []Message{
+		{To: []string{"user@example.com\r\nBcc: attacker@example.com"}, Subject: "Test", Body: "Body"},
+		{To: []string{"Display Name <user@example.com>"}, Subject: "Test", Body: "Body"},
+		{To: []string{"user@example.com"}, Cc: []string{"bad\ncc@example.com"}, Subject: "Test", Body: "Body"},
+		{To: []string{"user@example.com"}, ReplyTo: "reply@example.com\r\nX-Injected: yes", Subject: "Test", Body: "Body"},
+		{To: []string{"user@example.com"}, Subject: "Hello\r\nBcc: attacker@example.com", Body: "Body"},
+	}
+	for _, msg := range tests {
+		err := msg.Validate()
+		if err == nil {
+			t.Fatalf("Validate() expected error for %#v", msg)
+		}
+	}
+}
+
+func TestMessageFormatEncodesNonASCIIHeaderValues(t *testing.T) {
+	msg := Message{
+		To:      []string{"user@example.com"},
+		Subject: "测试 Subject",
+		Body:    "Test Body",
+	}
+
+	formatted := msg.Format("sender@example.com", "发送者")
+	if !strings.Contains(formatted, "Subject: =?utf-8?q?") {
+		t.Error("Subject header should be RFC 2047 encoded")
+	}
+	if !strings.Contains(formatted, "From: =?utf-8?q?") {
+		t.Error("From display name should be RFC 2047 encoded")
 	}
 }
 

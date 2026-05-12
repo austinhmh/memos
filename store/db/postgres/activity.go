@@ -47,6 +47,14 @@ func (d *DB) ListActivities(ctx context.Context, find *store.FindActivity) ([]*s
 	}
 
 	query := "SELECT id, creator_id, type, level, payload, created_ts FROM activity WHERE " + strings.Join(where, " AND ") + " ORDER BY created_ts DESC"
+	if find.Limit != nil {
+		query += " LIMIT " + placeholder(len(args)+1)
+		args = append(args, *find.Limit)
+	}
+	if find.Offset != nil {
+		query += " OFFSET " + placeholder(len(args)+1)
+		args = append(args, *find.Offset)
+	}
 	rows, err := d.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err

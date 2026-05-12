@@ -28,6 +28,8 @@ type FindMemoRelation struct {
 	MemoCreatorRowStatus    *RowStatus
 	RelatedRowStatus        *RowStatus
 	RelatedCreatorRowStatus *RowStatus
+	Limit                   *int
+	Offset                  *int
 }
 
 type DeleteMemoRelation struct {

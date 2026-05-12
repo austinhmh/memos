@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/usememos/memos/internal/netutil"
 	"github.com/usememos/memos/plugin/idp"
 	storepb "github.com/usememos/memos/proto/gen/store"
 )
@@ -170,7 +171,9 @@ func TestValidateExternalURLRejectsPrivateAddresses(t *testing.T) {
 		"http://172.16.0.1/token",
 		"http://192.168.0.1/token",
 		"http://169.254.169.254/latest/meta-data",
-		"http://203.0.113.10/token",
+		"http://100.64.0.1/token",
+		"http://192.0.0.1/token",
+		"http://198.18.0.1/token",
 		"http://0.0.0.1/token",
 		"http://240.0.0.1/token",
 		"http://255.255.255.255/token",
@@ -179,12 +182,13 @@ func TestValidateExternalURLRejectsPrivateAddresses(t *testing.T) {
 		"http://[64:ff9b::a9fe:a9fe]/token",
 		"http://[2001::1]/token",
 		"http://[2001:db8::1]/token",
-		"http://[2002:7f00:1::]/token",
+		"http://[fc00::1]/token",
+		"http://[fd00::1]/token",
 	} {
 		t.Run(rawURL, func(t *testing.T) {
 			err := validateExternalURL(context.Background(), rawURL)
 			require.Error(t, err)
-			assert.ErrorContains(t, err, "internal")
+			assert.ErrorContains(t, err, "non-public")
 		})
 	}
 }
@@ -217,14 +221,14 @@ func TestValidateExternalURLAllowsDefaultWebPorts(t *testing.T) {
 	}
 }
 
-func TestNewSafeTransportRejectsPrivateDialTargetAndDisablesProxy(t *testing.T) {
-	transport := newSafeTransport()
+func TestNewExternalTransportRejectsPrivateDialTargetAndDisablesProxy(t *testing.T) {
+	transport := netutil.NewExternalTransport(netutil.ExternalURLValidator{})
 	require.Nil(t, transport.Proxy)
 
 	conn, err := transport.DialContext(context.Background(), "tcp", net.JoinHostPort("127.0.0.1", "80"))
 	require.Error(t, err)
 	require.Nil(t, conn)
-	assert.ErrorContains(t, err, "internal")
+	assert.ErrorContains(t, err, "non-public")
 }
 
 func TestHTTPClientRejectsInternalRedirect(t *testing.T) {
@@ -243,7 +247,7 @@ func TestHTTPClientRejectsInternalRedirect(t *testing.T) {
 	require.NoError(t, err)
 	err = newHTTPClient().CheckRedirect(&http.Request{URL: redirectURL}, nil)
 	require.Error(t, err)
-	assert.ErrorContains(t, err, "redirect to internal IP")
+	assert.ErrorContains(t, err, "redirect to non-public address")
 }
 
 func TestIdentityProvider(t *testing.T) {

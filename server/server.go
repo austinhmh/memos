@@ -186,6 +186,9 @@ func securityHeadersMiddleware() echo.MiddlewareFunc {
 			c.Response().Header().Set("X-Frame-Options", "DENY")
 			c.Response().Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 			c.Response().Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+			if c.Request().TLS != nil || c.Request().Header.Get("X-Forwarded-Proto") == "https" {
+				c.Response().Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+			}
 			return next(c)
 		}
 	}

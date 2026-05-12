@@ -3,10 +3,12 @@ package v1
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/pkg/errors"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	v1pb "github.com/usememos/memos/proto/gen/api/v1"
 	storepb "github.com/usememos/memos/proto/gen/store"
@@ -82,6 +84,10 @@ func (s *APIV1Service) GetInstanceSetting(ctx context.Context, request *v1pb.Get
 }
 
 func (s *APIV1Service) UpdateInstanceSetting(ctx context.Context, request *v1pb.UpdateInstanceSettingRequest) (*v1pb.InstanceSetting, error) {
+	if request.Setting == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "setting is required")
+	}
+
 	user, err := s.fetchCurrentUser(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get current user: %v", err)
@@ -93,16 +99,220 @@ func (s *APIV1Service) UpdateInstanceSetting(ctx context.Context, request *v1pb.
 		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
 	}
 
-	// TODO: Apply update_mask if specified
-	_ = request.UpdateMask
-
-	updateSetting := convertInstanceSettingToStore(request.Setting)
+	updateSetting, err := s.buildInstanceSettingUpdate(ctx, request)
+	if err != nil {
+		return nil, err
+	}
 	instanceSetting, err := s.Store.UpsertInstanceSetting(ctx, updateSetting)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to upsert instance setting: %v", err)
 	}
 
 	return convertInstanceSettingFromStore(instanceSetting), nil
+}
+
+func (s *APIV1Service) buildInstanceSettingUpdate(ctx context.Context, request *v1pb.UpdateInstanceSettingRequest) (*storepb.InstanceSetting, error) {
+	updateSetting, err := convertInstanceSettingToStore(request.Setting)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid instance setting: %v", err)
+	}
+	if request.UpdateMask == nil || len(request.UpdateMask.Paths) == 0 {
+		return updateSetting, nil
+	}
+
+	existingSetting, err := s.getInstanceSettingForUpdate(ctx, updateSetting.Key)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get instance setting: %v", err)
+	}
+
+	mergedSetting, err := applyInstanceSettingUpdateMask(existingSetting, updateSetting, request.UpdateMask.Paths)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	return mergedSetting, nil
+}
+
+func (s *APIV1Service) getInstanceSettingForUpdate(ctx context.Context, key storepb.InstanceSettingKey) (*storepb.InstanceSetting, error) {
+	switch key {
+	case storepb.InstanceSettingKey_GENERAL:
+		generalSetting, err := s.Store.GetInstanceGeneralSetting(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return &storepb.InstanceSetting{
+			Key:   storepb.InstanceSettingKey_GENERAL,
+			Value: &storepb.InstanceSetting_GeneralSetting{GeneralSetting: proto.Clone(generalSetting).(*storepb.InstanceGeneralSetting)},
+		}, nil
+	case storepb.InstanceSettingKey_STORAGE:
+		storageSetting, err := s.Store.GetInstanceStorageSetting(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return &storepb.InstanceSetting{
+			Key:   storepb.InstanceSettingKey_STORAGE,
+			Value: &storepb.InstanceSetting_StorageSetting{StorageSetting: proto.Clone(storageSetting).(*storepb.InstanceStorageSetting)},
+		}, nil
+	case storepb.InstanceSettingKey_MEMO_RELATED:
+		memoRelatedSetting, err := s.Store.GetInstanceMemoRelatedSetting(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return &storepb.InstanceSetting{
+			Key:   storepb.InstanceSettingKey_MEMO_RELATED,
+			Value: &storepb.InstanceSetting_MemoRelatedSetting{MemoRelatedSetting: proto.Clone(memoRelatedSetting).(*storepb.InstanceMemoRelatedSetting)},
+		}, nil
+	default:
+		return nil, errors.Errorf("unsupported instance setting key: %v", key)
+	}
+}
+
+func applyInstanceSettingUpdateMask(existingSetting, updateSetting *storepb.InstanceSetting, paths []string) (*storepb.InstanceSetting, error) {
+	if existingSetting.Key != updateSetting.Key {
+		return nil, errors.Errorf("setting key mismatch: %v != %v", existingSetting.Key, updateSetting.Key)
+	}
+
+	mergedSetting := proto.Clone(existingSetting).(*storepb.InstanceSetting)
+	for _, path := range paths {
+		normalizedPath := normalizeInstanceSettingUpdatePath(path)
+		switch updateSetting.Key {
+		case storepb.InstanceSettingKey_GENERAL:
+			if err := applyInstanceGeneralSettingUpdatePath(mergedSetting.GetGeneralSetting(), updateSetting.GetGeneralSetting(), normalizedPath); err != nil {
+				return nil, err
+			}
+		case storepb.InstanceSettingKey_STORAGE:
+			if err := applyInstanceStorageSettingUpdatePath(mergedSetting.GetStorageSetting(), updateSetting.GetStorageSetting(), normalizedPath); err != nil {
+				return nil, err
+			}
+		case storepb.InstanceSettingKey_MEMO_RELATED:
+			if err := applyInstanceMemoRelatedSettingUpdatePath(mergedSetting.GetMemoRelatedSetting(), updateSetting.GetMemoRelatedSetting(), normalizedPath); err != nil {
+				return nil, err
+			}
+		default:
+			return nil, errors.Errorf("unsupported instance setting key: %v", updateSetting.Key)
+		}
+	}
+	return mergedSetting, nil
+}
+
+func normalizeInstanceSettingUpdatePath(path string) string {
+	return strings.TrimPrefix(path, "setting.")
+}
+
+func applyInstanceGeneralSettingUpdatePath(existingSetting, updateSetting *storepb.InstanceGeneralSetting, path string) error {
+	if existingSetting == nil || updateSetting == nil {
+		return errors.Errorf("general setting is required")
+	}
+
+	switch path {
+	case "general_setting", "value", "generalSetting":
+		proto.Merge(existingSetting, updateSetting)
+	case "general_setting.disallow_user_registration", "value.disallow_user_registration", "disallow_user_registration", "generalSetting.disallowUserRegistration", "disallowUserRegistration":
+		existingSetting.DisallowUserRegistration = updateSetting.DisallowUserRegistration
+	case "general_setting.disallow_password_auth", "value.disallow_password_auth", "disallow_password_auth", "generalSetting.disallowPasswordAuth", "disallowPasswordAuth":
+		existingSetting.DisallowPasswordAuth = updateSetting.DisallowPasswordAuth
+	case "general_setting.additional_script", "value.additional_script", "additional_script", "generalSetting.additionalScript", "additionalScript":
+		existingSetting.AdditionalScript = updateSetting.AdditionalScript
+	case "general_setting.additional_style", "value.additional_style", "additional_style", "generalSetting.additionalStyle", "additionalStyle":
+		existingSetting.AdditionalStyle = updateSetting.AdditionalStyle
+	case "general_setting.custom_profile", "value.custom_profile", "custom_profile", "generalSetting.customProfile", "customProfile":
+		existingSetting.CustomProfile = cloneInstanceCustomProfile(updateSetting.CustomProfile)
+	case "general_setting.custom_profile.title", "value.custom_profile.title", "custom_profile.title", "generalSetting.customProfile.title", "customProfile.title":
+		existingSetting.CustomProfile = cloneInstanceCustomProfile(existingSetting.CustomProfile)
+		existingSetting.CustomProfile.Title = updateSetting.GetCustomProfile().GetTitle()
+	case "general_setting.custom_profile.description", "value.custom_profile.description", "custom_profile.description", "generalSetting.customProfile.description", "customProfile.description":
+		existingSetting.CustomProfile = cloneInstanceCustomProfile(existingSetting.CustomProfile)
+		existingSetting.CustomProfile.Description = updateSetting.GetCustomProfile().GetDescription()
+	case "general_setting.custom_profile.logo_url", "value.custom_profile.logo_url", "custom_profile.logo_url", "generalSetting.customProfile.logoUrl", "customProfile.logoUrl":
+		existingSetting.CustomProfile = cloneInstanceCustomProfile(existingSetting.CustomProfile)
+		existingSetting.CustomProfile.LogoUrl = updateSetting.GetCustomProfile().GetLogoUrl()
+	case "general_setting.week_start_day_offset", "value.week_start_day_offset", "week_start_day_offset", "generalSetting.weekStartDayOffset", "weekStartDayOffset":
+		existingSetting.WeekStartDayOffset = updateSetting.WeekStartDayOffset
+	case "general_setting.disallow_change_username", "value.disallow_change_username", "disallow_change_username", "generalSetting.disallowChangeUsername", "disallowChangeUsername":
+		existingSetting.DisallowChangeUsername = updateSetting.DisallowChangeUsername
+	case "general_setting.disallow_change_nickname", "value.disallow_change_nickname", "disallow_change_nickname", "generalSetting.disallowChangeNickname", "disallowChangeNickname":
+		existingSetting.DisallowChangeNickname = updateSetting.DisallowChangeNickname
+	default:
+		return errors.Errorf("invalid update path: %s", path)
+	}
+	return nil
+}
+
+func applyInstanceStorageSettingUpdatePath(existingSetting, updateSetting *storepb.InstanceStorageSetting, path string) error {
+	if existingSetting == nil || updateSetting == nil {
+		return errors.Errorf("storage setting is required")
+	}
+
+	switch path {
+	case "storage_setting", "value", "storageSetting":
+		proto.Merge(existingSetting, updateSetting)
+	case "storage_setting.storage_type", "value.storage_type", "storage_type", "storageSetting.storageType", "storageType":
+		existingSetting.StorageType = updateSetting.StorageType
+	case "storage_setting.filepath_template", "value.filepath_template", "filepath_template", "storageSetting.filepathTemplate", "filepathTemplate":
+		existingSetting.FilepathTemplate = updateSetting.FilepathTemplate
+	case "storage_setting.upload_size_limit_mb", "value.upload_size_limit_mb", "upload_size_limit_mb", "storageSetting.uploadSizeLimitMb", "uploadSizeLimitMb":
+		existingSetting.UploadSizeLimitMb = updateSetting.UploadSizeLimitMb
+	case "storage_setting.s3_config", "value.s3_config", "s3_config", "storageSetting.s3Config", "s3Config":
+		existingSetting.S3Config = cloneStorageS3Config(updateSetting.S3Config)
+	case "storage_setting.s3_config.access_key_id", "value.s3_config.access_key_id", "s3_config.access_key_id", "storageSetting.s3Config.accessKeyId", "s3Config.accessKeyId":
+		existingSetting.S3Config = cloneStorageS3Config(existingSetting.S3Config)
+		existingSetting.S3Config.AccessKeyId = updateSetting.GetS3Config().GetAccessKeyId()
+	case "storage_setting.s3_config.access_key_secret", "value.s3_config.access_key_secret", "s3_config.access_key_secret", "storageSetting.s3Config.accessKeySecret", "s3Config.accessKeySecret":
+		existingSetting.S3Config = cloneStorageS3Config(existingSetting.S3Config)
+		existingSetting.S3Config.AccessKeySecret = updateSetting.GetS3Config().GetAccessKeySecret()
+	case "storage_setting.s3_config.endpoint", "value.s3_config.endpoint", "s3_config.endpoint", "storageSetting.s3Config.endpoint", "s3Config.endpoint":
+		existingSetting.S3Config = cloneStorageS3Config(existingSetting.S3Config)
+		existingSetting.S3Config.Endpoint = updateSetting.GetS3Config().GetEndpoint()
+	case "storage_setting.s3_config.region", "value.s3_config.region", "s3_config.region", "storageSetting.s3Config.region", "s3Config.region":
+		existingSetting.S3Config = cloneStorageS3Config(existingSetting.S3Config)
+		existingSetting.S3Config.Region = updateSetting.GetS3Config().GetRegion()
+	case "storage_setting.s3_config.bucket", "value.s3_config.bucket", "s3_config.bucket", "storageSetting.s3Config.bucket", "s3Config.bucket":
+		existingSetting.S3Config = cloneStorageS3Config(existingSetting.S3Config)
+		existingSetting.S3Config.Bucket = updateSetting.GetS3Config().GetBucket()
+	case "storage_setting.s3_config.use_path_style", "value.s3_config.use_path_style", "s3_config.use_path_style", "storageSetting.s3Config.usePathStyle", "s3Config.usePathStyle":
+		existingSetting.S3Config = cloneStorageS3Config(existingSetting.S3Config)
+		existingSetting.S3Config.UsePathStyle = updateSetting.GetS3Config().GetUsePathStyle()
+	default:
+		return errors.Errorf("invalid update path: %s", path)
+	}
+	return nil
+}
+
+func applyInstanceMemoRelatedSettingUpdatePath(existingSetting, updateSetting *storepb.InstanceMemoRelatedSetting, path string) error {
+	if existingSetting == nil || updateSetting == nil {
+		return errors.Errorf("memo related setting is required")
+	}
+
+	switch path {
+	case "memo_related_setting", "value", "memoRelatedSetting":
+		proto.Merge(existingSetting, updateSetting)
+	case "memo_related_setting.disallow_public_visibility", "value.disallow_public_visibility", "disallow_public_visibility", "memoRelatedSetting.disallowPublicVisibility", "disallowPublicVisibility":
+		existingSetting.DisallowPublicVisibility = updateSetting.DisallowPublicVisibility
+	case "memo_related_setting.display_with_update_time", "value.display_with_update_time", "display_with_update_time", "memoRelatedSetting.displayWithUpdateTime", "displayWithUpdateTime":
+		existingSetting.DisplayWithUpdateTime = updateSetting.DisplayWithUpdateTime
+	case "memo_related_setting.content_length_limit", "value.content_length_limit", "content_length_limit", "memoRelatedSetting.contentLengthLimit", "contentLengthLimit":
+		existingSetting.ContentLengthLimit = updateSetting.ContentLengthLimit
+	case "memo_related_setting.enable_double_click_edit", "value.enable_double_click_edit", "enable_double_click_edit", "memoRelatedSetting.enableDoubleClickEdit", "enableDoubleClickEdit":
+		existingSetting.EnableDoubleClickEdit = updateSetting.EnableDoubleClickEdit
+	case "memo_related_setting.reactions", "value.reactions", "reactions", "memoRelatedSetting.reactions":
+		existingSetting.Reactions = append([]string(nil), updateSetting.Reactions...)
+	default:
+		return errors.Errorf("invalid update path: %s", path)
+	}
+	return nil
+}
+
+func cloneInstanceCustomProfile(profile *storepb.InstanceCustomProfile) *storepb.InstanceCustomProfile {
+	if profile == nil {
+		return &storepb.InstanceCustomProfile{}
+	}
+	return proto.Clone(profile).(*storepb.InstanceCustomProfile)
+}
+
+func cloneStorageS3Config(config *storepb.StorageS3Config) *storepb.StorageS3Config {
+	if config == nil {
+		return &storepb.StorageS3Config{}
+	}
+	return proto.Clone(config).(*storepb.StorageS3Config)
 }
 
 func convertInstanceSettingFromStore(setting *storepb.InstanceSetting) *v1pb.InstanceSetting {
@@ -126,13 +336,18 @@ func convertInstanceSettingFromStore(setting *storepb.InstanceSetting) *v1pb.Ins
 	return instanceSetting
 }
 
-func convertInstanceSettingToStore(setting *v1pb.InstanceSetting) *storepb.InstanceSetting {
-	settingKeyString, _ := ExtractInstanceSettingKeyFromName(setting.Name)
+func convertInstanceSettingToStore(setting *v1pb.InstanceSetting) (*storepb.InstanceSetting, error) {
+	settingKeyString, err := ExtractInstanceSettingKeyFromName(setting.Name)
+	if err != nil {
+		return nil, err
+	}
+	settingKey, ok := storepb.InstanceSettingKey_value[settingKeyString]
+	if !ok {
+		return nil, errors.Errorf("unsupported instance setting key: %s", settingKeyString)
+	}
+
 	instanceSetting := &storepb.InstanceSetting{
-		Key: storepb.InstanceSettingKey(storepb.InstanceSettingKey_value[settingKeyString]),
-		Value: &storepb.InstanceSetting_GeneralSetting{
-			GeneralSetting: convertInstanceGeneralSettingToStore(setting.GetGeneralSetting()),
-		},
+		Key: storepb.InstanceSettingKey(settingKey),
 	}
 	switch instanceSetting.Key {
 	case storepb.InstanceSettingKey_GENERAL:
@@ -148,9 +363,9 @@ func convertInstanceSettingToStore(setting *v1pb.InstanceSetting) *storepb.Insta
 			MemoRelatedSetting: convertInstanceMemoRelatedSettingToStore(setting.GetMemoRelatedSetting()),
 		}
 	default:
-		// Keep the default GeneralSetting value
+		return nil, errors.Errorf("unsupported instance setting key: %s", settingKeyString)
 	}
-	return instanceSetting
+	return instanceSetting, nil
 }
 
 func convertInstanceGeneralSettingFromStore(setting *storepb.InstanceGeneralSetting) *v1pb.InstanceSetting_GeneralSetting {

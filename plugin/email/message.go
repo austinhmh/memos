@@ -23,8 +23,25 @@ func (m *Message) Validate() error {
 	if len(m.To) == 0 {
 		return errors.New("at least one recipient is required")
 	}
+	if _, err := parseAddressList("to", m.To); err != nil {
+		return err
+	}
+	if _, err := parseAddressList("cc", m.Cc); err != nil {
+		return err
+	}
+	if _, err := parseAddressList("bcc", m.Bcc); err != nil {
+		return err
+	}
+	if m.ReplyTo != "" {
+		if _, err := parseSingleAddress("reply-to", m.ReplyTo); err != nil {
+			return err
+		}
+	}
 	if m.Subject == "" {
 		return errors.New("subject is required")
+	}
+	if err := validateHeaderValue("subject", m.Subject); err != nil {
+		return err
 	}
 	if m.Body == "" {
 		return errors.New("body is required")
@@ -38,17 +55,17 @@ func (m *Message) Format(fromEmail, fromName string) string {
 
 	// From header
 	if fromName != "" {
-		sb.WriteString(fmt.Sprintf("From: %s <%s>\r\n", fromName, fromEmail))
+		sb.WriteString(fmt.Sprintf("From: %s\r\n", formatAddress(fromEmail, fromName)))
 	} else {
 		sb.WriteString(fmt.Sprintf("From: %s\r\n", fromEmail))
 	}
 
 	// To header
-	sb.WriteString(fmt.Sprintf("To: %s\r\n", strings.Join(m.To, ", ")))
+	sb.WriteString(fmt.Sprintf("To: %s\r\n", formatAddressList(m.To)))
 
 	// Cc header (optional)
 	if len(m.Cc) > 0 {
-		sb.WriteString(fmt.Sprintf("Cc: %s\r\n", strings.Join(m.Cc, ", ")))
+		sb.WriteString(fmt.Sprintf("Cc: %s\r\n", formatAddressList(m.Cc)))
 	}
 
 	// Reply-To header (optional)
@@ -57,7 +74,7 @@ func (m *Message) Format(fromEmail, fromName string) string {
 	}
 
 	// Subject header
-	sb.WriteString(fmt.Sprintf("Subject: %s\r\n", m.Subject))
+	sb.WriteString(fmt.Sprintf("Subject: %s\r\n", encodeSubject(m.Subject)))
 
 	// Date header (RFC 5322 format)
 	sb.WriteString(fmt.Sprintf("Date: %s\r\n", time.Now().Format(time.RFC1123Z)))

@@ -73,7 +73,16 @@ func (d *DB) ListMemoRelations(ctx context.Context, find *store.FindMemoRelation
 		}
 	}
 
-	rows, err := d.db.QueryContext(ctx, "SELECT `memo_id`, `related_memo_id`, `type` FROM `memo_relation` WHERE "+strings.Join(where, " AND "), args...)
+	query := "SELECT `memo_id`, `related_memo_id`, `type` FROM `memo_relation` WHERE " + strings.Join(where, " AND ")
+	if find.Limit != nil {
+		query += " LIMIT ?"
+		args = append(args, *find.Limit)
+	}
+	if find.Offset != nil {
+		query += " OFFSET ?"
+		args = append(args, *find.Offset)
+	}
+	rows, err := d.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

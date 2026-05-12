@@ -2,17 +2,26 @@ package s3
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"path"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/pkg/errors"
 
 	storepb "github.com/usememos/memos/proto/gen/store"
+)
+
+const (
+	// AttachmentObjectPrefix is the only S3 prefix managed by attachment storage.
+	AttachmentObjectPrefix = "assets/"
+	// MaxGetObjectBytes is the maximum object size read into memory.
+	MaxGetObjectBytes int64 = 256 << 20
 )
 
 type Client struct {
@@ -48,25 +57,68 @@ func NewClient(ctx context.Context, s3Config *storepb.StorageS3Config) (*Client,
 	}, nil
 }
 
+// ValidateAttachmentObjectKey validates that key is an application-managed attachment object key.
+func ValidateAttachmentObjectKey(key string) error {
+	if key == "" {
+		return errors.New("S3 object key is missing")
+	}
+	cleanKey := path.Clean(strings.ReplaceAll(key, "\\", "/"))
+	if cleanKey != key || strings.HasPrefix(cleanKey, "../") || strings.HasPrefix(cleanKey, "/") || cleanKey == ".." {
+		return fmt.Errorf("unsafe S3 object key %q", key)
+	}
+	if !strings.HasPrefix(key, AttachmentObjectPrefix) || key == AttachmentObjectPrefix {
+		return fmt.Errorf("S3 object key %q is outside attachment prefix", key)
+	}
+	return nil
+}
+
+// NormalizeAttachmentObjectKey converts a restored attachment object key into a safe key.
+func NormalizeAttachmentObjectKey(key string) (string, error) {
+	key = strings.TrimLeft(strings.ReplaceAll(key, "\\", "/"), "/")
+	if key == "" || key == "." {
+		return "", errors.New("S3 object key is missing")
+	}
+	if !strings.HasPrefix(key, AttachmentObjectPrefix) {
+		key = path.Join(AttachmentObjectPrefix, key)
+	}
+	if err := ValidateAttachmentObjectKey(key); err != nil {
+		return "", err
+	}
+	return key, nil
+}
+
+// NormalizeAttachmentObjectKeyTemplate validates a configured attachment key template output without prefix fallback.
+func NormalizeAttachmentObjectKeyTemplate(key string) (string, error) {
+	key = strings.TrimLeft(strings.ReplaceAll(key, "\\", "/"), "/")
+	if key == "" || key == "." {
+		return "", errors.New("S3 object key is missing")
+	}
+	if !strings.HasPrefix(key, AttachmentObjectPrefix) {
+		return "", fmt.Errorf("S3 object key %q is outside attachment prefix", key)
+	}
+	if err := ValidateAttachmentObjectKey(key); err != nil {
+		return "", err
+	}
+	return key, nil
+}
+
 // UploadObject uploads an object to S3.
 func (c *Client) UploadObject(ctx context.Context, key string, fileType string, content io.Reader) (string, error) {
-	uploader := manager.NewUploader(c.Client)
 	putInput := s3.PutObjectInput{
 		Bucket:      c.Bucket,
 		Key:         aws.String(key),
 		ContentType: aws.String(fileType),
 		Body:        content,
 	}
-	result, err := uploader.Upload(ctx, &putInput)
+	result, err := c.Client.PutObject(ctx, &putInput)
 	if err != nil {
 		return "", err
 	}
 
-	resultKey := result.Key
-	if resultKey == nil || *resultKey == "" {
-		return "", errors.New("failed to get file key")
+	if result == nil {
+		return "", errors.New("failed to upload object")
 	}
-	return *resultKey, nil
+	return key, nil
 }
 
 // PresignGetObject presigns an object in S3.
@@ -88,16 +140,28 @@ func (c *Client) PresignGetObject(ctx context.Context, key string) (string, erro
 
 // GetObject retrieves an object from S3.
 func (c *Client) GetObject(ctx context.Context, key string) ([]byte, error) {
-	downloader := manager.NewDownloader(c.Client)
-	buffer := manager.NewWriteAtBuffer([]byte{})
-	_, err := downloader.Download(ctx, buffer, &s3.GetObjectInput{
-		Bucket: c.Bucket,
-		Key:    aws.String(key),
-	})
+	reader, err := c.GetObjectStream(ctx, key)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to download object")
+		return nil, err
 	}
-	return buffer.Bytes(), nil
+	return ReadObjectWithLimit(ctx, key, reader)
+}
+
+// ReadObjectWithLimit reads an object stream and fails if it exceeds MaxGetObjectBytes.
+func ReadObjectWithLimit(ctx context.Context, key string, reader io.ReadCloser) ([]byte, error) {
+	defer reader.Close()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	limitedReader := &io.LimitedReader{R: reader, N: MaxGetObjectBytes + 1}
+	content, err := io.ReadAll(limitedReader)
+	if err != nil {
+		return nil, err
+	}
+	if limitedReader.N == 0 {
+		return nil, errors.Errorf("S3 object %q exceeds size limit", key)
+	}
+	return content, nil
 }
 
 // GetObjectStream retrieves an object from S3 as a stream.

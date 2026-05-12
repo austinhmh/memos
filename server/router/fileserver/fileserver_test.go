@@ -187,17 +187,72 @@ func TestServeAttachmentFileRejectsFilenameMismatch(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	service := NewFileServerService(&profile.Profile{Mode: "dev", Data: t.TempDir()}, testStore, "file-secret")
+	secret := "file-secret"
+	ownerToken, _, err := auth.GenerateAccessTokenV2(owner.ID, owner.Username, owner.Role.String(), owner.RowStatus.String(), []byte(secret))
+	require.NoError(t, err)
+	service := NewFileServerService(&profile.Profile{Mode: "dev", Data: t.TempDir()}, testStore, secret)
 	e := echo.New()
 	e.GET("/file/attachments/:uid/:filename", service.serveAttachmentFile)
 
 	req := httptest.NewRequest(http.MethodGet, "/file/attachments/filename-attachment/fake.txt", nil)
+	req.Header.Set("Authorization", "Bearer "+ownerToken)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusNotFound, rec.Code)
 	require.Equal(t, "private, no-store", rec.Header().Get("Cache-Control"))
 	require.Equal(t, "Authorization, Cookie", rec.Header().Get("Vary"))
+}
+
+func TestServeAttachmentFileDoesNotRevealPrivateFilenameToUnauthorizedUsers(t *testing.T) {
+	ctx := context.Background()
+	testStore := teststore.NewTestingStore(ctx, t)
+	defer testStore.Close()
+
+	owner, err := testStore.CreateUser(ctx, &store.User{Username: "oracle-owner", Role: store.RoleUser, Email: "oracle-owner@example.com"})
+	require.NoError(t, err)
+	attacker, err := testStore.CreateUser(ctx, &store.User{Username: "oracle-attacker", Role: store.RoleUser, Email: "oracle-attacker@example.com"})
+	require.NoError(t, err)
+	memo, err := testStore.CreateMemo(ctx, &store.Memo{
+		UID:        "oracle-private-memo",
+		CreatorID:  owner.ID,
+		Content:    "private memo",
+		Visibility: store.Private,
+		RowStatus:  store.Normal,
+	})
+	require.NoError(t, err)
+	_, err = testStore.CreateAttachment(ctx, &store.Attachment{
+		UID:       "oracle-private-attachment",
+		CreatorID: owner.ID,
+		Filename:  "secret-real-name.txt",
+		Type:      "text/plain",
+		Size:      6,
+		Blob:      []byte("secret"),
+		MemoID:    &memo.ID,
+	})
+	require.NoError(t, err)
+
+	secret := "file-secret"
+	attackerToken, _, err := auth.GenerateAccessTokenV2(attacker.ID, attacker.Username, attacker.Role.String(), attacker.RowStatus.String(), []byte(secret))
+	require.NoError(t, err)
+	service := NewFileServerService(&profile.Profile{Mode: "dev", Data: t.TempDir()}, testStore, secret)
+	e := echo.New()
+	e.GET("/file/attachments/:uid/:filename", service.serveAttachmentFile)
+
+	requests := []string{
+		"/file/attachments/oracle-private-attachment/secret-real-name.txt",
+		"/file/attachments/oracle-private-attachment/wrong-name.txt",
+	}
+	for _, path := range requests {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Authorization", "Bearer "+attackerToken)
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusForbidden, rec.Code)
+		require.Equal(t, "private, no-store", rec.Header().Get("Cache-Control"))
+		require.Equal(t, "Authorization, Cookie", rec.Header().Get("Vary"))
+	}
 }
 
 func TestServeAttachmentFileCacheHeadersByVisibility(t *testing.T) {
@@ -247,4 +302,13 @@ func TestServeAttachmentFileCacheHeadersByVisibility(t *testing.T) {
 		require.Equal(t, "Authorization, Cookie", rec.Header().Get("Vary"))
 		require.Equal(t, tt.wantResponse, rec.Body.String())
 	}
+}
+
+func TestSafeThumbnailFileKeyRejectsUnsafeUID(t *testing.T) {
+	_, err := safeThumbnailFileKey("../escape", "photo.png")
+	require.Error(t, err)
+
+	key, err := safeThumbnailFileKey("safe-thumb", "archive.tar.gz")
+	require.NoError(t, err)
+	require.Equal(t, "safe-thumb.thumb", key)
 }

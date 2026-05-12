@@ -1,6 +1,7 @@
 import { ExternalLinkIcon, PencilIcon } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { useURLMetadata } from "@/hooks/useURLMetadata";
+import { sanitizeUrl } from "@/lib/sanitize-url";
 import { cn } from "@/lib/utils";
 
 interface BookmarkCardProps {
@@ -30,10 +31,12 @@ function BookmarkCardSkeleton() {
 }
 
 function BookmarkCardFallback({ url }: { url: string }) {
-  const domain = extractDomain(url);
+  const safeUrl = sanitizeUrl(url);
+  if (!safeUrl) return null;
+  const domain = extractDomain(safeUrl);
   return (
     <a
-      href={url}
+      href={safeUrl}
       target="_blank"
       rel="noopener noreferrer"
       className={cn(
@@ -49,10 +52,11 @@ function BookmarkCardFallback({ url }: { url: string }) {
 }
 
 export default function BookmarkCard({ url: initialUrl, onUrlChange }: BookmarkCardProps) {
-  const [currentUrl, setCurrentUrl] = useState(initialUrl);
+  const initialSafeUrl = sanitizeUrl(initialUrl);
+  const [currentUrl, setCurrentUrl] = useState(initialSafeUrl);
   const [isEditingUrl, setIsEditingUrl] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const { data, isLoading, isError } = useURLMetadata(currentUrl);
+  const { data, isLoading, isError } = useURLMetadata(currentUrl, !!currentUrl);
 
   const handleEditClick = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -62,7 +66,7 @@ export default function BookmarkCard({ url: initialUrl, onUrlChange }: BookmarkC
   }, []);
 
   const handleUrlSubmit = useCallback(() => {
-    const newUrl = inputRef.current?.value.trim();
+    const newUrl = sanitizeUrl(inputRef.current?.value.trim());
     if (newUrl && newUrl !== currentUrl) {
       onUrlChange?.(currentUrl, newUrl);
       setCurrentUrl(newUrl);
@@ -82,6 +86,8 @@ export default function BookmarkCard({ url: initialUrl, onUrlChange }: BookmarkC
     [handleUrlSubmit],
   );
 
+  if (!currentUrl) return null;
+
   if (isLoading) {
     return <BookmarkCardSkeleton />;
   }
@@ -90,7 +96,11 @@ export default function BookmarkCard({ url: initialUrl, onUrlChange }: BookmarkC
     return <BookmarkCardFallback url={currentUrl} />;
   }
 
-  const domain = extractDomain(currentUrl);
+  const safeCurrentUrl = sanitizeUrl(currentUrl);
+  if (!safeCurrentUrl) return null;
+  const safeFaviconUrl = sanitizeUrl(data.favicon || "");
+  const safeImageUrl = sanitizeUrl(data.image || "");
+  const domain = extractDomain(safeCurrentUrl);
 
   return (
     <div className="relative my-2 group/card">
@@ -130,7 +140,7 @@ export default function BookmarkCard({ url: initialUrl, onUrlChange }: BookmarkC
 
       {/* Card */}
       <a
-        href={currentUrl}
+        href={safeCurrentUrl}
         target="_blank"
         rel="noopener noreferrer"
         className={cn(
@@ -146,9 +156,9 @@ export default function BookmarkCard({ url: initialUrl, onUrlChange }: BookmarkC
           )}
           {data.description && <div className="text-xs text-muted-foreground mt-1 line-clamp-2 leading-relaxed">{data.description}</div>}
           <div className="flex items-center gap-1.5 mt-2">
-            {data.favicon && (
+            {safeFaviconUrl && (
               <img
-                src={data.favicon}
+                src={safeFaviconUrl}
                 alt=""
                 className="w-4 h-4 rounded-sm object-contain"
                 onError={(e) => {
@@ -159,10 +169,10 @@ export default function BookmarkCard({ url: initialUrl, onUrlChange }: BookmarkC
             <span className="text-xs text-muted-foreground truncate">{domain}</span>
           </div>
         </div>
-        {data.image && (
+        {safeImageUrl && (
           <div className="w-[120px] shrink-0 hidden sm:block">
             <img
-              src={data.image}
+              src={safeImageUrl}
               alt=""
               className="w-full h-full object-cover"
               onError={(e) => {

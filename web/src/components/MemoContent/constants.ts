@@ -9,13 +9,8 @@ export const COMPACT_STATES: Record<"ALL" | "SNIPPET", { textKey: string; next: 
 
 /**
  * Sanitization schema for markdown HTML content.
- * Extends the default schema to allow:
- * - KaTeX math rendering elements (MathML tags)
- * - KaTeX-specific attributes (className, style, aria-*, data-*)
- * - Safe HTML elements for rich content
- * - iframe embeds for trusted video providers (YouTube, Vimeo, etc.)
- *
- * This prevents XSS attacks while preserving math rendering functionality.
+ * Extends the default schema only for KaTeX math rendering elements and attributes.
+ * Raw iframe embeds are intentionally not allowed in editor previews.
  */
 export const SANITIZE_SCHEMA = {
   ...defaultSchema,
@@ -23,9 +18,6 @@ export const SANITIZE_SCHEMA = {
     ...defaultSchema.attributes,
     div: [...(defaultSchema.attributes?.div || []), "className"],
     span: [...(defaultSchema.attributes?.span || []), "className", "style", ["aria*"], ["data*"]],
-    // iframe attributes for video embeds
-    iframe: ["src", "width", "height", "frameborder", "allowfullscreen", "allow", "title", "referrerpolicy", "loading"],
-    // MathML attributes for KaTeX rendering
     annotation: ["encoding"],
     math: ["xmlns"],
     mi: [],
@@ -43,9 +35,6 @@ export const SANITIZE_SCHEMA = {
   },
   tagNames: [
     ...(defaultSchema.tagNames || []),
-    // iframe for video embeds
-    "iframe",
-    // MathML elements for KaTeX math rendering
     "math",
     "annotation",
     "semantics",
@@ -61,9 +50,4 @@ export const SANITIZE_SCHEMA = {
     "mfrac",
     "mtext",
   ],
-  protocols: {
-    ...defaultSchema.protocols,
-    // Allow HTTPS iframe embeds only for security
-    iframe: { src: ["https"] },
-  },
 };

@@ -2,6 +2,7 @@ package test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -58,6 +59,37 @@ func TestCreateIdentityProvider(t *testing.T) {
 		require.Contains(t, resp.Name, "identity-providers/")
 		require.NotNil(t, resp.Config.GetOauth2Config())
 		require.Equal(t, "test-client-id", resp.Config.GetOauth2Config().ClientId)
+	})
+
+	t.Run("CreateIdentityProvider rejects invalid identifier filter", func(t *testing.T) {
+		ts := NewTestService(t)
+		defer ts.Cleanup()
+
+		hostUser, err := ts.CreateHostUser(ctx, "admin-invalid-identifier-filter")
+		require.NoError(t, err)
+		userCtx := ts.CreateUserContext(ctx, hostUser.ID)
+
+		_, err = ts.Service.CreateIdentityProvider(userCtx, &v1pb.CreateIdentityProviderRequest{
+			IdentityProvider: &v1pb.IdentityProvider{
+				Title:            "Invalid Filter Provider",
+				IdentifierFilter: "[",
+				Type:             v1pb.IdentityProvider_OAUTH2,
+				Config: &v1pb.IdentityProviderConfig{
+					Config: &v1pb.IdentityProviderConfig_Oauth2Config{
+						Oauth2Config: &v1pb.OAuth2Config{
+							ClientId:     "test-client-id",
+							ClientSecret: "test-client-secret",
+							AuthUrl:      "http://8.8.8.8/oauth/authorize",
+							TokenUrl:     "http://8.8.8.8/oauth/token",
+							UserInfoUrl:  "http://8.8.8.8/oauth/userinfo",
+							FieldMapping: &v1pb.FieldMapping{Identifier: "id"},
+						},
+					},
+				},
+			},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid identifier_filter")
 	})
 
 	t.Run("CreateIdentityProvider permission denied for non-host user", func(t *testing.T) {
@@ -481,6 +513,26 @@ func TestUpdateIdentityProvider(t *testing.T) {
 		require.Equal(t, "Updated Provider", updated.Title)
 		require.Equal(t, "test@example.com", updated.IdentifierFilter)
 		require.Equal(t, "updated-client", updated.Config.GetOauth2Config().ClientId)
+	})
+
+	t.Run("UpdateIdentityProvider rejects invalid identifier filter", func(t *testing.T) {
+		ts := NewTestService(t)
+		defer ts.Cleanup()
+
+		hostUser, err := ts.CreateHostUser(ctx, "admin-update-invalid-filter")
+		require.NoError(t, err)
+		userCtx := ts.CreateUserContext(ctx, hostUser.ID)
+
+		_, err = ts.Service.UpdateIdentityProvider(userCtx, &v1pb.UpdateIdentityProviderRequest{
+			IdentityProvider: &v1pb.IdentityProvider{
+				Name:             "identity-providers/1",
+				IdentifierFilter: strings.Repeat("a", 1025),
+				Type:             v1pb.IdentityProvider_OAUTH2,
+			},
+			UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"identifier_filter"}},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid identifier_filter")
 	})
 
 	t.Run("UpdateIdentityProvider missing update mask", func(t *testing.T) {

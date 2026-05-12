@@ -136,7 +136,13 @@ const MemoDetail = () => {
   const displayTime = memo.displayTime ? timestampDate(memo.displayTime) : undefined;
 
   return (
-    <section className="@container w-full min-h-full flex flex-col overflow-x-hidden">
+    <section
+      className={
+        md
+          ? "@container w-full h-[calc(100svh-3.5rem)] min-h-0 flex flex-col overflow-hidden"
+          : "@container w-full min-h-svh flex flex-col overflow-x-hidden"
+      }
+    >
       {!md && (
         <MobileHeader>
           <MemoDetailSidebarDrawer memo={memo} parentPage={locationState?.from} />
@@ -144,7 +150,7 @@ const MemoDetail = () => {
       )}
 
       {/* Top bar */}
-      <div className="w-full flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between px-4 sm:px-6 pt-3 md:pt-6 pb-2 min-w-0">
+      <div className="w-full flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between px-4 sm:px-6 pt-3 md:pt-6 pb-2 min-w-0">
         <button
           type="button"
           className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
@@ -171,7 +177,7 @@ const MemoDetail = () => {
 
       {/* Parent memo link */}
       {parentMemo && (
-        <div className="w-full px-4 sm:px-6 mb-3">
+        <div className="w-full shrink-0 px-4 sm:px-6 mb-3">
           <Link
             className="inline-flex max-w-full items-center px-3 py-1 border border-border rounded-lg text-sm text-muted-foreground hover:shadow hover:opacity-80"
             to={`/${parentMemo.name}`}
@@ -185,14 +191,16 @@ const MemoDetail = () => {
       )}
 
       {/* Three-column layout */}
-      <div ref={containerRef} className="flex-1 flex min-h-0 w-full overflow-x-hidden">
+      <div
+        ref={containerRef}
+        className={
+          md ? "flex w-full min-w-0 flex-1 min-h-0 items-stretch overflow-hidden" : "flex w-full min-w-0 items-start overflow-x-hidden pb-8"
+        }
+      >
         {/* Left: TOC */}
         {md && (
           <>
-            <div
-              className="shrink-0 sticky top-0 self-start max-h-svh overflow-y-auto hide-scrollbar pt-4 px-3"
-              style={{ width: `${leftWidth}%` }}
-            >
+            <div className="shrink-0 self-stretch h-full overflow-y-auto hide-scrollbar pt-4 px-3 pb-8" style={{ width: `${leftWidth}%` }}>
               <MemoTableOfContents content={memo.content} />
             </div>
             <div
@@ -203,7 +211,7 @@ const MemoDetail = () => {
         )}
 
         {/* Center: main content */}
-        <div className="flex-1 min-w-0 px-4 sm:px-6 pb-8 md:overflow-y-auto">
+        <div className={md ? "flex-1 min-w-0 h-full overflow-y-auto hide-scrollbar px-4 sm:px-6 pb-8" : "flex-1 min-w-0 px-4 sm:px-6 pb-8"}>
           <MemoViewContext.Provider value={memoViewContextValue}>
             <div className="w-full">
               {canEdit ? (
@@ -234,10 +242,7 @@ const MemoDetail = () => {
               className="shrink-0 w-1 cursor-col-resize hover:bg-primary/30 transition-colors"
               onMouseDown={() => handleMouseDown("right")}
             />
-            <div
-              className="shrink-0 sticky top-0 self-start max-h-svh overflow-y-auto hide-scrollbar pt-4 px-3"
-              style={{ width: `${rightWidth}%` }}
-            >
+            <div className="shrink-0 self-stretch h-full overflow-y-auto hide-scrollbar pt-4 px-3 pb-8" style={{ width: `${rightWidth}%` }}>
               <MemoDetailSidebar className="py-2" memo={memo} parentPage={locationState?.from} />
 
               {memo.attachments.length > 0 && (

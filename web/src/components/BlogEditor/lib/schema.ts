@@ -1,4 +1,5 @@
 import { Schema } from "prosemirror-model";
+import { sanitizeUrl } from "@/lib/sanitize-url";
 
 /**
  * ProseMirror schema for the blog editor (Outline-style).
@@ -214,7 +215,7 @@ export const blogEditorSchema = new Schema({
         {
           tag: "div.bookmark-block",
           getAttrs: (dom: HTMLElement) => ({
-            url: dom.dataset.url || "",
+            url: sanitizeUrl(dom.dataset.url) || "",
           }),
         },
       ],
@@ -222,7 +223,7 @@ export const blogEditorSchema = new Schema({
         "div",
         {
           class: "bookmark-block",
-          "data-url": node.attrs.url || "",
+          "data-url": sanitizeUrl(node.attrs.url) || "",
         },
       ],
     },
@@ -257,10 +258,10 @@ export const blogEditorSchema = new Schema({
             const width = img?.getAttribute("width");
             const height = img?.getAttribute("height");
             return {
-              src: img?.getAttribute("src"),
+              src: sanitizeUrl(img?.getAttribute("src")) || "",
               alt: img?.getAttribute("alt"),
               title: img?.getAttribute("title"),
-              source: img?.getAttribute("source"),
+              source: sanitizeUrl(img?.getAttribute("source")) || null,
               width: width ? parseInt(width, 10) : undefined,
               height: height ? parseInt(height, 10) : undefined,
               layoutClass: layoutClassMatched ? layoutClassMatched[1] : null,
@@ -284,7 +285,7 @@ export const blogEditorSchema = new Schema({
             }
 
             return {
-              src: dom.getAttribute("src"),
+              src: sanitizeUrl(dom.getAttribute("src")) || "",
               alt: dom.getAttribute("alt"),
               title: dom.getAttribute("title"),
               width: width ? parseInt(width, 10) : undefined,
@@ -295,6 +296,8 @@ export const blogEditorSchema = new Schema({
       ],
       toDOM: (node) => {
         const className = node.attrs.layoutClass ? `image image-${node.attrs.layoutClass}` : "image";
+        const src = sanitizeUrl(node.attrs.src) || "";
+        const source = sanitizeUrl(node.attrs.source) || null;
         return [
           "div",
           { class: className },
@@ -302,7 +305,8 @@ export const blogEditorSchema = new Schema({
             "img",
             {
               ...node.attrs,
-              src: node.attrs.src,
+              src,
+              source,
               width: node.attrs.width,
               height: node.attrs.height,
               contentEditable: "false",
@@ -331,12 +335,20 @@ export const blogEditorSchema = new Schema({
         {
           tag: "a[href]",
           getAttrs: (dom: HTMLElement) => ({
-            href: dom.getAttribute("href"),
+            href: sanitizeUrl(dom.getAttribute("href")) || "",
             title: dom.getAttribute("title"),
           }),
         },
       ],
-      toDOM: (node) => ["a", node.attrs],
+      toDOM: (node) => [
+        "a",
+        {
+          title: node.attrs.title,
+          href: sanitizeUrl(node.attrs.href) || "",
+          rel: "noopener noreferrer nofollow",
+        },
+        0,
+      ],
     },
     em: {
       parseDOM: [{ tag: "i" }, { tag: "em" }, { style: "font-style=italic" }],

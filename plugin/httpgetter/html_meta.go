@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -13,138 +12,28 @@ import (
 	"github.com/pkg/errors"
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
+
+	"github.com/usememos/memos/internal/netutil"
 )
 
-var ErrInternalIP = errors.New("internal IP addresses are not allowed")
+var ErrInternalIP = netutil.ErrNonPublicAddress
 
 const (
 	requestTimeout     = 5 * time.Second
 	maxResponseBodyLen = 1 * 1024 * 1024
 )
 
-var defaultResolver = &net.Resolver{}
-
-type validatedTarget struct {
-	url  *url.URL
-	host string
-	port string
-}
-
-func isDisallowedIP(ip net.IP) bool {
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified()
-}
-
 func validateURL(urlStr string) error {
 	_, err := validateURLWithTarget(context.Background(), urlStr)
 	return err
 }
 
-func validateURLWithTarget(ctx context.Context, urlStr string) (*validatedTarget, error) {
-	u, err := url.Parse(urlStr)
-	if err != nil {
-		return nil, errors.New("invalid URL format")
-	}
-
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return nil, errors.New("only http/https protocols are allowed")
-	}
-
-	host := u.Hostname()
-	if host == "" {
-		return nil, errors.New("empty hostname")
-	}
-
-	port := u.Port()
-	if port == "" {
-		if u.Scheme == "https" {
-			port = "443"
-		} else {
-			port = "80"
-		}
-	}
-
-	if ip := net.ParseIP(host); ip != nil {
-		if isDisallowedIP(ip) {
-			return nil, errors.Wrap(ErrInternalIP, ip.String())
-		}
-		return &validatedTarget{
-			url:  u,
-			host: host,
-			port: port,
-		}, nil
-	}
-
-	ips, err := defaultResolver.LookupIP(ctx, "ip", host)
-	if err != nil {
-		return nil, errors.Errorf("failed to resolve hostname: %v", err)
-	}
-	if len(ips) == 0 {
-		return nil, errors.New("hostname resolved to no IPs")
-	}
-
-	for _, ip := range ips {
-		if isDisallowedIP(ip) {
-			return nil, errors.Wrapf(ErrInternalIP, "host=%s, ip=%s", host, ip.String())
-		}
-	}
-
-	return &validatedTarget{
-		url:  u,
-		host: host,
-		port: port,
-	}, nil
+func validateURLWithTarget(ctx context.Context, urlStr string) (*netutil.ValidatedExternalURL, error) {
+	return netutil.ValidateExternalURL(ctx, urlStr)
 }
 
 func newHTTPClient() *http.Client {
-	transport := &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			host, port, err := net.SplitHostPort(addr)
-			if err != nil {
-				return nil, err
-			}
-
-			resolvedAddr := addr
-			if ip := net.ParseIP(host); ip != nil {
-				if isDisallowedIP(ip) {
-					return nil, errors.Wrap(ErrInternalIP, ip.String())
-				}
-				resolvedAddr = net.JoinHostPort(ip.String(), port)
-			} else {
-				ips, err := defaultResolver.LookupIP(ctx, "ip", host)
-				if err != nil {
-					return nil, errors.Wrap(err, "failed to resolve hostname")
-				}
-				if len(ips) == 0 {
-					return nil, errors.New("hostname resolved to no IPs")
-				}
-				for _, ip := range ips {
-					if isDisallowedIP(ip) {
-						return nil, errors.Wrapf(ErrInternalIP, "host=%s, ip=%s", host, ip.String())
-					}
-				}
-				resolvedAddr = net.JoinHostPort(ips[0].String(), port)
-			}
-
-			var d net.Dialer
-			return d.DialContext(ctx, network, resolvedAddr)
-		},
-	}
-
-	return &http.Client{
-		Timeout: requestTimeout,
-		Transport: transport,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 10 {
-				return errors.New("too many redirects")
-			}
-			_, err := validateURLWithTarget(req.Context(), req.URL.String())
-			if err != nil {
-				return errors.Wrap(err, "redirect to internal IP")
-			}
-			return nil
-		},
-	}
+	return netutil.NewExternalHTTPClient(requestTimeout)
 }
 
 type HTMLMeta struct {
@@ -163,7 +52,7 @@ func GetHTMLMeta(urlStr string) (*HTMLMeta, error) {
 		return nil, err
 	}
 
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, validated.url.String(), nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, validated.URL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +74,7 @@ func GetHTMLMeta(urlStr string) (*HTMLMeta, error) {
 	limitedBody := io.LimitReader(response.Body, maxResponseBodyLen)
 
 	htmlMeta := extractHTMLMeta(limitedBody)
-	enrichSiteMeta(validated.url, htmlMeta)
+	enrichSiteMeta(validated.URL, htmlMeta)
 	return htmlMeta, nil
 }
 

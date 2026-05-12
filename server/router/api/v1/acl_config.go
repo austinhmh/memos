@@ -103,7 +103,7 @@ func isPublicGatewayPath(method, path string) bool {
 	case "memos":
 		return isPublicGatewayMemoPath(segments)
 	case "instance":
-		return len(segments) == 5 && segments[3] == "settings" && segments[4] != ""
+		return isPublicGatewayInstancePath(segments)
 	default:
 		return false
 	}
@@ -137,6 +137,18 @@ func isPublicGatewayUserPath(segments []string) bool {
 		return strings.TrimSuffix(segments[3], ":getStats") != ""
 	}
 	return !strings.Contains(segments[3], ":")
+}
+
+func isPublicGatewayInstancePath(segments []string) bool {
+	if len(segments) != 5 || segments[3] != "settings" {
+		return false
+	}
+	switch segments[4] {
+	case "GENERAL", "MEMO_RELATED":
+		return true
+	default:
+		return false
+	}
 }
 
 func isPublicGatewayMemoPath(segments []string) bool {

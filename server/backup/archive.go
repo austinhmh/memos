@@ -2,6 +2,7 @@ package backup
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -28,6 +29,9 @@ const (
 	// CompressionTarGzipBest records the exact lossless high-compression format.
 	CompressionTarGzipBest = "tar+gzip.best"
 	manifestPath           = "manifest.json"
+	maxArchiveEntries      = 100000
+	maxArchiveFileSize     = 256 << 20
+	maxArchiveTotalSize    = 1024 << 20
 )
 
 var dataFilePaths = map[string]string{
@@ -215,6 +219,8 @@ func ReadTarGz(ctx context.Context, reader io.Reader) (*Archive, error) {
 	tarReader := tar.NewReader(gzipReader)
 
 	files := map[string][]byte{}
+	entryCount := 0
+	var totalSize int64
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -229,10 +235,21 @@ func ReadTarGz(ctx context.Context, reader io.Reader) (*Archive, error) {
 		if header.FileInfo().IsDir() {
 			continue
 		}
+		entryCount++
+		if entryCount > maxArchiveEntries {
+			return nil, errors.New("backup archive contains too many files")
+		}
+		if header.Size < 0 || header.Size > maxArchiveFileSize {
+			return nil, errors.Errorf("backup archive file %s exceeds size limit", header.Name)
+		}
+		totalSize += header.Size
+		if totalSize > maxArchiveTotalSize {
+			return nil, errors.New("backup archive exceeds total size limit")
+		}
 		if err := validateArchivePath(header.Name); err != nil {
 			return nil, err
 		}
-		content, err := io.ReadAll(tarReader)
+		content, err := readLimitedEntry(tarReader, header.Size)
 		if err != nil {
 			return nil, err
 		}
@@ -288,6 +305,10 @@ func ReadTarGz(ctx context.Context, reader io.Reader) (*Archive, error) {
 		return nil, err
 	}
 
+	if err := validateRestorableAttachmentBlobs(data.Attachments, manifest.AttachmentChecksums); err != nil {
+		return nil, err
+	}
+
 	blobs := map[string][]byte{}
 	for uid, entry := range manifest.AttachmentChecksums {
 		blobPath := AttachmentBlobPath(uid)
@@ -301,6 +322,21 @@ func ReadTarGz(ctx context.Context, reader io.Reader) (*Archive, error) {
 		blobs[uid] = content
 	}
 	return &Archive{Manifest: manifest, Data: data, Blobs: blobs}, nil
+}
+
+func validateRestorableAttachmentBlobs(attachments []*store.Attachment, checksums map[string]FileEntry) error {
+	for _, attachment := range attachments {
+		if attachment == nil {
+			continue
+		}
+		if attachment.StorageType != storepb.AttachmentStorageType_LOCAL && attachment.StorageType != storepb.AttachmentStorageType_S3 {
+			continue
+		}
+		if _, ok := checksums[attachment.UID]; !ok {
+			return errors.Errorf("attachment blob %s is missing", attachment.UID)
+		}
+	}
+	return nil
 }
 
 // AttachmentBlobPath returns the stable tar path for an attachment payload.
@@ -423,12 +459,30 @@ func indentJSON(content []byte, prefix string) string {
 	return strings.Join(lines, "\n")
 }
 
+func readLimitedEntry(reader io.Reader, declaredSize int64) ([]byte, error) {
+	limitedReader := &io.LimitedReader{R: reader, N: declaredSize + 1}
+	content, err := io.ReadAll(limitedReader)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(content)) != declaredSize || limitedReader.N == 0 {
+		return nil, errors.New("backup archive file size mismatch")
+	}
+	return content, nil
+}
+
 func writeStreamEntry(tarWriter *tar.Writer, name string, reader io.Reader) (FileEntry, error) {
-	content, err := io.ReadAll(reader)
+	var buffer bytes.Buffer
+	hasher := sha256.New()
+	written, err := io.Copy(io.MultiWriter(&buffer, hasher), io.LimitReader(reader, maxArchiveFileSize+1))
 	if err != nil {
 		return FileEntry{}, err
 	}
-	return writeBytesEntryWithChecksum(tarWriter, name, content)
+	if written > maxArchiveFileSize {
+		return FileEntry{}, errors.Errorf("archive entry %s exceeds size limit", name)
+	}
+	entry := FileEntry{Size: written, SHA256: hex.EncodeToString(hasher.Sum(nil))}
+	return entry, writeBytesEntry(tarWriter, name, buffer.Bytes())
 }
 
 func writeBytesEntryWithChecksum(tarWriter *tar.Writer, name string, content []byte) (FileEntry, error) {
