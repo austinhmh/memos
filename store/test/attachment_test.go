@@ -8,6 +8,7 @@ import (
 	"github.com/lithammer/shortuuid/v4"
 	"github.com/stretchr/testify/require"
 
+	storepb "github.com/usememos/memos/proto/gen/store"
 	"github.com/usememos/memos/store"
 )
 
@@ -110,6 +111,32 @@ func TestDeleteAttachmentRequiresMatchingMemoID(t *testing.T) {
 	require.NoError(t, err)
 
 	remaining, err = ts.GetAttachment(ctx, &store.FindAttachment{ID: &attachment.ID})
+	require.NoError(t, err)
+	require.Nil(t, remaining)
+}
+
+func TestDeleteLocalAttachmentIgnoresFileCleanupFailure(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ts := NewTestingStore(ctx, t)
+	defer ts.Close()
+
+	reference := "missing/local-file.png"
+	attachment, err := ts.CreateAttachment(ctx, &store.Attachment{
+		UID:         shortuuid.New(),
+		CreatorID:   101,
+		Filename:    "local-file.png",
+		Type:        "image/png",
+		Size:        1000,
+		StorageType: storepb.AttachmentStorageType_LOCAL,
+		Reference:   reference,
+	})
+	require.NoError(t, err)
+
+	err = ts.DeleteAttachment(ctx, &store.DeleteAttachment{ID: attachment.ID})
+	require.NoError(t, err)
+
+	remaining, err := ts.GetAttachment(ctx, &store.FindAttachment{ID: &attachment.ID})
 	require.NoError(t, err)
 	require.Nil(t, remaining)
 }

@@ -235,6 +235,11 @@
       "upload-method": "Upload method"
     },
     "delete-resource": "Delete Resource",
+    "delete-resource-confirm": "Delete this resource?",
+    "delete-resource-error": "Failed to delete resource",
+    "delete-resource-linked-description": "This resource is linked to a memo. It will be removed from the memo attachments and content references before deletion to avoid broken links. This action is irreversible.",
+    "delete-resource-success": "Resource deleted successfully",
+    "delete-resource-unused-description": "This resource is not linked to a memo and will be deleted directly. This action is irreversible.",
     "delete-selected-resources": "Delete Selected Resources",
     "delete-all-unused": "Delete all unused",
     "delete-all-unused-confirm": "Are you sure you want to delete all unused resources? THIS ACTION IS IRREVERSIBLE",

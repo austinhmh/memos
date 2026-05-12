@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -395,6 +396,7 @@ func (s *APIV1Service) UpdateMemo(ctx context.Context, request *v1pb.UpdateMemoR
 		}
 	}
 	shouldCleanupUnreferencedAttachments := false
+	var attachmentUpdateRequest []*v1pb.Attachment
 	for _, path := range request.UpdateMask.Paths {
 		if path == "content" {
 			contentLengthLimit, err := s.getContentLengthLimit(ctx)
@@ -458,13 +460,7 @@ func (s *APIV1Service) UpdateMemo(ctx context.Context, request *v1pb.UpdateMemoR
 			payload.Location = convertLocationToStore(request.Memo.Location)
 			update.Payload = payload
 		} else if path == "attachments" {
-			_, err := s.SetMemoAttachments(ctx, &v1pb.SetMemoAttachmentsRequest{
-				Name:        request.Memo.Name,
-				Attachments: request.Memo.Attachments,
-			})
-			if err != nil {
-				return nil, errors.Wrap(err, "failed to set memo attachments")
-			}
+			attachmentUpdateRequest = request.Memo.Attachments
 			shouldRefreshUpdatedTs = true
 		} else if path == "relations" {
 			_, err := s.SetMemoRelations(ctx, &v1pb.SetMemoRelationsRequest{
@@ -485,6 +481,16 @@ func (s *APIV1Service) UpdateMemo(ctx context.Context, request *v1pb.UpdateMemoR
 
 	if err = s.Store.UpdateMemo(ctx, update); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to update memo")
+	}
+
+	if hasAttachmentUpdate {
+		_, err := s.SetMemoAttachments(ctx, &v1pb.SetMemoAttachmentsRequest{
+			Name:        request.Memo.Name,
+			Attachments: attachmentUpdateRequest,
+		})
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to set memo attachments")
+		}
 	}
 
 	// Cleanup unreferenced attachments only for content-only updates.
@@ -1044,6 +1050,14 @@ func (s *APIV1Service) cleanupUnreferencedAttachments(ctx context.Context, memoI
 		"deleted_count", deletedCount)
 
 	return nil
+}
+
+func isAttachmentReferencedByMemoContent(content, attachmentUID string) bool {
+	if attachmentUID == "" {
+		return false
+	}
+	pattern := regexp.MustCompile(`(?:https?://[^\s)]+)?/file/attachments/` + regexp.QuoteMeta(attachmentUID) + `/[^\s)]+`)
+	return pattern.MatchString(content)
 }
 
 // extractAttachmentUID extracts the UID from an attachment URL.

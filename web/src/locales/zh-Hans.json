@@ -235,6 +235,11 @@
       "upload-method": "上传方式"
     },
     "delete-resource": "删除资源",
+    "delete-resource-confirm": "确定删除这个资源吗？",
+    "delete-resource-error": "删除资源失败",
+    "delete-resource-linked-description": "该资源已关联到备忘录。删除前会先从备忘录附件和正文引用中移除，避免留下失效链接。此操作不可逆。",
+    "delete-resource-success": "删除资源成功",
+    "delete-resource-unused-description": "该资源未关联到备忘录，将直接删除资源文件。此操作不可逆。",
     "delete-selected-resources": "删除选中资源",
     "delete-all-unused": "删除所有未使用资源",
     "delete-all-unused-confirm": "您确定要删除所有未使用资源吗？（此操作不可逆）",

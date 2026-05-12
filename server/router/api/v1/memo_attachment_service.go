@@ -73,6 +73,9 @@ func (s *APIV1Service) SetMemoAttachments(ctx context.Context, request *v1pb.Set
 	// Delete attachments that are not in the validated request.
 	for _, attachment := range attachments {
 		if _, found := requestAttachmentByUID[attachment.UID]; !found {
+			if isAttachmentReferencedByMemoContent(memo.Content, attachment.UID) {
+				return nil, status.Errorf(codes.FailedPrecondition, "attachment is still referenced by memo content")
+			}
 			if err = s.Store.DeleteAttachment(ctx, &store.DeleteAttachment{
 				ID:     int32(attachment.ID),
 				MemoID: &memo.ID,

@@ -1,4 +1,5 @@
-import { timestampDate } from "@bufbuild/protobuf/wkt";
+import { create } from "@bufbuild/protobuf";
+import { FieldMaskSchema, timestampDate } from "@bufbuild/protobuf/wkt";
 import dayjs from "dayjs";
 import { ExternalLinkIcon, PaperclipIcon, SearchIcon, Trash } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -11,7 +12,7 @@ import MobileHeader from "@/components/MobileHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
-import { attachmentServiceClient } from "@/connect";
+import { attachmentServiceClient, memoServiceClient } from "@/connect";
 import { useDeleteAttachment } from "@/hooks/useAttachmentQueries";
 import useDialog from "@/hooks/useDialog";
 import useLoading from "@/hooks/useLoading";
@@ -19,6 +20,8 @@ import useMediaQuery from "@/hooks/useMediaQuery";
 import i18n from "@/i18n";
 import { handleError } from "@/lib/error";
 import type { Attachment } from "@/types/proto/api/v1/attachment_service_pb";
+import { MemoSchema } from "@/types/proto/api/v1/memo_service_pb";
+import { removeAttachmentReferencesFromContent } from "@/utils/attachment-content";
 import { useTranslate } from "@/utils/i18n";
 
 const PAGE_SIZE = 50;
@@ -48,14 +51,36 @@ const filterAttachments = (attachments: Attachment[], searchQuery: string): Atta
   return attachments.filter((attachment) => attachment.filename.toLowerCase().includes(query));
 };
 
+const toAttachmentReferences = (attachments: Attachment[]): Attachment[] =>
+  attachments.map((attachment) => ({ name: attachment.name }) as Attachment);
+
 interface AttachmentItemProps {
   attachment: Attachment;
+  onDelete: (attachment: Attachment) => void;
+  deleteLabel: string;
+  disabled?: boolean;
 }
 
-const AttachmentItem = ({ attachment }: AttachmentItemProps) => (
+const AttachmentItem = ({ attachment, onDelete, deleteLabel, disabled }: AttachmentItemProps) => (
   <div className="w-24 sm:w-32 h-auto flex flex-col justify-start items-start">
-    <div className="w-24 h-24 flex justify-center items-center sm:w-32 sm:h-32 border border-border overflow-clip rounded-xl cursor-pointer hover:shadow hover:opacity-80">
-      <AttachmentIcon attachment={attachment} strokeWidth={0.5} />
+    <div className="relative group w-24 h-24 sm:w-32 sm:h-32">
+      <div className="w-full h-full flex justify-center items-center border border-border overflow-clip rounded-xl cursor-pointer hover:shadow hover:opacity-80">
+        <AttachmentIcon attachment={attachment} strokeWidth={0.5} />
+      </div>
+      <Button
+        type="button"
+        variant="destructive"
+        size="icon"
+        className="absolute top-1 right-1 size-6 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+        disabled={disabled}
+        onClick={(event) => {
+          event.stopPropagation();
+          onDelete(attachment);
+        }}
+        aria-label={deleteLabel}
+      >
+        <Trash className="w-3 h-3" />
+      </Button>
     </div>
     <div className="w-full max-w-full flex flex-row justify-between items-center mt-1 px-1">
       <p className="text-xs shrink text-muted-foreground truncate">{attachment.filename}</p>
@@ -73,12 +98,14 @@ const Attachments = () => {
   const md = useMediaQuery("md");
   const loadingState = useLoading();
   const deleteUnusedAttachmentsDialog = useDialog();
+  const deleteAttachmentDialog = useDialog();
   const { mutateAsync: deleteAttachment } = useDeleteAttachment();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [nextPageToken, setNextPageToken] = useState("");
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [attachmentToDelete, setAttachmentToDelete] = useState<Attachment | undefined>();
 
   // Memoized computed values
   const filteredAttachments = useMemo(() => filterAttachments(attachments, searchQuery), [attachments, searchQuery]);
@@ -180,6 +207,48 @@ const Attachments = () => {
     }
   }, [t, handleRefetch, deleteAttachment]);
 
+  const handleOpenDeleteAttachmentDialog = useCallback(
+    (attachment: Attachment) => {
+      setAttachmentToDelete(attachment);
+      deleteAttachmentDialog.open();
+    },
+    [deleteAttachmentDialog],
+  );
+
+  const handleDeleteAttachment = useCallback(async () => {
+    if (!attachmentToDelete) {
+      return;
+    }
+
+    try {
+      if (attachmentToDelete.memo) {
+        const memo = await memoServiceClient.getMemo({ name: attachmentToDelete.memo });
+        const nextContent = removeAttachmentReferencesFromContent(memo.content, attachmentToDelete.name);
+        const nextAttachments = memo.attachments.filter((attachment) => attachment.name !== attachmentToDelete.name);
+        await memoServiceClient.updateMemo({
+          memo: create(MemoSchema, {
+            name: memo.name,
+            content: nextContent,
+            attachments: toAttachmentReferences(nextAttachments),
+          }),
+          updateMask: create(FieldMaskSchema, { paths: ["content", "attachments"] }),
+        });
+      } else {
+        await deleteAttachment(attachmentToDelete.name);
+      }
+      toast.success(t("resource.delete-resource-success"));
+    } catch (error) {
+      handleError(error, toast.error, {
+        context: "Failed to delete attachment",
+        fallbackMessage: t("resource.delete-resource-error"),
+      });
+      throw error;
+    } finally {
+      setAttachmentToDelete(undefined);
+      await handleRefetch();
+    }
+  }, [attachmentToDelete, deleteAttachment, handleRefetch, t]);
+
   // Handle search input change
   const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchQuery(e.target.value);
@@ -228,7 +297,12 @@ const Attachments = () => {
                             </div>
                             <div className="w-full max-w-[calc(100%-4rem)] sm:max-w-[calc(100%-6rem)] flex flex-row justify-start items-start gap-4 flex-wrap">
                               {attachments.map((attachment) => (
-                                <AttachmentItem key={attachment.name} attachment={attachment} />
+                                <AttachmentItem
+                                  key={attachment.name}
+                                  attachment={attachment}
+                                  onDelete={handleOpenDeleteAttachmentDialog}
+                                  deleteLabel={t("resource.delete-resource")}
+                                />
                               ))}
                             </div>
                           </div>
@@ -254,7 +328,12 @@ const Attachments = () => {
                                 </div>
                               </div>
                               {unusedAttachments.map((attachment) => (
-                                <AttachmentItem key={attachment.name} attachment={attachment} />
+                                <AttachmentItem
+                                  key={attachment.name}
+                                  attachment={attachment}
+                                  onDelete={handleOpenDeleteAttachmentDialog}
+                                  deleteLabel={t("resource.delete-resource")}
+                                />
                               ))}
                             </div>
                           </div>
@@ -283,6 +362,18 @@ const Attachments = () => {
         confirmLabel={t("common.delete")}
         cancelLabel={t("common.cancel")}
         onConfirm={handleDeleteUnusedAttachments}
+        confirmVariant="destructive"
+      />
+      <ConfirmDialog
+        open={deleteAttachmentDialog.isOpen}
+        onOpenChange={deleteAttachmentDialog.setOpen}
+        title={t("resource.delete-resource-confirm")}
+        description={
+          attachmentToDelete?.memo ? t("resource.delete-resource-linked-description") : t("resource.delete-resource-unused-description")
+        }
+        confirmLabel={t("common.delete")}
+        cancelLabel={t("common.cancel")}
+        onConfirm={handleDeleteAttachment}
         confirmVariant="destructive"
       />
     </section>

@@ -2,6 +2,7 @@ package test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -360,6 +361,125 @@ func TestDeleteAttachmentBoundToMemoRequiresMemoPermission(t *testing.T) {
 
 	_, err = ts.Service.DeleteAttachment(memoOwnerCtx, &v1pb.DeleteAttachmentRequest{Name: attachment.Name})
 	require.NoError(t, err)
+}
+
+func TestDeleteAttachmentRejectsMemoContentReference(t *testing.T) {
+	ctx := context.Background()
+	ts := NewTestService(t)
+	defer ts.Cleanup()
+
+	user, err := ts.CreateRegularUser(ctx, "referenced-delete-owner")
+	require.NoError(t, err)
+	userCtx := ts.CreateUserContext(ctx, user.ID)
+
+	memo, err := ts.Service.CreateMemo(userCtx, &v1pb.CreateMemoRequest{
+		Memo: &v1pb.Memo{Content: "memo with image placeholder", Visibility: v1pb.Visibility_PRIVATE},
+	})
+	require.NoError(t, err)
+
+	attachment, err := ts.Service.CreateAttachment(userCtx, &v1pb.CreateAttachmentRequest{
+		Attachment: &v1pb.Attachment{
+			Memo:     &memo.Name,
+			Filename: "referenced.png",
+			Content:  []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A},
+		},
+	})
+	require.NoError(t, err)
+
+	attachmentUID := strings.TrimPrefix(attachment.Name, "attachments/")
+	content := fmt.Sprintf("memo with image ![referenced](/file/attachments/%s/referenced.png)", attachmentUID)
+	_, err = ts.Service.UpdateMemo(userCtx, &v1pb.UpdateMemoRequest{
+		Memo:       &v1pb.Memo{Name: memo.Name, Content: content},
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"content"}},
+	})
+	require.NoError(t, err)
+
+	_, err = ts.Service.DeleteAttachment(userCtx, &v1pb.DeleteAttachmentRequest{Name: attachment.Name})
+	require.Error(t, err)
+	require.Equal(t, codes.FailedPrecondition, status.Code(err))
+}
+
+func TestUpdateMemoCanRemoveReferencedAttachmentSafely(t *testing.T) {
+	ctx := context.Background()
+	ts := NewTestService(t)
+	defer ts.Cleanup()
+
+	user, err := ts.CreateRegularUser(ctx, "safe-remove-owner")
+	require.NoError(t, err)
+	userCtx := ts.CreateUserContext(ctx, user.ID)
+
+	memo, err := ts.Service.CreateMemo(userCtx, &v1pb.CreateMemoRequest{
+		Memo: &v1pb.Memo{Content: "memo with image placeholder", Visibility: v1pb.Visibility_PRIVATE},
+	})
+	require.NoError(t, err)
+
+	attachment, err := ts.Service.CreateAttachment(userCtx, &v1pb.CreateAttachmentRequest{
+		Attachment: &v1pb.Attachment{
+			Memo:     &memo.Name,
+			Filename: "safe-remove.png",
+			Content:  []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A},
+		},
+	})
+	require.NoError(t, err)
+
+	attachmentUID := strings.TrimPrefix(attachment.Name, "attachments/")
+	content := fmt.Sprintf("memo with image ![safe](/file/attachments/%s/safe-remove.png)", attachmentUID)
+	updatedMemo, err := ts.Service.UpdateMemo(userCtx, &v1pb.UpdateMemoRequest{
+		Memo:       &v1pb.Memo{Name: memo.Name, Content: content, Attachments: []*v1pb.Attachment{{Name: attachment.Name}}},
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"content", "attachments"}},
+	})
+	require.NoError(t, err)
+	require.Len(t, updatedMemo.Attachments, 1)
+
+	updatedMemo, err = ts.Service.UpdateMemo(userCtx, &v1pb.UpdateMemoRequest{
+		Memo:       &v1pb.Memo{Name: memo.Name, Content: "memo without image", Attachments: []*v1pb.Attachment{}},
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"content", "attachments"}},
+	})
+	require.NoError(t, err)
+	require.Empty(t, updatedMemo.Attachments)
+
+	storedAttachment, err := ts.Store.GetAttachment(ctx, &store.FindAttachment{UID: &attachmentUID})
+	require.NoError(t, err)
+	require.Nil(t, storedAttachment)
+}
+
+func TestUpdateMemoRejectsRemovingAttachmentStillReferencedByContent(t *testing.T) {
+	ctx := context.Background()
+	ts := NewTestService(t)
+	defer ts.Cleanup()
+
+	user, err := ts.CreateRegularUser(ctx, "unsafe-remove-owner")
+	require.NoError(t, err)
+	userCtx := ts.CreateUserContext(ctx, user.ID)
+
+	memo, err := ts.Service.CreateMemo(userCtx, &v1pb.CreateMemoRequest{
+		Memo: &v1pb.Memo{Content: "memo with image placeholder", Visibility: v1pb.Visibility_PRIVATE},
+	})
+	require.NoError(t, err)
+
+	attachment, err := ts.Service.CreateAttachment(userCtx, &v1pb.CreateAttachmentRequest{
+		Attachment: &v1pb.Attachment{
+			Memo:     &memo.Name,
+			Filename: "unsafe-remove.png",
+			Content:  []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A},
+		},
+	})
+	require.NoError(t, err)
+
+	attachmentUID := strings.TrimPrefix(attachment.Name, "attachments/")
+	content := fmt.Sprintf("memo with image ![unsafe](/file/attachments/%s/unsafe-remove.png)", attachmentUID)
+	_, err = ts.Service.UpdateMemo(userCtx, &v1pb.UpdateMemoRequest{
+		Memo:       &v1pb.Memo{Name: memo.Name, Content: content, Attachments: []*v1pb.Attachment{{Name: attachment.Name}}},
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"content", "attachments"}},
+	})
+	require.NoError(t, err)
+
+	_, err = ts.Service.UpdateMemo(userCtx, &v1pb.UpdateMemoRequest{
+		Memo:       &v1pb.Memo{Name: memo.Name, Attachments: []*v1pb.Attachment{}},
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"attachments"}},
+	})
+	require.Error(t, err)
+	require.Equal(t, codes.FailedPrecondition, status.Code(err))
 }
 
 func TestBoundAttachmentDirectAPIsRequireBoundMemoVisibility(t *testing.T) {

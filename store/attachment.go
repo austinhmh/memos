@@ -202,7 +202,9 @@ func (s *Store) DeleteAttachment(ctx context.Context, delete *DeleteAttachment) 
 			}
 			return nil
 		}(); err != nil {
-			return errors.Wrap(err, "failed to delete local file")
+			slog.Warn("Failed to delete local attachment file (continuing with DB deletion)",
+				"attachment_id", attachment.ID,
+				"error", err)
 		}
 		deleteThumbnailCache(s.profile.Data, attachment.UID)
 	} else if attachment.StorageType == storepb.AttachmentStorageType_S3 {

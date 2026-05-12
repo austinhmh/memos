@@ -347,8 +347,9 @@ func (s *APIV1Service) DeleteAttachment(ctx context.Context, request *v1pb.Delet
 	if attachment == nil {
 		return nil, status.Errorf(codes.NotFound, "attachment not found")
 	}
+	var memo *store.Memo
 	if attachment.MemoID != nil {
-		memo, err := s.Store.GetMemo(ctx, &store.FindMemo{ID: attachment.MemoID})
+		memo, err = s.Store.GetMemo(ctx, &store.FindMemo{ID: attachment.MemoID})
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "failed to get attachment memo")
 		}
@@ -360,6 +361,11 @@ func (s *APIV1Service) DeleteAttachment(ctx context.Context, request *v1pb.Delet
 		}
 	} else if attachment.CreatorID != user.ID && !isSuperUser(user) {
 		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
+	}
+	if attachment.MemoID != nil {
+		if isAttachmentReferencedByMemoContent(memo.Content, attachment.UID) {
+			return nil, status.Errorf(codes.FailedPrecondition, "attachment is still referenced by memo content")
+		}
 	}
 	// Delete the attachment from the database.
 	deleteAttachment := &store.DeleteAttachment{ID: attachment.ID}
