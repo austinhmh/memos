@@ -60,6 +60,7 @@ import { createCodeHighlightPlugin } from "./plugins/CodeHighlightPlugin";
 import { createHeadingIdPlugin } from "./plugins/HeadingIdPlugin";
 import { createMermaidPlugin } from "./plugins/MermaidPlugin";
 import { createSlashMenuPlugin, type SlashMenuState } from "./plugins/SlashMenuPlugin";
+import { createTablePlugins, tableKeymap } from "./plugins/TableControlsPlugin";
 
 interface BlogEditorProps {
   memo: Memo;
@@ -534,6 +535,7 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
         schema,
         plugins: [
           keymap(buildBlogEditorKeymap(manualSaveCommand)),
+          keymap(tableKeymap),
           history(),
           uploadPlaceholderPlugin,
           new UploadPlugin({
@@ -558,6 +560,7 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
           createCodeHighlightPlugin(),
           createCodeBlockExpandPlugin(),
           createHeadingIdPlugin(),
+          ...createTablePlugins({ isEditable: () => !readonlyRef.current }),
           keymap(baseKeymap),
         ],
       });

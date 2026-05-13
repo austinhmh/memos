@@ -124,6 +124,10 @@ function getProseMirrorTokenizer(): MarkdownIt {
     }
   });
 
+  md.core.ruler.push("prosemirror_table_sections", (state) => {
+    state.tokens = state.tokens.filter((token) => !["thead_open", "thead_close", "tbody_open", "tbody_close"].includes(token.type));
+  });
+
   cachedTokenizer = md;
   return md;
 }
@@ -182,8 +186,6 @@ export function createMdParser(schema: Schema): MarkdownParser {
     hardbreak: { node: "hard_break" },
     softbreak: { node: "hard_break" },
     table: { block: "table" },
-    thead: { block: "table" },
-    tbody: { block: "table" },
     tr: { block: "table_row" },
     th: {
       block: "table_header",

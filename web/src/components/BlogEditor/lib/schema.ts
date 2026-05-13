@@ -1,5 +1,6 @@
 import { Schema } from "prosemirror-model";
 import { sanitizeUrl } from "@/lib/sanitize-url";
+import { getCellAttrs, setCellAttrs } from "../plugins/TableControlsPlugin";
 
 /**
  * ProseMirror schema for the blog editor (Outline-style).
@@ -169,41 +170,29 @@ export const blogEditorSchema = new Schema({
     },
     table_header: {
       content: "inline*",
-      attrs: { alignment: { default: null } },
+      attrs: {
+        colspan: { default: 1 },
+        rowspan: { default: 1 },
+        alignment: { default: null },
+        colwidth: { default: null },
+      },
       tableRole: "header_cell",
       isolating: true,
-      parseDOM: [
-        {
-          tag: "th",
-          getAttrs: (dom: HTMLElement) => ({
-            alignment: dom.style.textAlign || null,
-          }),
-        },
-      ],
-      toDOM: (node) => {
-        const attrs: Record<string, string> = {};
-        if (node.attrs.alignment) attrs.style = `text-align: ${node.attrs.alignment}`;
-        return ["th", attrs, 0];
-      },
+      parseDOM: [{ tag: "th", getAttrs: getCellAttrs }],
+      toDOM: (node) => ["th", setCellAttrs(node), 0],
     },
     table_cell: {
       content: "inline*",
-      attrs: { alignment: { default: null } },
+      attrs: {
+        colspan: { default: 1 },
+        rowspan: { default: 1 },
+        alignment: { default: null },
+        colwidth: { default: null },
+      },
       tableRole: "cell",
       isolating: true,
-      parseDOM: [
-        {
-          tag: "td",
-          getAttrs: (dom: HTMLElement) => ({
-            alignment: dom.style.textAlign || null,
-          }),
-        },
-      ],
-      toDOM: (node) => {
-        const attrs: Record<string, string> = {};
-        if (node.attrs.alignment) attrs.style = `text-align: ${node.attrs.alignment}`;
-        return ["td", attrs, 0];
-      },
+      parseDOM: [{ tag: "td", getAttrs: getCellAttrs }],
+      toDOM: (node) => ["td", setCellAttrs(node), 0],
     },
     bookmark: {
       attrs: { url: { default: "" } },

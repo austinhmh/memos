@@ -16,6 +16,15 @@ type MarkSpec = {
  * code_block uses `language` attr (outputs ```language\n...\n```).
  */
 export function createMdSerializer(): MarkdownSerializer {
+  const createEmptyHeaderRow = (node: Node, colCount: number) => {
+    const headerType = node.type.schema.nodes.table_header;
+    const rowType = node.type.schema.nodes.table_row;
+    return rowType.create(
+      null,
+      Array.from({ length: colCount }, () => headerType.create(null)),
+    );
+  };
+
   const nodes: Record<string, NodeSerializer> = {
     blockquote(state, node) {
       state.wrapBlock("> ", null, node, () => state.renderContent(node));
@@ -85,31 +94,34 @@ export function createMdSerializer(): MarkdownSerializer {
       node.forEach((row) => rows.push(row));
       if (rows.length === 0) return;
 
-      const colCount = rows[0].childCount;
+      const colCount = rows.reduce((max, row) => Math.max(max, row.childCount), 0);
+      if (colCount === 0) return;
+      const hasHeaderRow = rows[0].childCount > 0 && rows[0].firstChild?.type.name === "table_header";
+      const rowsToSerialize = hasHeaderRow ? rows : [createEmptyHeaderRow(node, colCount), ...rows];
       const colWidths: number[] = new Array(colCount).fill(3);
       const alignments: (string | null)[] = new Array(colCount).fill(null);
 
-      for (const row of rows) {
-        for (let c = 0; c < row.childCount; c++) {
-          const cell = row.child(c);
-          const text = cell.textContent;
+      for (const row of rowsToSerialize) {
+        for (let c = 0; c < colCount; c++) {
+          const cell = c < row.childCount ? row.child(c) : null;
+          const text = cell?.textContent ?? "";
           if (text.length + 2 > colWidths[c]) colWidths[c] = text.length + 2;
-          if (cell.attrs.alignment) alignments[c] = cell.attrs.alignment as string;
+          if (cell?.attrs.alignment) alignments[c] = cell.attrs.alignment as string;
         }
       }
 
-      const renderRow = (row: Node) => {
+      const renderRow = (row: Node | null) => {
         let line = "|";
-        for (let c = 0; c < row.childCount; c++) {
-          const cell = row.child(c);
-          const text = cell.textContent;
+        for (let c = 0; c < colCount; c++) {
+          const cell = row && c < row.childCount ? row.child(c) : null;
+          const text = cell?.textContent ?? "";
           const pad = colWidths[c] - text.length;
           line += " " + text + " ".repeat(pad > 0 ? pad : 0) + " |";
         }
         return line;
       };
 
-      state.write(renderRow(rows[0]));
+      state.write(renderRow(rowsToSerialize[0]));
       state.ensureNewLine();
 
       let sep = "|";
@@ -124,9 +136,9 @@ export function createMdSerializer(): MarkdownSerializer {
       state.write(sep);
       state.ensureNewLine();
 
-      for (let r = 1; r < rows.length; r++) {
-        state.write(renderRow(rows[r]));
-        if (r < rows.length - 1) state.ensureNewLine();
+      for (let r = 1; r < rowsToSerialize.length; r++) {
+        state.write(renderRow(rowsToSerialize[r]));
+        if (r < rowsToSerialize.length - 1) state.ensureNewLine();
       }
       state.closeBlock(node);
     },

@@ -5,6 +5,7 @@ import { useMemoFilters, useMemoSorting } from "@/hooks";
 import useCurrentUser from "@/hooks/useCurrentUser";
 import { State } from "@/types/proto/api/v1/common_pb";
 import type { Memo } from "@/types/proto/api/v1/memo_service_pb";
+import { shouldShowInMemoList } from "@/utils/memo-display";
 
 const Home = () => {
   const user = useCurrentUser();
@@ -22,7 +23,8 @@ const Home = () => {
 
   const listSort = useCallback(
     (list: Memo[]) => {
-      return baseSort ? baseSort(list) : list;
+      const visibleMemos = list.filter(shouldShowInMemoList);
+      return baseSort ? baseSort(visibleMemos) : visibleMemos;
     },
     [baseSort],
   );

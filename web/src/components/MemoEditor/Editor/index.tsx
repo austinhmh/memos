@@ -10,6 +10,8 @@ import { handleMarkdownShortcuts } from "./shortcuts";
 import TagSuggestions from "./TagSuggestions";
 import { useListCompletion } from "./useListCompletion";
 
+const TAB_INDENT = "  ";
+
 export interface EditorRefActions {
   getEditor: () => HTMLTextAreaElement | null;
   focus: () => void;
@@ -187,6 +189,16 @@ const Editor = forwardRef(function Editor(props: EditorProps, ref: React.Forward
 
   const handleEditorKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (event.key === "Tab" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (!event.shiftKey) {
+          editorActions.insertText(TAB_INDENT);
+        }
+        return;
+      }
+
       if (!(event.metaKey || event.ctrlKey) || event.altKey) {
         return;
       }
