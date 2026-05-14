@@ -284,11 +284,26 @@ if [ "$LOCAL_ONLY" = true ]; then
     echo "[ 5/5 ] 跳过推送 (--local 模式)"
 else
     echo ""
-    echo "[ 5/5 ] 登录并推送镜像到 GHCR ..."
-    printf '%s\n' "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_USERNAME" --password-stdin
-    docker push "$IMAGE_NAME:$VERSION_TAG"
+    echo "[ 5/5 ] 使用临时 Docker 凭据推送镜像到 GHCR ..."
+    DOCKER_CONFIG_DIR="$(mktemp -d)"
+    cleanup_docker_config() {
+        rm -rf "$DOCKER_CONFIG_DIR"
+    }
+    trap cleanup_docker_config EXIT
+    AUTH_TOKEN="$(printf '%s:%s' "$GITHUB_USERNAME" "$GITHUB_TOKEN" | base64 | tr -d '\n')"
+    mkdir -p "$DOCKER_CONFIG_DIR"
+    cat >"$DOCKER_CONFIG_DIR/config.json" <<EOF
+{
+  "auths": {
+    "ghcr.io": {
+      "auth": "$AUTH_TOKEN"
+    }
+  }
+}
+EOF
+    DOCKER_CONFIG="$DOCKER_CONFIG_DIR" docker push "$IMAGE_NAME:$VERSION_TAG"
     if [ "$VERSION_TAG" != "latest" ]; then
-        docker push "$IMAGE_NAME:latest"
+        DOCKER_CONFIG="$DOCKER_CONFIG_DIR" docker push "$IMAGE_NAME:latest"
     fi
 fi
 
