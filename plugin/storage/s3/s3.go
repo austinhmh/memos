@@ -20,8 +20,8 @@ import (
 const (
 	// AttachmentObjectPrefix is the only S3 prefix managed by attachment storage.
 	AttachmentObjectPrefix = "assets/"
-	// MaxGetObjectBytes is the maximum object size read into memory.
-	MaxGetObjectBytes int64 = 256 << 20
+	// DefaultMaxGetObjectBytes is the fallback maximum object size read into memory.
+	DefaultMaxGetObjectBytes int64 = 256 << 20
 )
 
 type Client struct {
@@ -140,20 +140,28 @@ func (c *Client) PresignGetObject(ctx context.Context, key string) (string, erro
 
 // GetObject retrieves an object from S3.
 func (c *Client) GetObject(ctx context.Context, key string) ([]byte, error) {
+	return c.GetObjectWithLimit(ctx, key, DefaultMaxGetObjectBytes)
+}
+
+// GetObjectWithLimit retrieves an object from S3 with a caller-provided memory limit.
+func (c *Client) GetObjectWithLimit(ctx context.Context, key string, maxBytes int64) ([]byte, error) {
 	reader, err := c.GetObjectStream(ctx, key)
 	if err != nil {
 		return nil, err
 	}
-	return ReadObjectWithLimit(ctx, key, reader)
+	return ReadObjectWithLimit(ctx, key, reader, maxBytes)
 }
 
-// ReadObjectWithLimit reads an object stream and fails if it exceeds MaxGetObjectBytes.
-func ReadObjectWithLimit(ctx context.Context, key string, reader io.ReadCloser) ([]byte, error) {
+// ReadObjectWithLimit reads an object stream and fails if it exceeds maxBytes.
+func ReadObjectWithLimit(ctx context.Context, key string, reader io.ReadCloser, maxBytes int64) ([]byte, error) {
 	defer reader.Close()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	limitedReader := &io.LimitedReader{R: reader, N: MaxGetObjectBytes + 1}
+	if maxBytes <= 0 {
+		maxBytes = DefaultMaxGetObjectBytes
+	}
+	limitedReader := &io.LimitedReader{R: reader, N: maxBytes + 1}
 	content, err := io.ReadAll(limitedReader)
 	if err != nil {
 		return nil, err

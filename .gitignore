@@ -17,8 +17,19 @@ docs/plans/
 # Jetbrains
 .idea
 
-# Docker Compose Environment File
+# Environment files and local secrets
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+*_TOKEN
+*_SECRET
 
 dist
 
@@ -30,3 +41,24 @@ dist
 
 # Data directory (Docker volume mount)
 data/
+.memos/
+backup/
+backups/
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.bak
+*.backup
+*.backup.*
+*.dump
+*.sql
+*.tar
+*.tar.gz
+*.tgz
+*.log
+coverage.out
+
+# Package manager caches
+.pnpm-store/
+node_modules/

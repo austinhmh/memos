@@ -65,14 +65,20 @@ func TestNormalizeAttachmentObjectKeyTemplate(t *testing.T) {
 }
 
 func TestReadObjectWithLimitErrorsOnOverflow(t *testing.T) {
-	content := bytes.Repeat([]byte("a"), int(MaxGetObjectBytes)+1)
-	_, err := ReadObjectWithLimit(context.Background(), "assets/too-large.bin", readCloser{Reader: bytes.NewReader(content)})
+	content := bytes.Repeat([]byte("a"), int(DefaultMaxGetObjectBytes)+1)
+	_, err := ReadObjectWithLimit(context.Background(), "assets/too-large.bin", readCloser{Reader: bytes.NewReader(content)}, DefaultMaxGetObjectBytes)
 	require.ErrorContains(t, err, "exceeds size limit")
 }
 
 func TestReadObjectWithLimitReadsWithinLimit(t *testing.T) {
 	content := []byte("ok")
-	got, err := ReadObjectWithLimit(context.Background(), "assets/ok.txt", readCloser{Reader: bytes.NewReader(content)})
+	got, err := ReadObjectWithLimit(context.Background(), "assets/ok.txt", readCloser{Reader: bytes.NewReader(content)}, DefaultMaxGetObjectBytes)
 	require.NoError(t, err)
 	require.Equal(t, content, got)
+}
+
+func TestReadObjectWithLimitUsesCallerLimit(t *testing.T) {
+	content := []byte("abcd")
+	_, err := ReadObjectWithLimit(context.Background(), "assets/limited.txt", readCloser{Reader: bytes.NewReader(content)}, 3)
+	require.ErrorContains(t, err, "exceeds size limit")
 }

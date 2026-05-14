@@ -3,6 +3,8 @@ package v1
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"os"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -10,6 +12,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/usememos/memos/internal/netutil"
 	v1pb "github.com/usememos/memos/proto/gen/api/v1"
 	storepb "github.com/usememos/memos/proto/gen/store"
 	"github.com/usememos/memos/store"
@@ -111,12 +114,74 @@ func (s *APIV1Service) UpdateInstanceSetting(ctx context.Context, request *v1pb.
 	return convertInstanceSettingFromStore(instanceSetting), nil
 }
 
+const allowPrivateS3EndpointEnv = "MEMOS_ALLOW_PRIVATE_S3_ENDPOINT"
+
+func allowPrivateS3Endpoint() bool {
+	value := strings.TrimSpace(strings.ToLower(os.Getenv(allowPrivateS3EndpointEnv)))
+	return value == "1" || value == "true" || value == "yes"
+}
+
+func validateStorageS3Config(ctx context.Context, storageSetting *storepb.InstanceStorageSetting) error {
+	if storageSetting == nil || storageSetting.S3Config == nil {
+		return nil
+	}
+	if storageSetting.StorageType != storepb.InstanceStorageSetting_S3 {
+		return nil
+	}
+	return validateStorageS3ConfigEndpoint(ctx, storageSetting.S3Config.Endpoint)
+}
+
+func validateStorageS3ConfigEndpoint(ctx context.Context, endpoint string) error {
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" {
+		return nil
+	}
+	validator := netutil.ExternalURLValidator{
+		AllowedSchemes: map[string]struct{}{
+			"http":  {},
+			"https": {},
+		},
+		AllowPrivateAddresses: allowPrivateS3Endpoint(),
+	}
+	if _, err := validator.Validate(ctx, endpoint); err != nil {
+		if errors.Is(err, netutil.ErrNonPublicAddress) {
+			return errors.Wrapf(err, "S3 endpoint must resolve to public addresses by default; set %s=true only for trusted private MinIO/S3 networks", allowPrivateS3EndpointEnv)
+		}
+		return errors.Wrap(err, "invalid S3 endpoint")
+	}
+	if validator.AllowPrivateAddresses {
+		slog.Warn("Private S3 endpoint validation bypass is enabled; only use this for trusted private MinIO/S3 networks", "env", allowPrivateS3EndpointEnv)
+	}
+	return nil
+}
+
+func shouldValidateStorageS3Config(updateSetting *storepb.InstanceStorageSetting, paths []string) bool {
+	if updateSetting == nil {
+		return false
+	}
+	for _, path := range paths {
+		switch normalizeInstanceSettingUpdatePath(path) {
+		case "storage_setting", "value", "storageSetting",
+			"storage_setting.storage_type", "value.storage_type", "storage_type", "storageSetting.storageType", "storageType",
+			"storage_setting.s3_config", "value.s3_config", "s3_config", "storageSetting.s3Config", "s3Config",
+			"storage_setting.s3_config.endpoint", "value.s3_config.endpoint", "s3_config.endpoint", "storageSetting.s3Config.endpoint", "s3Config.endpoint":
+			return true
+		}
+	}
+	return false
+}
+
 func (s *APIV1Service) buildInstanceSettingUpdate(ctx context.Context, request *v1pb.UpdateInstanceSettingRequest) (*storepb.InstanceSetting, error) {
 	updateSetting, err := convertInstanceSettingToStore(request.Setting)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid instance setting: %v", err)
 	}
 	if request.UpdateMask == nil || len(request.UpdateMask.Paths) == 0 {
+		if updateSetting.Key == storepb.InstanceSettingKey_STORAGE {
+			if err := validateStorageS3Config(ctx, updateSetting.GetStorageSetting()); err != nil {
+				return nil, status.Errorf(codes.InvalidArgument, "%v", err)
+			}
+		}
 		return updateSetting, nil
 	}
 
@@ -128,6 +193,11 @@ func (s *APIV1Service) buildInstanceSettingUpdate(ctx context.Context, request *
 	mergedSetting, err := applyInstanceSettingUpdateMask(existingSetting, updateSetting, request.UpdateMask.Paths)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	if shouldValidateStorageS3Config(updateSetting.GetStorageSetting(), request.UpdateMask.Paths) {
+		if err := validateStorageS3Config(ctx, mergedSetting.GetStorageSetting()); err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "%v", err)
+		}
 	}
 	return mergedSetting, nil
 }
@@ -244,6 +314,11 @@ func applyInstanceStorageSettingUpdatePath(existingSetting, updateSetting *store
 
 	switch path {
 	case "storage_setting", "value", "storageSetting":
+		mergedSetting := proto.Clone(existingSetting).(*storepb.InstanceStorageSetting)
+		proto.Merge(mergedSetting, updateSetting)
+		if err := validateStorageS3Config(context.Background(), mergedSetting); err != nil {
+			return err
+		}
 		proto.Merge(existingSetting, updateSetting)
 	case "storage_setting.storage_type", "value.storage_type", "storage_type", "storageSetting.storageType", "storageType":
 		existingSetting.StorageType = updateSetting.StorageType
@@ -252,6 +327,9 @@ func applyInstanceStorageSettingUpdatePath(existingSetting, updateSetting *store
 	case "storage_setting.upload_size_limit_mb", "value.upload_size_limit_mb", "upload_size_limit_mb", "storageSetting.uploadSizeLimitMb", "uploadSizeLimitMb":
 		existingSetting.UploadSizeLimitMb = updateSetting.UploadSizeLimitMb
 	case "storage_setting.s3_config", "value.s3_config", "s3_config", "storageSetting.s3Config", "s3Config":
+		if err := validateStorageS3ConfigEndpoint(context.Background(), updateSetting.GetS3Config().GetEndpoint()); err != nil {
+			return err
+		}
 		existingSetting.S3Config = cloneStorageS3Config(updateSetting.S3Config)
 	case "storage_setting.s3_config.access_key_id", "value.s3_config.access_key_id", "s3_config.access_key_id", "storageSetting.s3Config.accessKeyId", "s3Config.accessKeyId":
 		existingSetting.S3Config = cloneStorageS3Config(existingSetting.S3Config)
@@ -260,8 +338,12 @@ func applyInstanceStorageSettingUpdatePath(existingSetting, updateSetting *store
 		existingSetting.S3Config = cloneStorageS3Config(existingSetting.S3Config)
 		existingSetting.S3Config.AccessKeySecret = updateSetting.GetS3Config().GetAccessKeySecret()
 	case "storage_setting.s3_config.endpoint", "value.s3_config.endpoint", "s3_config.endpoint", "storageSetting.s3Config.endpoint", "s3Config.endpoint":
+		endpoint := updateSetting.GetS3Config().GetEndpoint()
+		if err := validateStorageS3ConfigEndpoint(context.Background(), endpoint); err != nil {
+			return err
+		}
 		existingSetting.S3Config = cloneStorageS3Config(existingSetting.S3Config)
-		existingSetting.S3Config.Endpoint = updateSetting.GetS3Config().GetEndpoint()
+		existingSetting.S3Config.Endpoint = endpoint
 	case "storage_setting.s3_config.region", "value.s3_config.region", "s3_config.region", "storageSetting.s3Config.region", "s3Config.region":
 		existingSetting.S3Config = cloneStorageS3Config(existingSetting.S3Config)
 		existingSetting.S3Config.Region = updateSetting.GetS3Config().GetRegion()

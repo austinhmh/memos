@@ -408,6 +408,112 @@ func TestUpdateInstanceSettingUpdateMask(t *testing.T) {
 		require.Equal(t, codes.InvalidArgument, status.Code(err))
 	})
 
+	t.Run("rejects non-public s3 endpoint", func(t *testing.T) {
+		ts := NewTestService(t)
+		defer ts.Cleanup()
+
+		hostUser, err := ts.CreateHostUser(ctx, "s3endpointrejecthost")
+		require.NoError(t, err)
+		userCtx := ts.CreateUserContext(ctx, hostUser.ID)
+
+		_, err = ts.Service.UpdateInstanceSetting(userCtx, &v1pb.UpdateInstanceSettingRequest{
+			Setting: &v1pb.InstanceSetting{
+				Name: "instance/settings/STORAGE",
+				Value: &v1pb.InstanceSetting_StorageSetting_{
+					StorageSetting: &v1pb.InstanceSetting_StorageSetting{
+						StorageType:       v1pb.InstanceSetting_StorageSetting_S3,
+						FilepathTemplate:  "assets/{filename}",
+						UploadSizeLimitMb: 30,
+						S3Config: &v1pb.InstanceSetting_StorageSetting_S3Config{
+							AccessKeyId:     "access-key",
+							AccessKeySecret: "access-secret",
+							Endpoint:        "http://127.0.0.1:9000",
+							Region:          "us-east-1",
+							Bucket:          "memos",
+						},
+					},
+				},
+			},
+		})
+		require.Error(t, err)
+		require.Equal(t, codes.InvalidArgument, status.Code(err))
+		require.Contains(t, err.Error(), "non-public IP addresses")
+	})
+
+	t.Run("allows private s3 endpoint with explicit opt in", func(t *testing.T) {
+		t.Setenv("MEMOS_ALLOW_PRIVATE_S3_ENDPOINT", "true")
+		ts := NewTestService(t)
+		defer ts.Cleanup()
+
+		hostUser, err := ts.CreateHostUser(ctx, "s3endpointallowhost")
+		require.NoError(t, err)
+		userCtx := ts.CreateUserContext(ctx, hostUser.ID)
+
+		resp, err := ts.Service.UpdateInstanceSetting(userCtx, &v1pb.UpdateInstanceSettingRequest{
+			Setting: &v1pb.InstanceSetting{
+				Name: "instance/settings/STORAGE",
+				Value: &v1pb.InstanceSetting_StorageSetting_{
+					StorageSetting: &v1pb.InstanceSetting_StorageSetting{
+						StorageType:       v1pb.InstanceSetting_StorageSetting_S3,
+						FilepathTemplate:  "assets/{filename}",
+						UploadSizeLimitMb: 30,
+						S3Config: &v1pb.InstanceSetting_StorageSetting_S3Config{
+							AccessKeyId:     "access-key",
+							AccessKeySecret: "access-secret",
+							Endpoint:        "http://127.0.0.1:9000",
+							Region:          "us-east-1",
+							Bucket:          "memos",
+						},
+					},
+				},
+			},
+		})
+		require.NoError(t, err)
+		require.Equal(t, "http://127.0.0.1:9000", resp.GetStorageSetting().GetS3Config().GetEndpoint())
+	})
+
+	t.Run("partial s3 endpoint update rejects non-public endpoint", func(t *testing.T) {
+		ts := NewTestService(t)
+		defer ts.Cleanup()
+
+		hostUser, err := ts.CreateHostUser(ctx, "s3endpointpartialhost")
+		require.NoError(t, err)
+		userCtx := ts.CreateUserContext(ctx, hostUser.ID)
+
+		_, err = ts.Store.UpsertInstanceSetting(ctx, &storepb.InstanceSetting{
+			Key: storepb.InstanceSettingKey_STORAGE,
+			Value: &storepb.InstanceSetting_StorageSetting{
+				StorageSetting: &storepb.InstanceStorageSetting{
+					StorageType:       storepb.InstanceStorageSetting_S3,
+					FilepathTemplate:  "assets/{filename}",
+					UploadSizeLimitMb: 30,
+					S3Config: &storepb.StorageS3Config{
+						AccessKeyId:     "access-key",
+						AccessKeySecret: "access-secret",
+						Endpoint:        "https://s3.example.com",
+						Region:          "us-east-1",
+						Bucket:          "memos",
+					},
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		_, err = ts.Service.UpdateInstanceSetting(userCtx, &v1pb.UpdateInstanceSettingRequest{
+			Setting: &v1pb.InstanceSetting{
+				Name: "instance/settings/STORAGE",
+				Value: &v1pb.InstanceSetting_StorageSetting_{
+					StorageSetting: &v1pb.InstanceSetting_StorageSetting{
+						S3Config: &v1pb.InstanceSetting_StorageSetting_S3Config{Endpoint: "http://169.254.169.254"},
+					},
+				},
+			},
+			UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"storage_setting.s3_config.endpoint"}},
+		})
+		require.Error(t, err)
+		require.Equal(t, codes.InvalidArgument, status.Code(err))
+	})
+
 	t.Run("empty update mask keeps full replacement compatibility", func(t *testing.T) {
 		ts := NewTestService(t)
 		defer ts.Cleanup()

@@ -37,8 +37,16 @@ type APIV1Service struct {
 
 	// thumbnailSemaphore limits concurrent thumbnail generation to prevent memory exhaustion
 	thumbnailSemaphore *semaphore.Weighted
-	// signInLimiter rate limits sign-in attempts to prevent brute force
+	// linkMetadataSemaphore limits uncached URL metadata fetch concurrency.
+	linkMetadataSemaphore *semaphore.Weighted
+	// linkMetadataLimiter rate limits uncached URL metadata fetches per user.
+	linkMetadataLimiter *RateLimiter
+	// signInLimiter rate limits sign-in attempts per username to prevent brute force.
 	signInLimiter *RateLimiter
+	// signInIPLimiter rate limits sign-in attempts per remote IP to prevent username spraying.
+	signInIPLimiter *RateLimiter
+	// signInGlobalLimiter rate limits sign-in attempts globally as a fail-safe.
+	signInGlobalLimiter *RateLimiter
 	// createUserMu serializes first-user registration to avoid concurrent HOST bootstrap races.
 	createUserMu sync.Mutex
 }
@@ -48,12 +56,16 @@ func NewAPIV1Service(secret string, profile *profile.Profile, store *store.Store
 		markdown.WithTagExtension(),
 	)
 	return &APIV1Service{
-		Secret:             secret,
-		Profile:            profile,
-		Store:              store,
-		MarkdownService:    markdownService,
-		thumbnailSemaphore: semaphore.NewWeighted(3),
-		signInLimiter:      NewRateLimiter(5, 5*time.Minute),
+		Secret:                secret,
+		Profile:               profile,
+		Store:                 store,
+		MarkdownService:       markdownService,
+		thumbnailSemaphore:    semaphore.NewWeighted(3),
+		linkMetadataSemaphore: semaphore.NewWeighted(8),
+		linkMetadataLimiter:   NewRateLimiter(60, time.Minute),
+		signInLimiter:         NewRateLimiter(5, 5*time.Minute),
+		signInIPLimiter:       NewRateLimiter(50, 5*time.Minute),
+		signInGlobalLimiter:   NewRateLimiter(300, 5*time.Minute),
 	}
 }
 
@@ -64,7 +76,7 @@ func (s *APIV1Service) RegisterGateway(ctx context.Context, echoServer *echo.Ech
 	authenticator := auth.NewAuthenticator(s.Store, s.Secret)
 	gatewayAuthMiddleware := func(next runtime.HandlerFunc) runtime.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
-			ctx := r.Context()
+			ctx := contextWithRequestIP(r.Context(), r.RemoteAddr)
 
 			// Extract credentials from HTTP headers
 			authHeader := r.Header.Get("Authorization")
@@ -89,8 +101,8 @@ func (s *APIV1Service) RegisterGateway(ctx context.Context, echoServer *echo.Ech
 					// PAT - have full user
 					ctx = auth.SetUserInContext(ctx, result.User, result.AccessToken)
 				}
-				r = r.WithContext(ctx)
 			}
+			r = r.WithContext(ctx)
 
 			next(w, r, pathParams)
 		}
@@ -101,6 +113,7 @@ func (s *APIV1Service) RegisterGateway(ctx context.Context, echoServer *echo.Ech
 		runtime.WithMiddlewares(gatewayAuthMiddleware),
 		runtime.WithIncomingHeaderMatcher(gatewayIncomingHeaderMatcher),
 		runtime.WithOutgoingHeaderMatcher(gatewayOutgoingHeaderMatcher),
+		runtime.WithErrorHandler(sanitizedGatewayHTTPErrorHandler),
 	)
 	if err := v1pb.RegisterInstanceServiceHandlerServer(ctx, gwMux, s); err != nil {
 		return err

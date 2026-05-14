@@ -195,7 +195,11 @@ func (s *Store) DeleteAttachment(ctx context.Context, delete *DeleteAttachment) 
 			err = os.Remove(p)
 			if err != nil {
 				if os.IsNotExist(err) {
-					slog.Warn("Local attachment file already missing; continuing with DB deletion", "attachment_id", attachment.ID, "path", p)
+					slog.Warn("Local attachment file already missing; continuing with DB deletion",
+						"attachment_id", attachment.ID,
+						"attachment_uid", attachment.UID,
+						"reference", attachment.Reference,
+						"path", p)
 					return nil
 				}
 				return errors.Wrap(err, "failed to delete local file")
@@ -204,6 +208,8 @@ func (s *Store) DeleteAttachment(ctx context.Context, delete *DeleteAttachment) 
 		}(); err != nil {
 			slog.Warn("Failed to delete local attachment file (continuing with DB deletion)",
 				"attachment_id", attachment.ID,
+				"attachment_uid", attachment.UID,
+				"reference", attachment.Reference,
 				"error", err)
 		}
 		deleteThumbnailCache(s.profile.Data, attachment.UID)
@@ -245,8 +251,15 @@ func (s *Store) DeleteAttachment(ctx context.Context, delete *DeleteAttachment) 
 			}
 			return nil
 		}(); err != nil {
+			var s3Key string
+			if attachment.Payload != nil && attachment.Payload.GetS3Object() != nil {
+				s3Key = attachment.Payload.GetS3Object().Key
+			}
 			slog.Warn("Failed to delete S3 object (continuing with DB deletion)",
 				"attachment_id", attachment.ID,
+				"attachment_uid", attachment.UID,
+				"reference", attachment.Reference,
+				"s3_key", s3Key,
 				"error", err)
 		}
 	}

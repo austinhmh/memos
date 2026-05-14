@@ -7,6 +7,7 @@ import (
 	"net/netip"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/pkg/errors"
@@ -45,9 +46,10 @@ var specialPurposeIPRanges = []netip.Prefix{
 }
 
 type ExternalURLValidator struct {
-	Resolver       *net.Resolver
-	AllowedSchemes map[string]struct{}
-	AllowedPorts   map[int]struct{}
+	Resolver              *net.Resolver
+	AllowedSchemes        map[string]struct{}
+	AllowedPorts          map[int]struct{}
+	AllowPrivateAddresses bool
 }
 
 type ValidatedExternalURL struct {
@@ -97,6 +99,9 @@ func (v ExternalURLValidator) Validate(ctx context.Context, rawURL string) (*Val
 	if parsed.RawPath != "" {
 		return nil, errors.Errorf("invalid path %q", parsed.RawPath)
 	}
+	if !strings.EqualFold(parsed.Scheme, strings.ToLower(parsed.Scheme)) {
+		return nil, errors.Errorf("unsupported scheme %q, scheme must be lowercase", parsed.Scheme)
+	}
 	if !v.isAllowedScheme(parsed.Scheme) {
 		return nil, errors.Errorf("unsupported scheme %q, only http/https allowed", parsed.Scheme)
 	}
@@ -122,7 +127,7 @@ func (v ExternalURLValidator) Validate(ctx context.Context, rawURL string) (*Val
 
 func (v ExternalURLValidator) LookupExternalIPs(ctx context.Context, host string) ([]net.IP, error) {
 	if ip := net.ParseIP(host); ip != nil {
-		if IsNonPublicIP(ip) {
+		if !v.AllowPrivateAddresses && IsNonPublicIP(ip) {
 			return nil, errors.Wrap(ErrNonPublicAddress, ip.String())
 		}
 		return []net.IP{ip}, nil
@@ -135,15 +140,22 @@ func (v ExternalURLValidator) LookupExternalIPs(ctx context.Context, host string
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to resolve hostname")
 	}
-	if err := ValidateResolvedIPs(host, ips); err != nil {
+	if err := validateResolvedIPs(host, ips, v.AllowPrivateAddresses); err != nil {
 		return nil, err
 	}
 	return ips, nil
 }
 
 func ValidateResolvedIPs(host string, ips []net.IP) error {
+	return validateResolvedIPs(host, ips, false)
+}
+
+func validateResolvedIPs(host string, ips []net.IP, allowPrivateAddresses bool) error {
 	if len(ips) == 0 {
 		return errors.New("hostname resolved to no IPs")
+	}
+	if allowPrivateAddresses {
+		return nil
 	}
 	for _, ip := range ips {
 		if IsNonPublicIP(ip) {
@@ -195,6 +207,7 @@ func NewExternalTransport(validator ExternalURLValidator) *http.Transport {
 }
 
 func (v ExternalURLValidator) isAllowedScheme(scheme string) bool {
+	scheme = strings.ToLower(scheme)
 	if len(v.AllowedSchemes) == 0 {
 		return scheme == "http" || scheme == "https"
 	}

@@ -1,6 +1,6 @@
 import { MarkdownSerializer, type MarkdownSerializerState } from "prosemirror-markdown";
 import type { Mark, Node } from "prosemirror-model";
-import { sanitizeUrl } from "@/lib/sanitize-url";
+import { sanitizeImageUrl, sanitizeUrl } from "@/lib/sanitize-url";
 
 type NodeSerializer = (state: MarkdownSerializerState, node: Node, parent: Node, index: number) => void;
 type MarkSpec = {
@@ -16,6 +16,8 @@ type MarkSpec = {
  * code_block uses `language` attr (outputs ```language\n...\n```).
  */
 export function createMdSerializer(): MarkdownSerializer {
+  const escapeTableCellText = (text: string) => text.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\r?\n/g, "<br>");
+
   const createEmptyHeaderRow = (node: Node, colCount: number) => {
     const headerType = node.type.schema.nodes.table_header;
     const rowType = node.type.schema.nodes.table_row;
@@ -73,12 +75,9 @@ export function createMdSerializer(): MarkdownSerializer {
       state.closeBlock(node);
     },
     image(state, node) {
+      const safeSrc = sanitizeImageUrl(node.attrs.src as string) || "";
       state.write(
-        " ![" +
-          state.esc(((node.attrs.alt as string | null) || "").replace("\n", ""), false) +
-          "](" +
-          state.esc((node.attrs.src as string) || "", false) +
-          ")",
+        " ![" + state.esc(((node.attrs.alt as string | null) || "").replace("\n", ""), false) + "](" + state.esc(safeSrc, false) + ")",
       );
     },
     hard_break(state, _node, parent, index) {
@@ -104,7 +103,7 @@ export function createMdSerializer(): MarkdownSerializer {
       for (const row of rowsToSerialize) {
         for (let c = 0; c < colCount; c++) {
           const cell = c < row.childCount ? row.child(c) : null;
-          const text = cell?.textContent ?? "";
+          const text = escapeTableCellText(cell?.textContent ?? "");
           if (text.length + 2 > colWidths[c]) colWidths[c] = text.length + 2;
           if (cell?.attrs.alignment) alignments[c] = cell.attrs.alignment as string;
         }
@@ -114,7 +113,7 @@ export function createMdSerializer(): MarkdownSerializer {
         let line = "|";
         for (let c = 0; c < colCount; c++) {
           const cell = row && c < row.childCount ? row.child(c) : null;
-          const text = cell?.textContent ?? "";
+          const text = escapeTableCellText(cell?.textContent ?? "");
           const pad = colWidths[c] - text.length;
           line += " " + text + " ".repeat(pad > 0 ? pad : 0) + " |";
         }

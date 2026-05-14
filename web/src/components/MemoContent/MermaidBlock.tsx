@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { getRenderFallbackText, getRenderLimitMessage, MERMAID_RENDER_LIMIT } from "@/lib/markdown/renderLimits";
 import { renderMermaid } from "@/lib/mermaid/mermaidInit";
 import { normalizeMermaidCode } from "@/lib/mermaid/normalizeMermaidCode";
 import { sanitizeSvg } from "@/lib/sanitize-svg";
@@ -36,7 +37,19 @@ export const MermaidBlock = ({ children, className }: MermaidBlockProps) => {
   }, [themePreference]);
 
   useEffect(() => {
-    if (!codeContent?.trim()) return;
+    const trimmedCode = codeContent?.trim();
+    if (!trimmedCode) {
+      setSvg("");
+      setError("");
+      return;
+    }
+
+    const limitMessage = getRenderLimitMessage(codeContent, MERMAID_RENDER_LIMIT);
+    if (limitMessage) {
+      setSvg("");
+      setError(limitMessage);
+      return;
+    }
 
     const render = async () => {
       try {
@@ -64,7 +77,7 @@ export const MermaidBlock = ({ children, className }: MermaidBlockProps) => {
       <div className="w-full">
         <div className="text-sm text-destructive mb-2">Mermaid Error: {error}</div>
         <pre className={className}>
-          <code className="language-mermaid">{codeContent}</code>
+          <code className="language-mermaid">{getRenderFallbackText(codeContent)}</code>
         </pre>
       </div>
     );

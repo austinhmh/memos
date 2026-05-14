@@ -74,4 +74,32 @@ describe("BlogEditor URL safety", () => {
 
     expect(serializer.serialize(doc)).toBe("[bad]()");
   });
+
+  it("sanitizes image srcs during markdown serialization", () => {
+    const doc = blogEditorSchema.nodeFromJSON({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "image", attrs: { src: "javascript:alert(1)", alt: "bad" } }],
+        },
+      ],
+    });
+
+    expect(serializer.serialize(doc)).toBe(" ![bad]()");
+  });
+
+  it("rejects mailto image srcs during markdown serialization", () => {
+    const doc = blogEditorSchema.nodeFromJSON({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "image", attrs: { src: "mailto:test@example.com", alt: "mail" } }],
+        },
+      ],
+    });
+
+    expect(serializer.serialize(doc)).toBe(" ![mail]()");
+  });
 });

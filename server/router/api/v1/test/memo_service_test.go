@@ -519,6 +519,119 @@ func TestUpdateMemoContentWithExplicitAttachmentsKeepsUnreferencedAttachment(t *
 	require.NotNil(t, storedAttachment.MemoID)
 }
 
+func TestUpdateMemoContentCleanupKeepsPlainContentReference(t *testing.T) {
+	ctx := context.Background()
+	ts := NewTestService(t)
+	defer ts.Cleanup()
+
+	user, err := ts.CreateRegularUser(ctx, "content-reference-owner")
+	require.NoError(t, err)
+	userCtx := ts.CreateUserContext(ctx, user.ID)
+
+	memo, err := ts.Service.CreateMemo(userCtx, &apiv1.CreateMemoRequest{
+		Memo: &apiv1.Memo{Content: "memo with attachments", Visibility: apiv1.Visibility_PRIVATE},
+	})
+	require.NoError(t, err)
+
+	imageAttachment, err := ts.Service.CreateAttachment(userCtx, &apiv1.CreateAttachmentRequest{
+		Attachment: &apiv1.Attachment{
+			Memo:     &memo.Name,
+			Filename: "referenced-image.png",
+			Type:     "image/png",
+			Content:  []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A},
+		},
+	})
+	require.NoError(t, err)
+	plainAttachment, err := ts.Service.CreateAttachment(userCtx, &apiv1.CreateAttachmentRequest{
+		Attachment: &apiv1.Attachment{
+			Memo:     &memo.Name,
+			Filename: "referenced-plain.txt",
+			Type:     "text/plain",
+			Content:  []byte("plain reference"),
+		},
+	})
+	require.NoError(t, err)
+	unreferencedAttachment, err := ts.Service.CreateAttachment(userCtx, &apiv1.CreateAttachmentRequest{
+		Attachment: &apiv1.Attachment{
+			Memo:     &memo.Name,
+			Filename: "unreferenced.txt",
+			Type:     "text/plain",
+			Content:  []byte("unreferenced"),
+		},
+	})
+	require.NoError(t, err)
+
+	imageUID := imageAttachment.Name[len("attachments/"):]
+	plainUID := plainAttachment.Name[len("attachments/"):]
+	unreferencedUID := unreferencedAttachment.Name[len("attachments/"):]
+	content := fmt.Sprintf("![image](/file/attachments/%s/referenced-image.png)\nplain link: /file/attachments/%s/referenced-plain.txt", imageUID, plainUID)
+	updatedMemo, err := ts.Service.UpdateMemo(userCtx, &apiv1.UpdateMemoRequest{
+		Memo:       &apiv1.Memo{Name: memo.Name, Content: content},
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"content"}},
+	})
+	require.NoError(t, err)
+	require.Len(t, updatedMemo.Attachments, 2)
+
+	storedPlainAttachment, err := ts.Store.GetAttachment(ctx, &store.FindAttachment{UID: &plainUID})
+	require.NoError(t, err)
+	require.NotNil(t, storedPlainAttachment)
+	storedUnreferencedAttachment, err := ts.Store.GetAttachment(ctx, &store.FindAttachment{UID: &unreferencedUID})
+	require.NoError(t, err)
+	require.Nil(t, storedUnreferencedAttachment)
+}
+
+func TestUpdateMemoContentCleanupKeepsPlainContentReferenceWithEmptyImagePayload(t *testing.T) {
+	ctx := context.Background()
+	ts := NewTestService(t)
+	defer ts.Cleanup()
+
+	user, err := ts.CreateRegularUser(ctx, "empty-image-reference-owner")
+	require.NoError(t, err)
+	userCtx := ts.CreateUserContext(ctx, user.ID)
+
+	memo, err := ts.Service.CreateMemo(userCtx, &apiv1.CreateMemoRequest{
+		Memo: &apiv1.Memo{Content: "memo with plain links", Visibility: apiv1.Visibility_PRIVATE},
+	})
+	require.NoError(t, err)
+
+	referencedAttachment, err := ts.Service.CreateAttachment(userCtx, &apiv1.CreateAttachmentRequest{
+		Attachment: &apiv1.Attachment{
+			Memo:     &memo.Name,
+			Filename: "referenced-plain.txt",
+			Type:     "text/plain",
+			Content:  []byte("referenced"),
+		},
+	})
+	require.NoError(t, err)
+	unreferencedAttachment, err := ts.Service.CreateAttachment(userCtx, &apiv1.CreateAttachmentRequest{
+		Attachment: &apiv1.Attachment{
+			Memo:     &memo.Name,
+			Filename: "unreferenced-plain.txt",
+			Type:     "text/plain",
+			Content:  []byte("unreferenced"),
+		},
+	})
+	require.NoError(t, err)
+
+	referencedUID := referencedAttachment.Name[len("attachments/"):]
+	unreferencedUID := unreferencedAttachment.Name[len("attachments/"):]
+	content := fmt.Sprintf("plain link: /file/attachments/%s/referenced-plain.txt", referencedUID)
+	updatedMemo, err := ts.Service.UpdateMemo(userCtx, &apiv1.UpdateMemoRequest{
+		Memo:       &apiv1.Memo{Name: memo.Name, Content: content},
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"content"}},
+	})
+	require.NoError(t, err)
+	require.Len(t, updatedMemo.Attachments, 1)
+	require.Equal(t, referencedAttachment.Name, updatedMemo.Attachments[0].Name)
+
+	storedReferencedAttachment, err := ts.Store.GetAttachment(ctx, &store.FindAttachment{UID: &referencedUID})
+	require.NoError(t, err)
+	require.NotNil(t, storedReferencedAttachment)
+	storedUnreferencedAttachment, err := ts.Store.GetAttachment(ctx, &store.FindAttachment{UID: &unreferencedUID})
+	require.NoError(t, err)
+	require.Nil(t, storedUnreferencedAttachment)
+}
+
 func TestUpdateMemoContentRefreshesUpdateTimeForRegularUser(t *testing.T) {
 	ctx := context.Background()
 	ts := NewTestService(t)

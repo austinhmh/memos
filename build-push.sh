@@ -1,175 +1,277 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# build-push.sh - 构建前端 + Docker 镜像并推送到 GitHub Container Registry
-# 使用方法:
-#   ./build-push.sh                    # 推送 latest 标签
-#   ./build-push.sh v1.0.0             # 推送 v1.0.0 标签
-#   ./build-push.sh --local            # 仅本地构建，不推送
-#   ./build-push.sh --local v1.0.0     # 本地构建，使用指定标签
-#   ./build-push.sh true               # 推送 latest 标签，启用代理
-#   ./build-push.sh false              # 推送 latest 标签，禁用代理
-#   ./build-push.sh v1.0.0 false       # 推送 v1.0.0 标签，禁用代理
-#
-# 使用前请确保：
-#   1. 已配置 .env 文件（或设置环境变量）
-#   2. GITHUB_USERNAME 为 GitHub 用户名
-#   3. GITHUB_TOKEN 具有 write:packages 权限
+# build-push.sh - Build frontend + Docker image and optionally push to GHCR.
 
-set -eo pipefail
+set -Eeuo pipefail
+IFS=$'\n\t'
 
 cd "$(dirname "$0")"
 
-IMAGE_NAME="ghcr.io/austinhmh/memos"
+usage() {
+    cat <<'EOF'
+Usage:
+  ./build-push.sh [--local] [--proxy|--no-proxy] [--image IMAGE] [tag]
+  ./build-push.sh true|false [tag]   # backwards-compatible proxy toggle
+
+Environment (.env is supported for the allowlisted variables below):
+  GITHUB_USERNAME       GHCR username for push
+  GITHUB_TOKEN          GHCR token with write:packages for push
+  IMAGE_NAME            Image name, default ghcr.io/austinhmh/memos
+  MEMOS_BUILD_PROXY     Explicit build proxy URL, e.g. http://host.docker.internal:7897
+  MEMOS_PROXY_PORT      Proxy port used when --proxy is set, default 7897
+EOF
+}
+
+die() {
+    echo "错误: $*" >&2
+    exit 1
+}
+
+load_env_file() {
+    local env_file="$1"
+    local line key value
+
+    [ -f "$env_file" ] || return 0
+    echo "加载 .env 配置文件（仅导入脚本允许的变量）..."
+
+    while IFS= read -r line || [ -n "$line" ]; do
+        line="${line%$'\r'}"
+        case "$line" in
+            ''|'#'*) continue ;;
+            export\ *) line="${line#export }" ;;
+        esac
+        [[ "$line" == *=* ]] || continue
+        key="${line%%=*}"
+        value="${line#*=}"
+        key="${key//[[:space:]]/}"
+        value="${value#${value%%[![:space:]]*}}"
+        value="${value%${value##*[![:space:]]}}"
+        if [[ "$value" == \"*\" && "$value" == *\" && ${#value} -ge 2 ]]; then
+            value="${value:1:${#value}-2}"
+        elif [[ "$value" == \'*\' && "$value" == *\' && ${#value} -ge 2 ]]; then
+            value="${value:1:${#value}-2}"
+        fi
+
+        [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die ".env 中存在非法变量名: $key"
+        case "$key" in
+            GITHUB_USERNAME|GITHUB_TOKEN|IMAGE_NAME|MEMOS_BUILD_PROXY|MEMOS_PROXY_PORT)
+                if [ -z "${!key+x}" ]; then
+                    export "$key=$value"
+                fi
+                ;;
+            *)
+                echo "  忽略 .env 中未允许的变量: $key"
+                ;;
+        esac
+    done < "$env_file"
+}
+
+validate_tag() {
+    local tag="$1"
+    [[ "$tag" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || die "非法镜像标签: $tag"
+}
+
+validate_image_name() {
+    local image="$1"
+    [ -n "$image" ] || die "IMAGE_NAME 不能为空"
+    [[ "$image" != -* ]] || die "IMAGE_NAME 不能以 '-' 开头"
+    [[ ! "$image" =~ [[:space:][:cntrl:]\;\`\'\"\|\&\<\>\$] ]] || die "IMAGE_NAME 包含非法字符"
+}
+
+validate_port() {
+    local port="$1"
+    [[ "$port" =~ ^[0-9]+$ ]] || die "非法代理端口: $port"
+    [ "$port" -ge 1 ] && [ "$port" -le 65535 ] || die "代理端口超出范围: $port"
+}
+
+validate_proxy_url() {
+    local proxy_url="$1"
+    [[ "$proxy_url" =~ ^https?://[^[:space:]@/]+(:[0-9]+)?/?$ || "$proxy_url" =~ ^https?://\[[0-9A-Fa-f:]+\](:[0-9]+)?/?$ ]] || die "非法代理 URL: $proxy_url"
+    [[ ! "$proxy_url" =~ ^https?://[^/]*@ ]] || die "代理 URL 不能包含用户名或密码"
+}
+
+require_dockerignore_rule() {
+    local rule="$1"
+    if ! grep -Fxq -- "$rule" .dockerignore; then
+        die ".dockerignore 缺少必要规则: $rule"
+    fi
+}
+
+verify_build_context_guards() {
+    local required_rules=(
+        ".env"
+        ".env.*"
+        ".npmrc"
+        ".yarnrc*"
+        ".netrc"
+        ".aws/"
+        ".ssh/"
+        ".kube/"
+        "credentials.json"
+        "secrets.json"
+        "service-account*.json"
+        "*.secret"
+        "*.token"
+        "*.pem"
+        "*.key"
+        "*.db"
+        ".pnpm-store"
+        "data/"
+    )
+    local rule
+
+    [ -f .dockerignore ] || die "缺少 .dockerignore，拒绝构建以避免打包敏感文件"
+    for rule in "${required_rules[@]}"; do
+        require_dockerignore_rule "$rule"
+    done
+}
+
+load_env_file ".env"
+
+IMAGE_NAME="${IMAGE_NAME:-ghcr.io/austinhmh/memos}"
 DOCKERFILE="scripts/Dockerfile"
-PROXY="http://127.0.0.1:7897"
-
 LOCAL_ONLY=false
-NO_PROXY=false
+USE_PROXY=false
 VERSION_TAG="latest"
+TAG_SET=false
 
-for arg in "$@"; do
-    case "$arg" in
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --help|-h)
+            usage
+            exit 0
+            ;;
         --local)
             LOCAL_ONLY=true
             ;;
-        --no-proxy|false)
-            NO_PROXY=true
+        --proxy|true)
+            USE_PROXY=true
             ;;
-        true)
-            NO_PROXY=false
+        --no-proxy|false)
+            USE_PROXY=false
+            ;;
+        --image)
+            shift
+            [ "$#" -gt 0 ] || die "--image 需要参数"
+            IMAGE_NAME="$1"
+            ;;
+        --image=*)
+            IMAGE_NAME="${1#--image=}"
             ;;
         --*)
+            die "未知参数: $1"
             ;;
         *)
-            VERSION_TAG="$arg"
+            if [ "$TAG_SET" = true ]; then
+                die "只能指定一个镜像标签"
+            fi
+            VERSION_TAG="$1"
+            TAG_SET=true
             ;;
     esac
+    shift
 done
 
-if [ -f .env ]; then
-    echo "加载 .env 配置文件..."
-    set -a
-    source .env
-    set +a
-else
-    echo "未找到 .env 文件，使用环境变量"
-fi
+validate_tag "$VERSION_TAG"
+validate_image_name "$IMAGE_NAME"
+verify_build_context_guards
 
 if [ "$LOCAL_ONLY" = false ]; then
-    if [ -z "$GITHUB_USERNAME" ]; then
-        echo "错误: 请在 .env 文件或环境变量中设置 GITHUB_USERNAME"
-        exit 1
-    fi
-    if [ -z "$GITHUB_TOKEN" ]; then
-        echo "错误: 请在 .env 文件或环境变量中设置 GITHUB_TOKEN"
-        echo "GITHUB_TOKEN 需要 write:packages 权限"
-        exit 1
-    fi
+    [ -n "${GITHUB_USERNAME:-}" ] || die "请通过环境变量或 .env 设置 GITHUB_USERNAME"
+    [ -n "${GITHUB_TOKEN:-}" ] || die "请通过环境变量或 .env 设置 GITHUB_TOKEN（需要 write:packages 权限）"
+    [[ "${GITHUB_TOKEN}" != ghp_replace* ]] || die "GITHUB_TOKEN 仍是示例占位值"
 fi
 
 HOST_ARCH=$(uname -m)
 case "$HOST_ARCH" in
-    x86_64)        TARGET_ARCH="amd64" ;;
+    x86_64) TARGET_ARCH="amd64" ;;
     aarch64|arm64) TARGET_ARCH="arm64" ;;
-    *)             TARGET_ARCH="amd64" ;;
+    *) TARGET_ARCH="amd64" ;;
 esac
 
-PROXY_BUILD_ARGS=""
-if [ "$NO_PROXY" = false ]; then
-    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        CONTAINER_PROXY="http://172.17.0.1:7897"
-        DOCKER_EXTRA_ARGS="--add-host=host.docker.internal:host-gateway"
+DOCKER_BUILD_ARGS=()
+DOCKER_EXTRA_ARGS=()
+CONTAINER_PROXY=""
+if [ "$USE_PROXY" = true ] || [ -n "${MEMOS_BUILD_PROXY:-}" ]; then
+    PROXY_PORT="${MEMOS_PROXY_PORT:-7897}"
+    validate_port "$PROXY_PORT"
+    if [ -n "${MEMOS_BUILD_PROXY:-}" ]; then
+        CONTAINER_PROXY="$MEMOS_BUILD_PROXY"
+    elif [[ "${OSTYPE:-}" == linux-gnu* ]]; then
+        CONTAINER_PROXY="http://172.17.0.1:${PROXY_PORT}"
+        DOCKER_EXTRA_ARGS+=(--add-host=host.docker.internal:host-gateway)
     else
-        DOCKER_EXTRA_ARGS="--add-host=host.docker.internal:host-gateway"
-        HOST_IP=$(docker run --rm --add-host=host.docker.internal:host-gateway alpine:3.21 sh -c "getent hosts host.docker.internal | awk '{print \$1}'" 2>/dev/null)
-        if [ -z "$HOST_IP" ]; then
-            HOST_IP="192.168.5.2"
-        fi
-        CONTAINER_PROXY="http://${HOST_IP}:7897"
+        CONTAINER_PROXY="http://host.docker.internal:${PROXY_PORT}"
+        DOCKER_EXTRA_ARGS+=(--add-host=host.docker.internal:host-gateway)
     fi
-    PROXY_BUILD_ARGS="--build-arg HTTP_PROXY=$CONTAINER_PROXY --build-arg HTTPS_PROXY=$CONTAINER_PROXY"
-    echo "容器代理:   $CONTAINER_PROXY"
-else
-    DOCKER_EXTRA_ARGS=""
+    validate_proxy_url "$CONTAINER_PROXY"
+    DOCKER_BUILD_ARGS+=(--build-arg "HTTP_PROXY=$CONTAINER_PROXY" --build-arg "HTTPS_PROXY=$CONTAINER_PROXY")
 fi
 
-echo "=========================================="
-echo "Memos 构建$([ "$LOCAL_ONLY" = true ] && echo "" || echo "并推送")"
-echo "=========================================="
-echo "镜像名称:   $IMAGE_NAME"
-echo "版本标签:   $VERSION_TAG"
-echo "目标架构:   linux/$TARGET_ARCH"
-echo "仅本地构建: $LOCAL_ONLY"
-echo "使用代理:   $([ "$NO_PROXY" = true ] && echo "否" || echo "是")"
-echo "=========================================="
+cat <<EOF
+==========================================
+Memos 构建$([ "$LOCAL_ONLY" = true ] && echo "" || echo "并推送")
+==========================================
+镜像名称:   $IMAGE_NAME
+版本标签:   $VERSION_TAG
+目标架构:   linux/$TARGET_ARCH
+仅本地构建: $LOCAL_ONLY
+使用代理:   $([ -n "$CONTAINER_PROXY" ] && echo "是" || echo "否")
+==========================================
+EOF
 
 if [ ! -f "$DOCKERFILE" ]; then
-    echo "错误: 找不到 $DOCKERFILE，请在 memos 项目根目录执行"
-    exit 1
+    die "找不到 $DOCKERFILE，请在 memos 项目根目录执行"
 fi
 
-# ── 步骤 1: 构建前端 ──────────────────────────────────
 echo ""
 echo "[ 1/5 ] 构建前端 (pnpm release → server/router/frontend/dist/) ..."
-
-if ! command -v pnpm &>/dev/null; then
+if command -v pnpm >/dev/null 2>&1; then
+    PNPM_CMD=(pnpm)
+elif command -v npx >/dev/null 2>&1; then
     echo "  pnpm 未安装，尝试使用 npx pnpm ..."
-    PNPM_CMD="npx pnpm"
+    PNPM_CMD=(npx pnpm)
 else
-    PNPM_CMD="pnpm"
+    die "未找到 pnpm 或 npx"
 fi
 
-cd web
-$PNPM_CMD install --frozen-lockfile 2>/dev/null || $PNPM_CMD install
-$PNPM_CMD release
-cd ..
+(
+    cd web
+    "${PNPM_CMD[@]}" install --frozen-lockfile
+    "${PNPM_CMD[@]}" release
+)
 
-# ── 步骤 2: 验证前端构建产物 ──────────────────────────
 echo ""
 echo "[ 2/5 ] 验证前端构建产物 ..."
-
 FRONTEND_DIST="server/router/frontend/dist"
-if [ ! -f "$FRONTEND_DIST/index.html" ]; then
-    echo "错误: 前端构建失败，未找到 $FRONTEND_DIST/index.html"
-    exit 1
-fi
+[ -f "$FRONTEND_DIST/index.html" ] || die "前端构建失败，未找到 $FRONTEND_DIST/index.html"
 DIST_SIZE=$(du -sh "$FRONTEND_DIST" | cut -f1)
 FILE_COUNT=$(find "$FRONTEND_DIST" -type f | wc -l | tr -d ' ')
 echo "  产物目录: $FRONTEND_DIST"
 echo "  总大小:   $DIST_SIZE ($FILE_COUNT 个文件)"
 
-# ── 步骤 3: 构建 Docker 镜像（始终 no-cache）─────────
 echo ""
 echo "[ 3/5 ] 构建 Docker 镜像 (--no-cache, linux/$TARGET_ARCH) ..."
-
-# 清除 shell 代理变量，防止 Docker daemon 自动继承导致 apk 失败
-unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy
-
-docker build \
+env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy \
+    docker build \
     --no-cache \
     -f "$DOCKERFILE" \
     --platform "linux/$TARGET_ARCH" \
-    --build-arg VERSION="$VERSION_TAG" \
-    $PROXY_BUILD_ARGS \
-    $DOCKER_EXTRA_ARGS \
+    --build-arg "VERSION=$VERSION_TAG" \
+    "${DOCKER_BUILD_ARGS[@]}" \
+    "${DOCKER_EXTRA_ARGS[@]}" \
     -t "memos:$VERSION_TAG" \
     --progress=plain \
     .
 
-if [ $? -ne 0 ]; then
-    echo "错误: Docker 镜像构建失败"
-    exit 1
-fi
-
-# ── 步骤 4: 打标签 ───────────────────────────────────
 echo ""
 echo "[ 4/5 ] 打标签 ..."
-if docker image inspect "$IMAGE_NAME:$VERSION_TAG" &>/dev/null; then
+if docker image inspect "$IMAGE_NAME:$VERSION_TAG" >/dev/null 2>&1; then
     docker rmi -f "$IMAGE_NAME:$VERSION_TAG" >/dev/null
 fi
 docker tag "memos:$VERSION_TAG" "$IMAGE_NAME:$VERSION_TAG"
 if [ "$VERSION_TAG" != "latest" ]; then
-    if docker image inspect "$IMAGE_NAME:latest" &>/dev/null; then
+    if docker image inspect "$IMAGE_NAME:latest" >/dev/null 2>&1; then
         docker rmi -f "$IMAGE_NAME:latest" >/dev/null
     fi
     docker tag "memos:$VERSION_TAG" "$IMAGE_NAME:latest"
@@ -177,27 +279,28 @@ fi
 echo "  memos:$VERSION_TAG"
 echo "  $IMAGE_NAME:$VERSION_TAG"
 
-# ── 步骤 5: 推送（可选）─────────────────────────────
 if [ "$LOCAL_ONLY" = true ]; then
     echo ""
     echo "[ 5/5 ] 跳过推送 (--local 模式)"
 else
     echo ""
     echo "[ 5/5 ] 登录并推送镜像到 GHCR ..."
-    echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_USERNAME" --password-stdin
+    printf '%s\n' "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_USERNAME" --password-stdin
     docker push "$IMAGE_NAME:$VERSION_TAG"
     if [ "$VERSION_TAG" != "latest" ]; then
         docker push "$IMAGE_NAME:latest"
     fi
 fi
 
-echo ""
-echo "=========================================="
-echo "构建完成！"
-echo "=========================================="
-echo "本地镜像:  memos:$VERSION_TAG"
-echo "远程镜像:  $IMAGE_NAME:$VERSION_TAG"
-echo ""
-echo "本地部署:  ./pull.sh --local"
-echo "远程部署:  ./pull.sh"
-echo "=========================================="
+cat <<EOF
+
+==========================================
+构建完成！
+==========================================
+本地镜像:  memos:$VERSION_TAG
+远程镜像:  $IMAGE_NAME:$VERSION_TAG
+
+本地部署:  ./pull.sh --local
+远程部署:  ./pull.sh
+==========================================
+EOF

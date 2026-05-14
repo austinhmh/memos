@@ -9,6 +9,9 @@ on:
     paths:
       - "proto/**"
 
+permissions:
+  contents: read
+
 jobs:
   lint-protos:
     runs-on: ubuntu-latest

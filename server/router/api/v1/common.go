@@ -142,6 +142,22 @@ func (s *APIV1Service) checkMemoVisibility(ctx context.Context, memo *store.Memo
 	return nil
 }
 
+func (s *APIV1Service) checkMemoParentVisibility(ctx context.Context, memo *store.Memo) error {
+	if memo == nil || memo.ParentUID == nil {
+		return nil
+	}
+	normalStatus := store.Normal
+	parentMemo, err := s.Store.GetMemo(ctx, &store.FindMemo{
+		UID:              memo.ParentUID,
+		RowStatus:        &normalStatus,
+		CreatorRowStatus: &normalStatus,
+	})
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to get parent memo")
+	}
+	return s.checkMemoVisibility(ctx, parentMemo)
+}
+
 func (s *APIV1Service) ensureAttachmentAccessible(ctx context.Context, attachment *store.Attachment, user *store.User) error {
 	if attachment == nil {
 		return status.Errorf(codes.NotFound, "attachment not found")

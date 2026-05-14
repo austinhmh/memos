@@ -35,7 +35,7 @@ const AttachmentIcon = (props: Props) => {
   const strokeWidth = props.strokeWidth;
 
   const previewResource = () => {
-    window.open(attachmentUrl);
+    window.open(attachmentUrl, "_blank", "noopener,noreferrer");
   };
 
   const handleImageClick = () => {

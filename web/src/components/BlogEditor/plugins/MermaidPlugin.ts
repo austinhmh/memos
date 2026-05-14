@@ -3,6 +3,7 @@ import type { Transaction } from "prosemirror-state";
 import { Plugin, PluginKey, TextSelection } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import { Decoration, DecorationSet } from "prosemirror-view";
+import { getRenderLimitMessage, MERMAID_RENDER_LIMIT } from "@/lib/markdown/renderLimits";
 import { normalizeMermaidCode } from "@/lib/mermaid/normalizeMermaidCode";
 import { sanitizeSvg } from "@/lib/sanitize-svg";
 
@@ -203,6 +204,18 @@ class MermaidRenderer {
 
     if (renderKey === this.lastRenderedKey) return;
 
+    const limitMessage = getRenderLimitMessage(text, MERMAID_RENDER_LIMIT);
+    if (limitMessage) {
+      this.lastRenderedKey = renderKey;
+      element.classList.add("parse-error");
+      element.classList.remove("empty");
+      element.innerText = limitMessage;
+      element.dataset.renderState = "error";
+      element.setAttribute("aria-busy", "false");
+      this.setRetryVisible(false);
+      return;
+    }
+
     const cache = Cache.get(renderKey);
     if (cache) {
       this.lastRenderedKey = renderKey;
@@ -245,7 +258,7 @@ class MermaidRenderer {
       });
 
       const normalized = normalizeMermaidCode(text);
-      const { svg, bindFunctions } = await mermaidLib.render(tempId, normalized);
+      const { svg } = await mermaidLib.render(tempId, normalized);
       const safeSvg = sanitizeSvg(svg);
       if (!safeSvg) {
         throw new Error("Unsafe Mermaid SVG output");
@@ -257,7 +270,6 @@ class MermaidRenderer {
       this.lastRenderedKey = renderKey;
       element.classList.remove("parse-error", "empty");
       element.innerHTML = safeSvg;
-      bindFunctions?.(element);
       delete element.dataset.renderState;
       element.setAttribute("aria-busy", "false");
       this.setRetryVisible(false);

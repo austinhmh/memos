@@ -48,4 +48,13 @@ describe("attachment urls", () => {
     expect(getAttachmentUrl(attachment)).toBe("");
     expect(getAttachmentThumbnailUrl(attachment)).toBe("data:image/png;base64,aGVsbG8=");
   });
+
+  it("drops mailto external attachment resource links", () => {
+    const attachment = create(AttachmentSchema, {
+      externalLink: "mailto:test@example.com",
+    });
+
+    expect(getAttachmentUrl(attachment)).toBe("");
+    expect(getAttachmentThumbnailUrl(attachment)).toBe("");
+  });
 });

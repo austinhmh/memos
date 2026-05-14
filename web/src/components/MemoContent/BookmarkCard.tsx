@@ -1,7 +1,7 @@
 import { ExternalLinkIcon, PencilIcon } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { useURLMetadata } from "@/hooks/useURLMetadata";
-import { sanitizeUrl } from "@/lib/sanitize-url";
+import { sanitizeImageUrl, sanitizeUrl } from "@/lib/sanitize-url";
 import { cn } from "@/lib/utils";
 
 interface BookmarkCardProps {
@@ -98,8 +98,8 @@ export default function BookmarkCard({ url: initialUrl, onUrlChange }: BookmarkC
 
   const safeCurrentUrl = sanitizeUrl(currentUrl);
   if (!safeCurrentUrl) return null;
-  const safeFaviconUrl = sanitizeUrl(data.favicon || "");
-  const safeImageUrl = sanitizeUrl(data.image || "");
+  const safeFaviconUrl = sanitizeImageUrl(data.favicon || "");
+  const safeImageUrl = sanitizeImageUrl(data.image || "");
   const domain = extractDomain(safeCurrentUrl);
 
   return (

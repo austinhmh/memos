@@ -154,8 +154,14 @@ export function createHeadingIdPlugin(): Plugin<HeadingIdState> {
         if (!href || !href.startsWith("#")) return false;
 
         event.preventDefault();
-        const targetId = decodeURIComponent(href.substring(1));
-        const targetEl = document.getElementById(targetId);
+        const rawTargetId = href.substring(1);
+        let targetId = rawTargetId;
+        try {
+          targetId = decodeURIComponent(rawTargetId);
+        } catch {
+          targetId = rawTargetId;
+        }
+        const targetEl = document.getElementById(rawTargetId) || document.getElementById(targetId);
         if (targetEl) {
           targetEl.scrollIntoView({ behavior: "smooth", block: "start" });
         }

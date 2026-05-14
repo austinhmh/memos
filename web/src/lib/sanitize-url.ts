@@ -6,9 +6,8 @@ export function sanitizeUrl(url: string | null | undefined): string {
   }
 
   try {
-    const base = typeof window !== "undefined" ? window.location.origin : "https://example.com";
-    const parsed = new URL(trimmed, base);
-    if (!isAllowedUrlProtocol(parsed.protocol)) {
+    const parsed = new URL(trimmed, getUrlBase());
+    if (!isAllowedNavigationProtocol(parsed.protocol)) {
       return "";
     }
     return parsed.toString();
@@ -24,7 +23,39 @@ export function sanitizeExternalUrl(url: string | null | undefined): string {
 
   try {
     const parsed = new URL(trimmed);
-    if (!isAllowedUrlProtocol(parsed.protocol)) {
+    if (!isAllowedNavigationProtocol(parsed.protocol)) {
+      return "";
+    }
+    return parsed.toString();
+  } catch {
+    return "";
+  }
+}
+
+export function sanitizeResourceUrl(url: string | null | undefined): string {
+  if (!url) return "";
+  const trimmed = url.trim();
+  if (!trimmed || trimmed.startsWith("#")) return "";
+
+  try {
+    const parsed = new URL(trimmed, getUrlBase());
+    if (!isAllowedResourceProtocol(parsed.protocol)) {
+      return "";
+    }
+    return isAbsoluteUrl(trimmed) ? parsed.toString() : trimmed;
+  } catch {
+    return "";
+  }
+}
+
+export function sanitizeExternalResourceUrl(url: string | null | undefined): string {
+  if (!url) return "";
+  const trimmed = url.trim();
+  if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("//")) return "";
+
+  try {
+    const parsed = new URL(trimmed);
+    if (!isAllowedResourceProtocol(parsed.protocol)) {
       return "";
     }
     return parsed.toString();
@@ -36,21 +67,37 @@ export function sanitizeExternalUrl(url: string | null | undefined): string {
 export function sanitizeImageUrl(url: string | null | undefined): string {
   if (!url) return "";
   const trimmed = url.trim();
-  if (/^data:image\/(png|jpe?g|gif|webp|avif|bmp|heic|heif);base64,[a-z0-9+/=]+$/i.test(trimmed)) {
+  if (isSafeImageDataUrl(trimmed)) {
     return trimmed;
   }
-  return sanitizeUrl(trimmed);
+  return sanitizeResourceUrl(trimmed);
 }
 
 export function sanitizeExternalImageUrl(url: string | null | undefined): string {
   if (!url) return "";
   const trimmed = url.trim();
-  if (/^data:image\/(png|jpe?g|gif|webp|avif|bmp|heic|heif);base64,[a-z0-9+/=]+$/i.test(trimmed)) {
+  if (isSafeImageDataUrl(trimmed)) {
     return trimmed;
   }
-  return sanitizeExternalUrl(trimmed);
+  return sanitizeExternalResourceUrl(trimmed);
 }
 
-function isAllowedUrlProtocol(protocol: string): boolean {
+function getUrlBase(): string {
+  return typeof window !== "undefined" ? window.location.origin : "https://example.com";
+}
+
+function isAbsoluteUrl(url: string): boolean {
+  return /^[a-z][a-z0-9+.-]*:/i.test(url) || url.startsWith("//");
+}
+
+function isSafeImageDataUrl(url: string): boolean {
+  return /^data:image\/(png|jpe?g|gif|webp|avif|bmp|heic|heif);base64,[a-z0-9+/=]+$/i.test(url);
+}
+
+function isAllowedNavigationProtocol(protocol: string): boolean {
   return protocol === "http:" || protocol === "https:" || protocol === "mailto:";
+}
+
+function isAllowedResourceProtocol(protocol: string): boolean {
+  return protocol === "http:" || protocol === "https:";
 }

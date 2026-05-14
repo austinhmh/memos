@@ -2,7 +2,7 @@ import type { Node } from "prosemirror-model";
 import type { EditorState, Transaction } from "prosemirror-state";
 import { NodeSelection, Plugin, PluginKey } from "prosemirror-state";
 import type { EditorView, NodeView } from "prosemirror-view";
-import { sanitizeUrl } from "@/lib/sanitize-url";
+import { sanitizeImageUrl, sanitizeUrl } from "@/lib/sanitize-url";
 
 export const bookmarkPluginKey = new PluginKey<BookmarkState>("bookmark");
 
@@ -326,7 +326,7 @@ class BookmarkNodeView implements NodeView {
 
     link.appendChild(body);
 
-    const safeImageUrl = sanitizeUrl(data.image);
+    const safeImageUrl = sanitizeImageUrl(data.image);
     if (safeImageUrl) {
       const thumb = document.createElement("div");
       thumb.className = "bookmark-tg-thumb";

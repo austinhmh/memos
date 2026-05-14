@@ -64,7 +64,7 @@ echo "测试 4: 测试前端构建"
 echo "----------------------------------------"
 cd web
 echo "安装依赖..."
-pnpm install --silent
+pnpm install --frozen-lockfile --silent
 echo "✓ 依赖安装成功"
 
 echo "构建前端..."

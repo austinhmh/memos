@@ -424,7 +424,13 @@ function renderInline(tokens: Token[], rawContent: string): React.ReactNode[] {
                 onClick: (e: React.MouseEvent) => {
                   e.preventDefault();
                   const targetId = href.slice(1);
-                  const el = document.getElementById(targetId) || document.getElementById(decodeURIComponent(targetId));
+                  let decodedTargetId = targetId;
+                  try {
+                    decodedTargetId = decodeURIComponent(targetId);
+                  } catch {
+                    // Keep the raw hash for malformed percent-encoding.
+                  }
+                  const el = document.getElementById(targetId) || document.getElementById(decodedTargetId);
                   if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
                 },
               }

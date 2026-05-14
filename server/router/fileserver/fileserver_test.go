@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 
@@ -11,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/usememos/memos/internal/profile"
+	storepb "github.com/usememos/memos/proto/gen/store"
 	"github.com/usememos/memos/server/auth"
 	"github.com/usememos/memos/store"
 	teststore "github.com/usememos/memos/store/test"
@@ -302,6 +305,70 @@ func TestServeAttachmentFileCacheHeadersByVisibility(t *testing.T) {
 		require.Equal(t, "Authorization, Cookie", rec.Header().Get("Vary"))
 		require.Equal(t, tt.wantResponse, rec.Body.String())
 	}
+}
+
+func TestServeAttachmentFileLocalStorageSupportsRangeRequests(t *testing.T) {
+	ctx := context.Background()
+	testStore := teststore.NewTestingStore(ctx, t)
+	defer testStore.Close()
+
+	dataDir := t.TempDir()
+	attachmentPath := filepath.Join(dataDir, "assets", "local-range.txt")
+	require.NoError(t, os.MkdirAll(filepath.Dir(attachmentPath), 0750))
+	require.NoError(t, os.WriteFile(attachmentPath, []byte("0123456789"), 0600))
+
+	owner, err := testStore.CreateUser(ctx, &store.User{Username: "local-range-owner", Role: store.RoleUser, Email: "local-range-owner@example.com"})
+	require.NoError(t, err)
+	memo, err := testStore.CreateMemo(ctx, &store.Memo{UID: "local-range-memo", CreatorID: owner.ID, Content: "public local", Visibility: store.Public, RowStatus: store.Normal})
+	require.NoError(t, err)
+	attachment, err := testStore.CreateAttachment(ctx, &store.Attachment{
+		UID:         "local-range-attachment",
+		CreatorID:   owner.ID,
+		Filename:    "local-range.txt",
+		Type:        "text/plain",
+		Size:        10,
+		StorageType: storepb.AttachmentStorageType_LOCAL,
+		Reference:   filepath.Join("assets", "local-range.txt"),
+		MemoID:      &memo.ID,
+	})
+	require.NoError(t, err)
+
+	service := NewFileServerService(&profile.Profile{Mode: "dev", Data: dataDir}, testStore, "file-secret")
+	e := echo.New()
+	e.GET("/file/attachments/:uid/:filename", service.serveAttachmentFile)
+
+	req := httptest.NewRequest(http.MethodGet, "/file/attachments/"+attachment.UID+"/"+attachment.Filename, nil)
+	req.Header.Set("Range", "bytes=2-5")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusPartialContent, rec.Code)
+	require.Equal(t, "bytes 2-5/10", rec.Header().Get("Content-Range"))
+	require.Equal(t, "2345", rec.Body.String())
+}
+
+func TestGetAttachmentBlobRejectsDatabaseBlobAboveUploadLimit(t *testing.T) {
+	ctx := context.Background()
+	testStore := teststore.NewTestingStore(ctx, t)
+	defer testStore.Close()
+
+	_, err := testStore.UpsertInstanceSetting(ctx, &storepb.InstanceSetting{
+		Key: storepb.InstanceSettingKey_STORAGE,
+		Value: &storepb.InstanceSetting_StorageSetting{
+			StorageSetting: &storepb.InstanceStorageSetting{UploadSizeLimitMb: 1},
+		},
+	})
+	require.NoError(t, err)
+
+	service := NewFileServerService(&profile.Profile{Mode: "dev", Data: t.TempDir()}, testStore, "file-secret")
+	_, err = service.getAttachmentBlob(ctx, &store.Attachment{
+		UID:         "large-db-attachment",
+		Filename:    "large.bin",
+		Type:        "application/octet-stream",
+		StorageType: storepb.AttachmentStorageType_ATTACHMENT_STORAGE_TYPE_UNSPECIFIED,
+		Blob:        make([]byte, 1<<20+1),
+	})
+	require.ErrorContains(t, err, "download size limit")
 }
 
 func TestSafeThumbnailFileKeyRejectsUnsafeUID(t *testing.T) {

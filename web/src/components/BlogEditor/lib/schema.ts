@@ -1,5 +1,5 @@
 import { Schema } from "prosemirror-model";
-import { sanitizeUrl } from "@/lib/sanitize-url";
+import { sanitizeImageUrl, sanitizeUrl } from "@/lib/sanitize-url";
 import { getCellAttrs, setCellAttrs } from "../plugins/TableControlsPlugin";
 
 /**
@@ -247,10 +247,10 @@ export const blogEditorSchema = new Schema({
             const width = img?.getAttribute("width");
             const height = img?.getAttribute("height");
             return {
-              src: sanitizeUrl(img?.getAttribute("src")) || "",
+              src: sanitizeImageUrl(img?.getAttribute("src")) || "",
               alt: img?.getAttribute("alt"),
               title: img?.getAttribute("title"),
-              source: sanitizeUrl(img?.getAttribute("source")) || null,
+              source: sanitizeImageUrl(img?.getAttribute("source")) || null,
               width: width ? parseInt(width, 10) : undefined,
               height: height ? parseInt(height, 10) : undefined,
               layoutClass: layoutClassMatched ? layoutClassMatched[1] : null,
@@ -274,7 +274,7 @@ export const blogEditorSchema = new Schema({
             }
 
             return {
-              src: sanitizeUrl(dom.getAttribute("src")) || "",
+              src: sanitizeImageUrl(dom.getAttribute("src")) || "",
               alt: dom.getAttribute("alt"),
               title: dom.getAttribute("title"),
               width: width ? parseInt(width, 10) : undefined,
@@ -285,8 +285,8 @@ export const blogEditorSchema = new Schema({
       ],
       toDOM: (node) => {
         const className = node.attrs.layoutClass ? `image image-${node.attrs.layoutClass}` : "image";
-        const src = sanitizeUrl(node.attrs.src) || "";
-        const source = sanitizeUrl(node.attrs.source) || null;
+        const src = sanitizeImageUrl(node.attrs.src) || "";
+        const source = sanitizeImageUrl(node.attrs.source) || null;
         return [
           "div",
           { class: className },

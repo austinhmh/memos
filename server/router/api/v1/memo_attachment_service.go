@@ -2,6 +2,7 @@ package v1
 
 import (
 	"context"
+	"log/slog"
 	"slices"
 	"time"
 
@@ -76,10 +77,16 @@ func (s *APIV1Service) SetMemoAttachments(ctx context.Context, request *v1pb.Set
 			if isAttachmentReferencedByMemoContent(memo.Content, attachment.UID) {
 				return nil, status.Errorf(codes.FailedPrecondition, "attachment is still referenced by memo content")
 			}
-			if err = s.Store.DeleteAttachment(ctx, &store.DeleteAttachment{
+		if err = s.Store.DeleteAttachment(ctx, &store.DeleteAttachment{
 				ID:     int32(attachment.ID),
 				MemoID: &memo.ID,
 			}); err != nil {
+				slog.Warn("Failed to delete attachment removed from memo attachment list",
+					"error", err,
+					"memo_id", memo.ID,
+					"attachment_id", attachment.ID,
+					"attachment_uid", attachment.UID,
+					"reference", attachment.Reference)
 				return nil, status.Errorf(codes.Internal, "failed to delete attachment")
 			}
 		}

@@ -99,7 +99,7 @@ func (s *APIV1Service) CreateMemo(ctx context.Context, request *v1pb.CreateMemoR
 		return nil, status.Errorf(codes.InvalidArgument, "content too long (max %d characters)", contentLengthLimit)
 	}
 	if err := memopayload.RebuildMemoPayload(create, s.MarkdownService); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to rebuild memo payload: %v", err)
+		return nil, internalError("failed to rebuild memo payload", err)
 	}
 	if request.Memo.Location != nil {
 		create.Payload.Location = convertLocationToStore(request.Memo.Location)
@@ -238,7 +238,7 @@ func (s *APIV1Service) ListMemos(ctx context.Context, request *v1pb.ListMemosReq
 	memoFind.Offset = &offset
 	memos, err := s.Store.ListMemos(ctx, memoFind)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to list memos: %v", err)
+		return nil, internalError("failed to list memos", err)
 	}
 
 	memoMessages := []*v1pb.Memo{}
@@ -247,7 +247,7 @@ func (s *APIV1Service) ListMemos(ctx context.Context, request *v1pb.ListMemosReq
 		memos = memos[:limit]
 		nextPageToken, err = getPageToken(limit, offset+limit)
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to get next page token, error: %v", err)
+			return nil, internalError("failed to get next page token", err)
 		}
 	}
 
@@ -408,7 +408,7 @@ func (s *APIV1Service) UpdateMemo(ctx context.Context, request *v1pb.UpdateMemoR
 			}
 			memo.Content = request.Memo.Content
 			if err := memopayload.RebuildMemoPayload(memo, s.MarkdownService); err != nil {
-				return nil, status.Errorf(codes.Internal, "failed to rebuild memo payload: %v", err)
+				return nil, internalError("failed to rebuild memo payload", err)
 			}
 			update.Content = &memo.Content
 			update.Payload = memo.Payload
@@ -836,7 +836,7 @@ func (s *APIV1Service) ListMemoComments(ctx context.Context, request *v1pb.ListM
 	if hasMore {
 		nextPageToken, err = getPageToken(limit, offset+limit)
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to get next page token: %v", err)
+			return nil, internalError("failed to get next page token", err)
 		}
 	}
 
@@ -983,14 +983,24 @@ func (s *APIV1Service) cleanupUnreferencedAttachments(ctx context.Context, memoI
 		return errors.New("memo not found")
 	}
 
-	// 2. Check if payload has image URLs
-	if memo.Payload == nil || len(memo.Payload.ImageUrls) == 0 {
-		slog.Debug("No image URLs in payload, skipping cleanup",
-			"memo_id", memoID)
-		return nil
+	// Build a set of referenced UIDs from image URLs. A memo payload may be absent
+	// or contain no image URLs; content references still need to protect attachments
+	// from cleanup in those cases.
+	referencedUIDs := make(map[string]bool)
+	if memo.Payload != nil {
+		for _, url := range memo.Payload.ImageUrls {
+			if uid := extractAttachmentUID(url); uid != "" {
+				referencedUIDs[uid] = true
+			}
+		}
 	}
 
-	// 3. Get all attachments for this memo
+	slog.Debug("Extracted referenced UIDs from image URLs",
+		"memo_id", memoID,
+		"image_urls_count", len(referencedUIDs),
+		"referenced_uids", referencedUIDs)
+
+	// Get all attachments for this memo.
 	attachments, err := s.Store.ListAttachments(ctx, &store.FindAttachment{
 		MemoID: &memoID,
 	})
@@ -1008,41 +1018,31 @@ func (s *APIV1Service) cleanupUnreferencedAttachments(ctx context.Context, memoI
 		"memo_id", memoID,
 		"attachment_count", len(attachments))
 
-	// 4. Build a set of referenced UIDs from image URLs
-	referencedUIDs := make(map[string]bool)
-	for _, url := range memo.Payload.ImageUrls {
-		if uid := extractAttachmentUID(url); uid != "" {
-			referencedUIDs[uid] = true
-		}
-	}
-
-	slog.Debug("Extracted referenced UIDs from image URLs",
-		"memo_id", memoID,
-		"image_urls", memo.Payload.ImageUrls,
-		"referenced_uids", referencedUIDs)
-
-	// 5. Delete unreferenced attachments
 	deletedCount := 0
 	for _, att := range attachments {
-		if !referencedUIDs[att.UID] {
-			slog.Info("Deleting unreferenced attachment",
+		if referencedUIDs[att.UID] || isAttachmentReferencedByMemoContent(memo.Content, att.UID) {
+			continue
+		}
+		slog.Info("Deleting unreferenced attachment",
+			"memo_id", memoID,
+			"attachment_id", att.ID,
+			"attachment_uid", att.UID,
+			"filename", att.Filename)
+
+		if err = s.Store.DeleteAttachment(ctx, &store.DeleteAttachment{
+			ID:     att.ID,
+			MemoID: &memoID,
+		}); err != nil {
+			slog.Error("Failed to delete unreferenced attachment",
+				"error", err,
 				"memo_id", memoID,
 				"attachment_id", att.ID,
 				"attachment_uid", att.UID,
-				"filename", att.Filename)
-
-			if err := s.Store.DeleteAttachment(ctx, &store.DeleteAttachment{
-				ID: att.ID,
-			}); err != nil {
-				slog.Error("Failed to delete unreferenced attachment",
-					"error", err,
-					"memo_id", memoID,
-					"attachment_id", att.ID)
-				// Continue with other attachments
-				continue
-			}
-			deletedCount++
+				"reference", att.Reference)
+			// Continue with other attachments
+			continue
 		}
+		deletedCount++
 	}
 
 	slog.Info("Cleanup completed",
@@ -1070,7 +1070,7 @@ func extractAttachmentUID(rawURL string) string {
 
 	if strings.HasPrefix(path, "/file/attachments/") {
 		parts := strings.Split(strings.TrimPrefix(path, "/file/attachments/"), "/")
-		if len(parts) > 0 && parts[0] != "" {
+		if len(parts) > 0 && parts[0] != "" && base.UIDMatcher.MatchString(parts[0]) {
 			return parts[0]
 		}
 	}

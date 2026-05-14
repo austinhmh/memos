@@ -2,10 +2,18 @@ services:
   memos:
     image: memos:latest
     container_name: memos
+    user: "10001:10001"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
     volumes:
-      - memos-data:/var/opt/memos
+      - memos-data:/var/opt/memos:rw
     ports:
-      - 5230:5230
+      - "127.0.0.1:5230:5230"
     restart: unless-stopped
 
 volumes:

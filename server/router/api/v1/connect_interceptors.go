@@ -45,6 +45,7 @@ func (*MetadataInterceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc 
 
 		// Set metadata in context so services can use metadata.FromIncomingContext()
 		ctx = metadata.NewIncomingContext(ctx, md)
+		ctx = contextWithRequestIP(ctx, req.Peer().Addr)
 
 		// Execute the request
 		resp, err := next(ctx, req)

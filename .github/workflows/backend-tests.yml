@@ -11,6 +11,9 @@ on:
       - "go.sum"
       - "**.go"
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true

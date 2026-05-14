@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"errors"
 	"net/http"
 
 	"connectrpc.com/connect"
@@ -67,9 +68,12 @@ func convertGRPCError(err error) error {
 		return nil
 	}
 	if st, ok := status.FromError(err); ok {
+		if st.Code() == codes.Internal {
+			return connect.NewError(connect.CodeInternal, errors.New(internalServerErrorMessage))
+		}
 		return connect.NewError(grpcCodeToConnectCode(st.Code()), err)
 	}
-	return connect.NewError(connect.CodeInternal, err)
+	return connect.NewError(connect.CodeInternal, errors.New(internalServerErrorMessage))
 }
 
 // grpcCodeToConnectCode converts gRPC status codes to Connect error codes.

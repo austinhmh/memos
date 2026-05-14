@@ -7,6 +7,9 @@ on:
     tags:
       - "v*.*.*"
 
+permissions:
+  contents: read
+
 jobs:
   prepare:
     runs-on: ubuntu-latest
@@ -79,6 +82,34 @@ jobs:
         with:
           name: frontend-dist
           path: server/router/frontend/dist
+
+      - name: Verify .dockerignore guards
+        shell: bash
+        run: |
+          required_rules=(
+            ".env"
+            ".env.*"
+            ".npmrc"
+            ".yarnrc*"
+            ".netrc"
+            ".aws/"
+            ".ssh/"
+            ".kube/"
+            "credentials.json"
+            "secrets.json"
+            "service-account*.json"
+            "*.secret"
+            "*.token"
+            "*.pem"
+            "*.key"
+            "*.db"
+            ".pnpm-store"
+            "data/"
+          )
+          test -f .dockerignore
+          for rule in "${required_rules[@]}"; do
+            grep -Fxq -- "$rule" .dockerignore || { echo ".dockerignore missing required rule: $rule" >&2; exit 1; }
+          done
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3

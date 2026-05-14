@@ -2,6 +2,7 @@ package v1
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 
 	"github.com/labstack/echo/v4"
@@ -32,11 +33,11 @@ func (s *APIV1Service) RegisterBackupRoutes(echoServer *echo.Echo) {
 func (s *APIV1Service) handleListBackups(c echo.Context) error {
 	ctx, httpStatus, message := s.authorizeBackupRequest(c)
 	if message != "" {
-		return backupError(c, httpStatus, message)
+		return backupError(c, httpStatus, message, nil)
 	}
 	objects, err := backupsvc.NewService(s.Profile, s.Store).ListBackups(ctx)
 	if err != nil {
-		return backupError(c, http.StatusInternalServerError, err.Error())
+		return backupError(c, http.StatusInternalServerError, internalServerErrorMessage, err, "action", "list_backups")
 	}
 	return c.JSON(http.StatusOK, map[string]any{"backups": objects})
 }
@@ -44,11 +45,11 @@ func (s *APIV1Service) handleListBackups(c echo.Context) error {
 func (s *APIV1Service) handleRunBackup(c echo.Context) error {
 	ctx, httpStatus, message := s.authorizeBackupRequest(c)
 	if message != "" {
-		return backupError(c, httpStatus, message)
+		return backupError(c, httpStatus, message, nil)
 	}
 	object, err := backupsvc.NewService(s.Profile, s.Store).UploadArchive(ctx)
 	if err != nil {
-		return backupError(c, http.StatusInternalServerError, err.Error())
+		return backupError(c, http.StatusInternalServerError, internalServerErrorMessage, err, "action", "run_backup")
 	}
 	return c.JSON(http.StatusOK, object)
 }
@@ -56,25 +57,25 @@ func (s *APIV1Service) handleRunBackup(c echo.Context) error {
 func (s *APIV1Service) handleRestoreBackup(c echo.Context) error {
 	ctx, httpStatus, message := s.authorizeBackupRequest(c)
 	if message != "" {
-		return backupError(c, httpStatus, message)
+		return backupError(c, httpStatus, message, nil)
 	}
 	file, err := c.FormFile("file")
 	if err != nil {
-		return backupError(c, http.StatusBadRequest, "backup file is required")
+		return backupError(c, http.StatusBadRequest, "backup file is required", nil)
 	}
 	reader, err := file.Open()
 	if err != nil {
-		return backupError(c, http.StatusBadRequest, "failed to open backup file")
+		return backupError(c, http.StatusBadRequest, "failed to open backup file", nil)
 	}
 	defer reader.Close()
 	if err := backupsvc.NewService(s.Profile, s.Store).RestoreArchive(ctx, reader); err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return backupError(c, http.StatusRequestTimeout, err.Error())
+			return backupError(c, http.StatusRequestTimeout, "restore request timed out", err, "action", "restore_backup")
 		}
 		if err.Error() == "restore target is not empty" {
-			return backupError(c, http.StatusPreconditionFailed, err.Error())
+			return backupError(c, http.StatusPreconditionFailed, "restore target is not empty", nil)
 		}
-		return backupError(c, http.StatusInternalServerError, err.Error())
+		return backupError(c, http.StatusInternalServerError, internalServerErrorMessage, err, "action", "restore_backup")
 	}
 	return c.JSON(http.StatusOK, map[string]bool{"restored": true})
 }
@@ -104,6 +105,11 @@ func (s *APIV1Service) authorizeBackupRequest(c echo.Context) (context.Context, 
 	return ctx, http.StatusOK, ""
 }
 
-func backupError(c echo.Context, status int, message string) error {
+func backupError(c echo.Context, status int, message string, err error, attrs ...any) error {
+	if err != nil {
+		args := append([]any{"status", status}, attrs...)
+		args = append(args, "error", err)
+		slog.Error("backup route error", args...)
+	}
 	return c.JSON(status, map[string]string{"error": message})
 }

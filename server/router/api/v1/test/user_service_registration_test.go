@@ -56,7 +56,7 @@ func TestCreateUserRegistration(t *testing.T) {
 			},
 		})
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "failed to get current user")
+		require.Equal(t, codes.Unauthenticated, status.Code(err))
 	})
 
 	t.Run("GetUser hides sensitive fields and archived users from public callers", func(t *testing.T) {

@@ -17,7 +17,7 @@ export const SANITIZE_SCHEMA = {
   attributes: {
     ...defaultSchema.attributes,
     div: [...(defaultSchema.attributes?.div || []), "className"],
-    span: [...(defaultSchema.attributes?.span || []), "className", "style", ["aria*"], ["data*"]],
+    span: [...(defaultSchema.attributes?.span || []), "className", ["aria*"], ["data*"]],
     annotation: ["encoding"],
     math: ["xmlns"],
     mi: [],

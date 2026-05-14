@@ -10,6 +10,7 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -35,7 +36,10 @@ const (
 	ThumbnailCacheFolder = ".thumbnail_cache"
 	// thumbnailMaxSize is the maximum size in pixels for the largest dimension of the thumbnail image.
 	thumbnailMaxSize = 600
-	maxAvatarBytes   = 2 << 20
+	// thumbnailMaxPixels limits decoded image dimensions before thumbnail generation.
+	thumbnailMaxPixels int64 = 25_000_000
+	mebiByte                 = 1024 * 1024
+	maxAvatarBytes           = 2 * mebiByte
 )
 
 var SupportedThumbnailMimeTypes = []string{
@@ -44,6 +48,18 @@ var SupportedThumbnailMimeTypes = []string{
 	"image/heic",
 	"image/heif",
 	"image/webp",
+}
+
+func attachmentDownloadLimitBytes(ctx context.Context, stores *store.Store) int64 {
+	storageSetting, err := stores.GetInstanceStorageSetting(ctx)
+	if err != nil {
+		return s3.DefaultMaxGetObjectBytes
+	}
+	limit := storageSetting.GetUploadSizeLimitMb() * mebiByte
+	if limit <= 0 {
+		return s3.DefaultMaxGetObjectBytes
+	}
+	return limit
 }
 
 // FileServerService handles HTTP file serving with proper range request support.
@@ -115,46 +131,7 @@ func (s *FileServerService) serveAttachmentFile(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusNotFound, "attachment not found")
 	}
 
-	// Get the binary content
-	blob, err := s.getAttachmentBlob(ctx, attachment)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get attachment blob").SetInternal(err)
-	}
-
-	// Handle thumbnail requests for images
-	if thumbnail && s.isImageType(attachment.Type) {
-		thumbnailBlob, err := s.getOrGenerateThumbnail(ctx, attachment)
-		if err != nil {
-			// Log warning but fall back to original image
-			c.Logger().Warnf("failed to get thumbnail: %v", err)
-		} else {
-			blob = thumbnailBlob
-		}
-	}
-
-	// Determine content type
-	contentType := attachment.Type
-	// Prevent XSS attacks by serving potentially unsafe files as octet-stream.
-	// Must check BEFORE adding charset to avoid bypassing the check.
-	unsafeTypes := []string{
-		"text/html",
-		"text/javascript",
-		"application/javascript",
-		"application/x-javascript",
-		"text/xml",
-		"application/xml",
-		"application/xhtml+xml",
-		"image/svg+xml",
-	}
-	for _, unsafeType := range unsafeTypes {
-		if strings.EqualFold(contentType, unsafeType) {
-			contentType = "application/octet-stream"
-			break
-		}
-	}
-	if strings.HasPrefix(contentType, "text/") && contentType != "application/octet-stream" {
-		contentType += "; charset=utf-8"
-	}
+	contentType := safeAttachmentContentType(attachment.Type)
 
 	// Set common headers
 	c.Response().Header().Set("Content-Type", contentType)
@@ -176,6 +153,38 @@ func (s *FileServerService) serveAttachmentFile(c echo.Context) error {
 		!strings.HasPrefix(contentType, "audio/") &&
 		contentType != "application/pdf" {
 		c.Response().Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", attachment.Filename))
+	}
+
+	// Handle thumbnail requests for images
+	if thumbnail && s.isImageType(attachment.Type) {
+		thumbnailBlob, err := s.getOrGenerateThumbnail(ctx, attachment)
+		if err != nil {
+			// Log warning but fall back to original image
+			c.Logger().Warnf("failed to get thumbnail: %v", err)
+		} else {
+			return c.Blob(http.StatusOK, contentType, thumbnailBlob)
+		}
+	}
+
+	if attachment.StorageType == storepb.AttachmentStorageType_LOCAL {
+		file, err := s.openLocalAttachmentFile(attachment)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to open attachment file").SetInternal(err)
+		}
+		defer file.Close()
+
+		modTime := time.Unix(attachment.UpdatedTs, 0)
+		if fileInfo, err := file.Stat(); err == nil {
+			modTime = fileInfo.ModTime()
+		}
+		http.ServeContent(c.Response(), c.Request(), attachment.Filename, modTime, file)
+		return nil
+	}
+
+	// Get the binary content
+	blob, err := s.getAttachmentBlob(ctx, attachment)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get attachment blob").SetInternal(err)
 	}
 
 	// For video/audio: Use http.ServeContent for automatic range request support
@@ -392,6 +401,37 @@ func (s *FileServerService) getCurrentUser(ctx context.Context, c echo.Context) 
 	return nil, nil
 }
 
+func safeAttachmentContentType(rawContentType string) string {
+	mediaType, _, err := mime.ParseMediaType(strings.TrimSpace(rawContentType))
+	if err != nil || mediaType == "" {
+		return "application/octet-stream"
+	}
+	mediaType = strings.ToLower(mediaType)
+	if isUnsafeAttachmentMediaType(mediaType) {
+		return "application/octet-stream"
+	}
+	if strings.HasPrefix(mediaType, "text/") {
+		return mediaType + "; charset=utf-8"
+	}
+	return mediaType
+}
+
+func isUnsafeAttachmentMediaType(mediaType string) bool {
+	switch mediaType {
+	case "text/html",
+		"text/javascript",
+		"application/javascript",
+		"application/x-javascript",
+		"text/xml",
+		"application/xml",
+		"application/xhtml+xml",
+		"image/svg+xml":
+		return true
+	default:
+		return false
+	}
+}
+
 // isImageType checks if the mime type is an image that supports thumbnails.
 // Supports standard formats (PNG, JPEG) and HDR-capable formats (HEIC, HEIF, WebP).
 func (*FileServerService) isImageType(mimeType string) bool {
@@ -405,26 +445,30 @@ func (*FileServerService) isImageType(mimeType string) bool {
 	return supportedTypes[mimeType]
 }
 
+// openLocalAttachmentFile opens a local attachment after constraining the path to the profile data directory.
+func (s *FileServerService) openLocalAttachmentFile(attachment *store.Attachment) (*os.File, error) {
+	attachmentPath, err := util.SafeJoinUnderBase(s.Profile.Data, attachment.Reference)
+	if err != nil {
+		return nil, errors.Wrap(err, "unsafe attachment path")
+	}
+	if err := util.EnsurePathWithinBase(s.Profile.Data, attachmentPath); err != nil {
+		return nil, errors.Wrap(err, "unsafe attachment path")
+	}
+
+	file, err := os.Open(attachmentPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, errors.Wrap(err, "file not found")
+		}
+		return nil, errors.Wrap(err, "failed to open the file")
+	}
+	return file, nil
+}
+
 // getAttachmentReader returns a reader for the attachment content.
 func (s *FileServerService) getAttachmentReader(ctx context.Context, attachment *store.Attachment) (io.ReadCloser, error) {
-	// For local storage, read the file from the local disk.
 	if attachment.StorageType == storepb.AttachmentStorageType_LOCAL {
-		attachmentPath, err := util.SafeJoinUnderBase(s.Profile.Data, attachment.Reference)
-		if err != nil {
-			return nil, errors.Wrap(err, "unsafe attachment path")
-		}
-		if err := util.EnsurePathWithinBase(s.Profile.Data, attachmentPath); err != nil {
-			return nil, errors.Wrap(err, "unsafe attachment path")
-		}
-
-		file, err := os.Open(attachmentPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				return nil, errors.Wrap(err, "file not found")
-			}
-			return nil, errors.Wrap(err, "failed to open the file")
-		}
-		return file, nil
+		return s.openLocalAttachmentFile(attachment)
 	}
 	// For S3 storage, download the file from S3.
 	if attachment.StorageType == storepb.AttachmentStorageType_S3 {
@@ -474,36 +518,23 @@ func (s *FileServerService) getAttachmentReader(ctx context.Context, attachment 
 		if attachmentWithBlob == nil {
 			return nil, errors.New("attachment not found")
 		}
+		limit := attachmentDownloadLimitBytes(ctx, s.Store)
+		if int64(len(attachmentWithBlob.Blob)) > limit {
+			return nil, errors.New("attachment exceeds download size limit")
+		}
 		return io.NopCloser(bytes.NewReader(attachmentWithBlob.Blob)), nil
+	}
+	limit := attachmentDownloadLimitBytes(ctx, s.Store)
+	if int64(len(attachment.Blob)) > limit {
+		return nil, errors.New("attachment exceeds download size limit")
 	}
 	return io.NopCloser(bytes.NewReader(attachment.Blob)), nil
 }
 
 // getAttachmentBlob retrieves the binary content of an attachment from storage.
 func (s *FileServerService) getAttachmentBlob(ctx context.Context, attachment *store.Attachment) ([]byte, error) {
-	// For local storage, read the file from the local disk.
 	if attachment.StorageType == storepb.AttachmentStorageType_LOCAL {
-		attachmentPath, err := util.SafeJoinUnderBase(s.Profile.Data, attachment.Reference)
-		if err != nil {
-			return nil, errors.Wrap(err, "unsafe attachment path")
-		}
-		if err := util.EnsurePathWithinBase(s.Profile.Data, attachmentPath); err != nil {
-			return nil, errors.Wrap(err, "unsafe attachment path")
-		}
-
-		file, err := os.Open(attachmentPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				return nil, errors.Wrap(err, "file not found")
-			}
-			return nil, errors.Wrap(err, "failed to open the file")
-		}
-		defer file.Close()
-		blob, err := io.ReadAll(file)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to read the file")
-		}
-		return blob, nil
+		return nil, errors.New("local attachment blob must be served from an os.File")
 	}
 	// For S3 storage, download the file from S3.
 	if attachment.StorageType == storepb.AttachmentStorageType_S3 {
@@ -538,7 +569,7 @@ func (s *FileServerService) getAttachmentBlob(ctx context.Context, attachment *s
 			return nil, errors.Wrap(err, "failed to create S3 client")
 		}
 
-		blob, err := s3Client.GetObject(ctx, s3Object.Key)
+		blob, err := s3Client.GetObjectWithLimit(ctx, s3Object.Key, attachmentDownloadLimitBytes(ctx, s.Store))
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get object from S3")
 		}
@@ -546,6 +577,12 @@ func (s *FileServerService) getAttachmentBlob(ctx context.Context, attachment *s
 	}
 	// For database storage, fetch the blob only after permission checks pass.
 	if attachment.StorageType == storepb.AttachmentStorageType_ATTACHMENT_STORAGE_TYPE_UNSPECIFIED {
+		if attachment.ID == 0 {
+			if int64(len(attachment.Blob)) > attachmentDownloadLimitBytes(ctx, s.Store) {
+				return nil, errors.New("attachment exceeds download size limit")
+			}
+			return attachment.Blob, nil
+		}
 		attachmentWithBlob, err := s.Store.GetAttachment(ctx, &store.FindAttachment{ID: &attachment.ID, GetBlob: true})
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get attachment blob")
@@ -553,7 +590,15 @@ func (s *FileServerService) getAttachmentBlob(ctx context.Context, attachment *s
 		if attachmentWithBlob == nil {
 			return nil, errors.New("attachment not found")
 		}
+		limit := attachmentDownloadLimitBytes(ctx, s.Store)
+		if int64(len(attachmentWithBlob.Blob)) > limit {
+			return nil, errors.New("attachment exceeds download size limit")
+		}
 		return attachmentWithBlob.Blob, nil
+	}
+	limit := attachmentDownloadLimitBytes(ctx, s.Store)
+	if int64(len(attachment.Blob)) > limit {
+		return nil, errors.New("attachment exceeds download size limit")
 	}
 	return attachment.Blob, nil
 }
@@ -638,15 +683,13 @@ func (s *FileServerService) getOrGenerateThumbnail(ctx context.Context, attachme
 	}
 	defer reader.Close()
 
-	const maxPixels int64 = 100_000_000 // 100M pixels
-
 	// Pre-check image dimensions BEFORE full decode to prevent decompression bombs.
 	// This reads only the image header, using minimal memory.
 	imgConfig, _, cfgErr := image.DecodeConfig(reader)
 	if cfgErr != nil {
 		return nil, errors.Wrap(cfgErr, "failed to read image config")
 	}
-	if int64(imgConfig.Width)*int64(imgConfig.Height) > maxPixels {
+	if int64(imgConfig.Width)*int64(imgConfig.Height) > thumbnailMaxPixels {
 		return nil, errors.Errorf("image dimensions too large: %dx%d exceeds pixel limit", imgConfig.Width, imgConfig.Height)
 	}
 

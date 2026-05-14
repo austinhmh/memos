@@ -4,12 +4,20 @@ services:
   memos:
     image: ghcr.io/usememos/memos:latest
     container_name: memos
+    user: "10001:10001"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
     ports:
-      - 8081:5230
+      - "127.0.0.1:8081:5230"
     volumes:
-      - ~/.memos:/var/opt/memos
+      - ~/.memos:/var/opt/memos:rw
       # 挂载修改后的前端文件（需要先在本地构建）
-      - ./web/dist:/usr/local/memos/web/dist
+      - ./web/dist:/usr/local/memos/web/dist:ro
     environment:
       - MEMOS_MODE=prod
       - MEMOS_PORT=5230

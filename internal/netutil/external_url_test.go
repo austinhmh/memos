@@ -59,6 +59,12 @@ func TestValidateExternalURLAllowsPublicHTTPAddresses(t *testing.T) {
 	}
 }
 
+func TestValidateExternalURLAllowsPrivateAddressesWhenConfigured(t *testing.T) {
+	validator := ExternalURLValidator{AllowPrivateAddresses: true}
+	_, err := validator.Validate(context.Background(), "http://127.0.0.1:9000/minio")
+	require.NoError(t, err)
+}
+
 func TestValidateExternalURLRejectsInvalidURLForms(t *testing.T) {
 	for _, rawURL := range []string{
 		"javascript:alert(1)",

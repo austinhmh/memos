@@ -54,12 +54,12 @@ func isUnauthenticatedRefreshTokenError(err error) bool {
 func (s *APIV1Service) GetCurrentUser(ctx context.Context, _ *v1pb.GetCurrentUserRequest) (*v1pb.GetCurrentUserResponse, error) {
 	user, err := s.fetchCurrentUser(ctx)
 	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "failed to get current user: %v", err)
+		return nil, status.Errorf(codes.Unauthenticated, "failed to get current user")
 	}
 	if user == nil {
 		// Clear auth cookies
 		if err := s.clearAuthCookies(ctx); err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to clear auth cookies: %v", err)
+			return nil, internalError("failed to clear auth cookies", err)
 		}
 		return nil, status.Errorf(codes.Unauthenticated, "user not found")
 	}
@@ -83,15 +83,14 @@ func (s *APIV1Service) SignIn(ctx context.Context, request *v1pb.SignInRequest) 
 
 	// Authentication Method 1: Password-based authentication
 	if passwordCredentials := request.GetPasswordCredentials(); passwordCredentials != nil {
-		rateLimitKey := "signin:" + passwordCredentials.Username
-		if !s.signInLimiter.Allow(rateLimitKey) {
+		if !s.allowSignInAttempt(ctx, passwordCredentials.Username) {
 			return nil, status.Errorf(codes.ResourceExhausted, "too many sign-in attempts, please try again later")
 		}
 		user, err := s.Store.GetUser(ctx, &store.FindUser{
 			Username: &passwordCredentials.Username,
 		})
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to get user, error: %v", err)
+			return nil, internalError("failed to get user", err)
 		}
 		if user == nil {
 			// Perform dummy bcrypt comparison to eliminate timing side-channel
@@ -105,7 +104,7 @@ func (s *APIV1Service) SignIn(ctx context.Context, request *v1pb.SignInRequest) 
 		}
 		instanceGeneralSetting, err := s.Store.GetInstanceGeneralSetting(ctx)
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to get instance general setting, error: %v", err)
+			return nil, internalError("failed to get instance general setting", err)
 		}
 		// Check if the password auth in is allowed.
 		if instanceGeneralSetting.DisallowPasswordAuth && user.Role == store.RoleUser {
@@ -118,7 +117,7 @@ func (s *APIV1Service) SignIn(ctx context.Context, request *v1pb.SignInRequest) 
 			ID: &ssoCredentials.IdpId,
 		})
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to get identity provider, error: %v", err)
+			return nil, internalError("failed to get identity provider", err)
 		}
 		if identityProvider == nil {
 			return nil, status.Errorf(codes.InvalidArgument, "identity provider not found")
@@ -140,11 +139,11 @@ func (s *APIV1Service) SignIn(ctx context.Context, request *v1pb.SignInRequest) 
 			}
 			token, err := oauth2IdentityProvider.ExchangeToken(ctx, allowedRedirectURI, ssoCredentials.Code, ssoCredentials.CodeVerifier)
 			if err != nil {
-				return nil, status.Errorf(codes.Internal, "failed to exchange token, error: %v", err)
+				return nil, internalError("failed to exchange token", err)
 			}
 			userInfo, err = oauth2IdentityProvider.UserInfo(token)
 			if err != nil {
-				return nil, status.Errorf(codes.Internal, "failed to get user info, error: %v", err)
+				return nil, internalError("failed to get user info", err)
 			}
 		}
 
@@ -152,7 +151,7 @@ func (s *APIV1Service) SignIn(ctx context.Context, request *v1pb.SignInRequest) 
 		if identifierFilter != "" {
 			identifierFilterRegex, err := regexp.Compile(identifierFilter)
 			if err != nil {
-				return nil, status.Errorf(codes.Internal, "failed to compile identifier filter regex, error: %v", err)
+				return nil, internalError("failed to compile identifier filter regex", err)
 			}
 			if !identifierFilterRegex.MatchString(userInfo.Identifier) {
 				return nil, status.Errorf(codes.PermissionDenied, "identifier %s is not allowed", userInfo.Identifier)
@@ -163,13 +162,13 @@ func (s *APIV1Service) SignIn(ctx context.Context, request *v1pb.SignInRequest) 
 			Username: &userInfo.Identifier,
 		})
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to get user, error: %v", err)
+			return nil, internalError("failed to get user", err)
 		}
 		if user == nil {
 			// Check if the user is allowed to sign up.
 			instanceGeneralSetting, err := s.Store.GetInstanceGeneralSetting(ctx)
 			if err != nil {
-				return nil, status.Errorf(codes.Internal, "failed to get instance general setting, error: %v", err)
+				return nil, internalError("failed to get instance general setting", err)
 			}
 			if instanceGeneralSetting.DisallowUserRegistration {
 				return nil, status.Errorf(codes.PermissionDenied, "user registration is not allowed")
@@ -186,16 +185,16 @@ func (s *APIV1Service) SignIn(ctx context.Context, request *v1pb.SignInRequest) 
 			}
 			password, err := util.RandomString(20)
 			if err != nil {
-				return nil, status.Errorf(codes.Internal, "failed to generate random password, error: %v", err)
+				return nil, internalError("failed to generate random password", err)
 			}
 			passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 			if err != nil {
-				return nil, status.Errorf(codes.Internal, "failed to generate password hash, error: %v", err)
+				return nil, internalError("failed to generate password hash", err)
 			}
 			userCreate.PasswordHash = string(passwordHash)
 			user, err = s.Store.CreateUser(ctx, userCreate)
 			if err != nil {
-				return nil, status.Errorf(codes.Internal, "failed to create user, error: %v", err)
+				return nil, internalError("failed to create user", err)
 			}
 		}
 		existingUser = user
@@ -210,7 +209,7 @@ func (s *APIV1Service) SignIn(ctx context.Context, request *v1pb.SignInRequest) 
 
 	accessToken, accessExpiresAt, err := s.doSignIn(ctx, existingUser)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to sign in: %v", err)
+		return nil, internalError("failed to sign in", err)
 	}
 
 	return &v1pb.SignInResponse{
@@ -218,6 +217,18 @@ func (s *APIV1Service) SignIn(ctx context.Context, request *v1pb.SignInRequest) 
 		AccessToken:          accessToken,
 		AccessTokenExpiresAt: timestamppb.New(accessExpiresAt),
 	}, nil
+}
+
+func (s *APIV1Service) allowSignInAttempt(ctx context.Context, username string) bool {
+	if !s.signInGlobalLimiter.Allow("signin:global") {
+		return false
+	}
+	if ip := requestIPFromContext(ctx); ip != "" {
+		if !s.signInIPLimiter.Allow("signin:ip:" + ip) {
+			return false
+		}
+	}
+	return s.signInLimiter.Allow("signin:user:" + username)
 }
 
 // doSignIn performs the actual sign-in operation by creating a session and setting the cookie.
@@ -232,7 +243,7 @@ func (s *APIV1Service) doSignIn(ctx context.Context, user *store.User) (string, 
 	tokenID := util.GenUUID()
 	refreshToken, refreshExpiresAt, err := auth.GenerateRefreshToken(user.ID, tokenID, []byte(s.Secret))
 	if err != nil {
-		return "", time.Time{}, status.Errorf(codes.Internal, "failed to generate refresh token: %v", err)
+		return "", time.Time{}, internalError("failed to generate refresh token", err, "userID", user.ID)
 	}
 
 	// Store refresh token metadata
@@ -244,13 +255,13 @@ func (s *APIV1Service) doSignIn(ctx context.Context, user *store.User) (string, 
 		ClientInfo: clientInfo,
 	}
 	if err := s.Store.AddUserRefreshToken(ctx, user.ID, refreshTokenRecord); err != nil {
-		return "", time.Time{}, status.Errorf(codes.Internal, "failed to store refresh token: %v", err)
+		return "", time.Time{}, internalError("failed to store refresh token", err, "userID", user.ID, "tokenID", tokenID)
 	}
 
 	// Set refresh token cookie
 	refreshCookie := s.buildRefreshTokenCookie(ctx, refreshToken, refreshExpiresAt)
 	if err := SetResponseHeader(ctx, "Set-Cookie", refreshCookie); err != nil {
-		return "", time.Time{}, status.Errorf(codes.Internal, "failed to set refresh token cookie: %v", err)
+		return "", time.Time{}, internalError("failed to set refresh token cookie", err, "userID", user.ID)
 	}
 
 	// Generate access token
@@ -262,7 +273,7 @@ func (s *APIV1Service) doSignIn(ctx context.Context, user *store.User) (string, 
 		[]byte(s.Secret),
 	)
 	if err != nil {
-		return "", time.Time{}, status.Errorf(codes.Internal, "failed to generate access token: %v", err)
+		return "", time.Time{}, internalError("failed to generate access token", err, "userID", user.ID)
 	}
 
 	return accessToken, accessExpiresAt, nil
@@ -276,7 +287,7 @@ func (s *APIV1Service) doSignIn(ctx context.Context, user *store.User) (string, 
 func (s *APIV1Service) SignOut(ctx context.Context, _ *v1pb.SignOutRequest) (*emptypb.Empty, error) {
 	currentUser, err := s.fetchCurrentUser(ctx)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get current user: %v", err)
+		return nil, internalError("failed to get current user", err)
 	}
 
 	refreshToken := ""
@@ -294,7 +305,7 @@ func (s *APIV1Service) SignOut(ctx context.Context, _ *v1pb.SignOutRequest) (*em
 
 	// Clear refresh token cookie
 	if err := s.clearAuthCookies(ctx); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to clear auth cookies, error: %v", err)
+		return nil, internalError("failed to clear auth cookies", err)
 	}
 	return &emptypb.Empty{}, nil
 }
@@ -350,14 +361,14 @@ func (s *APIV1Service) RefreshToken(ctx context.Context, _ *v1pb.RefreshTokenReq
 		if isUnauthenticatedRefreshTokenError(err) {
 			return nil, status.Errorf(codes.Unauthenticated, "invalid refresh token")
 		}
-		return nil, status.Errorf(codes.Internal, "failed to authenticate refresh token")
+		return nil, internalError("failed to authenticate refresh token", err)
 	}
 
 	// --- Refresh Token Rotation ---
 	newTokenID := util.GenUUID()
 	newRefreshToken, newRefreshExpiresAt, err := auth.GenerateRefreshToken(user.ID, newTokenID, []byte(s.Secret))
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to generate refresh token: %v", err)
+		return nil, internalError("failed to generate refresh token", err, "userID", user.ID)
 	}
 
 	clientInfo := s.extractClientInfo(ctx)
@@ -375,12 +386,12 @@ func (s *APIV1Service) RefreshToken(ctx context.Context, _ *v1pb.RefreshTokenReq
 		if store.IsUserSettingCASConflict(err) {
 			return nil, status.Errorf(codes.Aborted, "refresh token rotation conflict")
 		}
-		return nil, status.Errorf(codes.Internal, "failed to rotate refresh token")
+		return nil, internalError("failed to rotate refresh token", err, "userID", user.ID, "tokenID", oldTokenID)
 	}
 
 	newRefreshCookie := s.buildRefreshTokenCookie(ctx, newRefreshToken, newRefreshExpiresAt)
 	if err := SetResponseHeader(ctx, "Set-Cookie", newRefreshCookie); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to set refresh token cookie: %v", err)
+		return nil, internalError("failed to set refresh token cookie", err, "userID", user.ID)
 	}
 	// --- End Rotation ---
 
@@ -392,7 +403,7 @@ func (s *APIV1Service) RefreshToken(ctx context.Context, _ *v1pb.RefreshTokenReq
 		[]byte(s.Secret),
 	)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to generate access token: %v", err)
+		return nil, internalError("failed to generate access token", err, "userID", user.ID)
 	}
 
 	return &v1pb.RefreshTokenResponse{
@@ -540,17 +551,10 @@ func (s *APIV1Service) fetchCurrentUser(ctx context.Context) (*store.User, error
 		return nil, err
 	}
 	if user == nil {
-		archivedUser, archivedErr := s.Store.GetUser(ctx, &store.FindUser{ID: &userID})
-		if archivedErr != nil {
-			return nil, archivedErr
-		}
-		if archivedUser != nil && archivedUser.RowStatus == store.Archived {
-			return nil, errors.New("user is archived")
-		}
-		return nil, errors.Errorf("user %d not found", userID)
+		return nil, nil
 	}
 	if user.RowStatus == store.Archived {
-		return nil, errors.New("user is archived")
+		return nil, nil
 	}
 	return user, nil
 }

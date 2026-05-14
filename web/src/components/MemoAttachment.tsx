@@ -12,7 +12,7 @@ const MemoAttachment: React.FC<Props> = (props: Props) => {
   const attachmentUrl = getAttachmentUrl(attachment);
 
   const handlePreviewBtnClick = () => {
-    window.open(attachmentUrl);
+    window.open(attachmentUrl, "_blank", "noopener,noreferrer");
   };
 
   return (

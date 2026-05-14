@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime"
 	"net/http"
 	"os"
@@ -49,7 +50,7 @@ var SupportedThumbnailMimeTypes = []string{
 func (s *APIV1Service) CreateAttachment(ctx context.Context, request *v1pb.CreateAttachmentRequest) (*v1pb.Attachment, error) {
 	user, err := s.fetchCurrentUser(ctx)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get current user: %v", err)
+		return nil, internalError("failed to get current user", err)
 	}
 	if user == nil {
 		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
@@ -111,7 +112,7 @@ func (s *APIV1Service) CreateAttachment(ctx context.Context, request *v1pb.Creat
 
 	instanceStorageSetting, err := s.Store.GetInstanceStorageSetting(ctx)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get instance storage setting: %v", err)
+		return nil, internalError("failed to get instance storage setting", err)
 	}
 	size := len(request.Attachment.Content)
 	uploadSizeLimit := int(instanceStorageSetting.UploadSizeLimitMb) * MebiByte
@@ -132,7 +133,7 @@ func (s *APIV1Service) CreateAttachment(ctx context.Context, request *v1pb.Creat
 		normalStatus := store.Normal
 		memo, err := s.Store.GetMemo(ctx, &store.FindMemo{UID: &memoUID, RowStatus: &normalStatus, CreatorRowStatus: &normalStatus})
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to find memo: %v", err)
+			return nil, internalError("failed to find memo", err)
 		}
 		if memo == nil {
 			return nil, status.Errorf(codes.NotFound, "memo not found: %s", *request.Attachment.Memo)
@@ -144,7 +145,7 @@ func (s *APIV1Service) CreateAttachment(ctx context.Context, request *v1pb.Creat
 	}
 
 	if err := SaveAttachmentBlob(ctx, s.Profile, s.Store, create); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to save attachment blob: %v", err)
+		return nil, internalError("failed to save attachment blob", err)
 	}
 
 	attachment, err := s.Store.CreateAttachment(ctx, create)
@@ -161,7 +162,7 @@ func (s *APIV1Service) CreateAttachment(ctx context.Context, request *v1pb.Creat
 func (s *APIV1Service) ListAttachments(ctx context.Context, request *v1pb.ListAttachmentsRequest) (*v1pb.ListAttachmentsResponse, error) {
 	user, err := s.fetchCurrentUser(ctx)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get current user: %v", err)
+		return nil, internalError("failed to get current user", err)
 	}
 	if user == nil {
 		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
@@ -205,7 +206,7 @@ func (s *APIV1Service) ListAttachments(ctx context.Context, request *v1pb.ListAt
 
 	attachments, err := s.Store.ListAttachments(ctx, findAttachment)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to list attachments: %v", err)
+		return nil, internalError("failed to list attachments", err)
 	}
 
 	response := &v1pb.ListAttachmentsResponse{}
@@ -240,7 +241,7 @@ func (s *APIV1Service) GetAttachment(ctx context.Context, request *v1pb.GetAttac
 
 	user, err := s.fetchCurrentUser(ctx)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get current user: %v", err)
+		return nil, internalError("failed to get current user", err)
 	}
 	if user == nil {
 		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
@@ -248,7 +249,7 @@ func (s *APIV1Service) GetAttachment(ctx context.Context, request *v1pb.GetAttac
 
 	attachment, err := s.Store.GetAttachment(ctx, &store.FindAttachment{UID: &attachmentUID})
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get attachment: %v", err)
+		return nil, internalError("failed to get attachment", err)
 	}
 	if attachment == nil {
 		return nil, status.Errorf(codes.NotFound, "attachment not found")
@@ -275,7 +276,7 @@ func (s *APIV1Service) UpdateAttachment(ctx context.Context, request *v1pb.Updat
 
 	user, err := s.fetchCurrentUser(ctx)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get current user: %v", err)
+		return nil, internalError("failed to get current user", err)
 	}
 	if user == nil {
 		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
@@ -283,7 +284,7 @@ func (s *APIV1Service) UpdateAttachment(ctx context.Context, request *v1pb.Updat
 
 	attachment, err := s.Store.GetAttachment(ctx, &store.FindAttachment{UID: &attachmentUID})
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get attachment: %v", err)
+		return nil, internalError("failed to get attachment", err)
 	}
 	if attachment == nil {
 		return nil, status.Errorf(codes.NotFound, "attachment not found")
@@ -333,7 +334,7 @@ func (s *APIV1Service) DeleteAttachment(ctx context.Context, request *v1pb.Delet
 	}
 	user, err := s.fetchCurrentUser(ctx)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get current user: %v", err)
+		return nil, internalError("failed to get current user", err)
 	}
 	if user == nil {
 		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
@@ -342,7 +343,7 @@ func (s *APIV1Service) DeleteAttachment(ctx context.Context, request *v1pb.Delet
 		UID: &attachmentUID,
 	})
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to find attachment: %v", err)
+		return nil, internalError("failed to find attachment", err)
 	}
 	if attachment == nil {
 		return nil, status.Errorf(codes.NotFound, "attachment not found")
@@ -373,7 +374,12 @@ func (s *APIV1Service) DeleteAttachment(ctx context.Context, request *v1pb.Delet
 		deleteAttachment.MemoID = attachment.MemoID
 	}
 	if err := s.Store.DeleteAttachment(ctx, deleteAttachment); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to delete attachment: %v", err)
+		slog.Warn("Failed to delete attachment from API request",
+			"error", err,
+			"attachment_id", attachment.ID,
+			"attachment_uid", attachment.UID,
+			"reference", attachment.Reference)
+		return nil, internalError("failed to delete attachment", err)
 	}
 	return &emptypb.Empty{}, nil
 }
@@ -532,6 +538,18 @@ func cleanupAttachmentBlob(ctx context.Context, profile *profile.Profile, stores
 	return nil
 }
 
+func attachmentDownloadLimitBytes(ctx context.Context, stores *store.Store) int64 {
+	storageSetting, err := stores.GetInstanceStorageSetting(ctx)
+	if err != nil {
+		return s3.DefaultMaxGetObjectBytes
+	}
+	limit := storageSetting.GetUploadSizeLimitMb() * MebiByte
+	if limit <= 0 {
+		return s3.DefaultMaxGetObjectBytes
+	}
+	return limit
+}
+
 func (s *APIV1Service) GetAttachmentBlob(ctx context.Context, attachment *store.Attachment) ([]byte, error) {
 	// For local storage, read the file from the local disk.
 	if attachment.StorageType == storepb.AttachmentStorageType_LOCAL {
@@ -551,9 +569,13 @@ func (s *APIV1Service) GetAttachmentBlob(ctx context.Context, attachment *store.
 			return nil, errors.Wrap(err, "failed to open the file")
 		}
 		defer file.Close()
-		blob, err := io.ReadAll(file)
+		limit := attachmentDownloadLimitBytes(ctx, s.Store)
+		blob, err := io.ReadAll(io.LimitReader(file, limit+1))
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to read the file")
+		}
+		if int64(len(blob)) > limit {
+			return nil, errors.New("attachment exceeds download size limit")
 		}
 		return blob, nil
 	}
@@ -590,13 +612,17 @@ func (s *APIV1Service) GetAttachmentBlob(ctx context.Context, attachment *store.
 			return nil, errors.Wrap(err, "failed to create S3 client")
 		}
 
-		blob, err := s3Client.GetObject(ctx, s3Object.Key)
+		blob, err := s3Client.GetObjectWithLimit(ctx, s3Object.Key, attachmentDownloadLimitBytes(ctx, s.Store))
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get object from S3")
 		}
 		return blob, nil
 	}
 	// For database storage, return the blob from the database.
+	limit := attachmentDownloadLimitBytes(ctx, s.Store)
+	if int64(len(attachment.Blob)) > limit {
+		return nil, errors.New("attachment exceeds download size limit")
+	}
 	return attachment.Blob, nil
 }
 

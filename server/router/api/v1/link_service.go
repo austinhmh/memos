@@ -1,6 +1,8 @@
 package v1
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -11,8 +13,9 @@ import (
 )
 
 const (
-	linkCacheMaxSize = 500
-	linkCacheTTL     = 24 * time.Hour
+	linkCacheMaxSize             = 500
+	linkCacheTTL                 = 24 * time.Hour
+	linkMetadataRateLimitMessage = "too many url metadata requests, please try again later"
 )
 
 type linkCacheEntry struct {
@@ -70,10 +73,11 @@ func (s *APIV1Service) RegisterLinkRoutes(echoServer *echo.Echo) {
 }
 
 func (s *APIV1Service) handleGetURLMetadata(c echo.Context) error {
-	ctx := c.Request().Context()
+	ctx := contextWithRequestIP(c.Request().Context(), c.Request().RemoteAddr)
+	ctx = s.contextWithAuthenticatedUser(ctx, c.Request().Header.Get("Authorization"))
 	user, err := s.fetchCurrentUser(ctx)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to get current user"})
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": internalServerErrorMessage})
 	}
 	if user == nil {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "authentication required"})
@@ -83,6 +87,17 @@ func (s *APIV1Service) handleGetURLMetadata(c echo.Context) error {
 	if targetURL == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "url parameter is required"})
 	}
+
+	if cached, ok := globalLinkCache.get(targetURL); ok {
+		return c.JSON(http.StatusOK, cached)
+	}
+	if !s.allowURLMetadataRequest(ctx, user.ID) {
+		return c.JSON(http.StatusTooManyRequests, map[string]string{"error": linkMetadataRateLimitMessage})
+	}
+	if !s.linkMetadataSemaphore.TryAcquire(1) {
+		return c.JSON(http.StatusTooManyRequests, map[string]string{"error": linkMetadataRateLimitMessage})
+	}
+	defer s.linkMetadataSemaphore.Release(1)
 
 	if cached, ok := globalLinkCache.get(targetURL); ok {
 		return c.JSON(http.StatusOK, cached)
@@ -97,4 +112,14 @@ func (s *APIV1Service) handleGetURLMetadata(c echo.Context) error {
 
 	globalLinkCache.set(targetURL, meta)
 	return c.JSON(http.StatusOK, meta)
+}
+
+func (s *APIV1Service) allowURLMetadataRequest(ctx context.Context, userID int32) bool {
+	if !s.linkMetadataLimiter.Allow(fmt.Sprintf("url-metadata:user:%d", userID)) {
+		return false
+	}
+	if ip := requestIPFromContext(ctx); ip != "" {
+		return s.linkMetadataLimiter.Allow("url-metadata:ip:" + ip)
+	}
+	return true
 }

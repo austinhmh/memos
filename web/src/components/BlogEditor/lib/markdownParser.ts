@@ -10,7 +10,7 @@ import { markdownHighlight } from "@/lib/markdown/rules/highlight";
 import { markdownMath } from "@/lib/markdown/rules/math";
 import { markdownTag } from "@/lib/markdown/rules/tag";
 import { markdownUnderlines } from "@/lib/markdown/rules/underlines";
-import { sanitizeUrl } from "@/lib/sanitize-url";
+import { sanitizeImageUrl, sanitizeUrl } from "@/lib/sanitize-url";
 
 function listIsTight(tokens: readonly { type: string; hidden?: boolean }[], i: number): boolean {
   while (++i < tokens.length) {
@@ -178,7 +178,7 @@ export function createMdParser(schema: Schema): MarkdownParser {
     image: {
       node: "image",
       getAttrs: (tok: Token) => ({
-        src: sanitizeUrl(tok.attrGet("src")) || "",
+        src: sanitizeImageUrl(tok.attrGet("src")) || "",
         title: tok.attrGet("title") || null,
         alt: tok.children?.[0]?.content ?? null,
       }),
