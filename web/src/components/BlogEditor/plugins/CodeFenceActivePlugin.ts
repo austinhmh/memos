@@ -1,4 +1,4 @@
-import type { EditorState } from "prosemirror-state";
+import type { EditorState, Transaction } from "prosemirror-state";
 import { Plugin, PluginKey } from "prosemirror-state";
 import { Decoration, DecorationSet } from "prosemirror-view";
 import type { MermaidState } from "./MermaidPlugin";
@@ -53,12 +53,22 @@ function createActiveCodeBlockDecoration(state: EditorState): DecorationSet {
   return DecorationSet.create(state.doc, [decoration]);
 }
 
+function isCompositionTransaction(tr: Transaction): boolean {
+  return !!tr.getMeta("composition");
+}
+
+const codeFenceActivePluginKey = new PluginKey<DecorationSet>("code-fence-active");
+
 export function createCodeFenceActivePlugin(): Plugin<DecorationSet> {
   return new Plugin<DecorationSet>({
-    key: new PluginKey("code-fence-active"),
+    key: codeFenceActivePluginKey,
     state: {
       init: (_, state) => createActiveCodeBlockDecoration(state),
       apply: (tr, pluginState, _oldState, newState) => {
+        if (isCompositionTransaction(tr)) {
+          return pluginState.map(tr.mapping, tr.doc);
+        }
+
         if (!tr.selectionSet && !tr.docChanged && !tr.getMeta(mermaidPluginKey)) {
           return pluginState;
         }
@@ -72,3 +82,5 @@ export function createCodeFenceActivePlugin(): Plugin<DecorationSet> {
     },
   });
 }
+
+export { codeFenceActivePluginKey, createActiveCodeBlockDecoration as createActiveCodeBlockDecorationForTest };

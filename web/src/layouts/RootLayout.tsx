@@ -2,6 +2,7 @@ import { Suspense, useEffect, useMemo } from "react";
 import { Outlet, useLocation, useSearchParams } from "react-router-dom";
 import usePrevious from "react-use/lib/usePrevious";
 import Navigation from "@/components/Navigation";
+import RandomBackground from "@/components/RandomBackground";
 import Spinner from "@/components/Spinner";
 import { useInstance } from "@/contexts/InstanceContext";
 import { useMemoFilterContext } from "@/contexts/MemoFilterContext";
@@ -34,30 +35,33 @@ const RootLayout = () => {
   }, [prevPathname, pathname, searchParams, removeFilter]);
 
   return (
-    <div className="w-full min-h-full min-w-0 flex flex-row justify-center items-start sm:pl-16 overflow-x-hidden">
-      {sm && (
-        <div
-          className={cn(
-            "group flex flex-col justify-start items-start fixed top-0 left-0 select-none h-full bg-sidebar",
-            "w-16 px-2",
-            "border-r border-border",
-          )}
-        >
-          <Navigation className="py-4 md:pt-6" collapsed={true} />
-        </div>
-      )}
-      <main className="w-full min-w-0 h-auto grow shrink flex flex-col justify-start items-center">
-        <Suspense
-          fallback={
-            <div className="w-full h-64 flex items-center justify-center bg-transparent">
-              <Spinner size="lg" />
-            </div>
-          }
-        >
-          <Outlet />
-        </Suspense>
-      </main>
-    </div>
+    <>
+      <RandomBackground />
+      <div className="w-full min-h-full min-w-0 flex flex-row justify-center items-start sm:pl-16 overflow-x-hidden">
+        {sm && (
+          <div
+            className={cn(
+              "group flex flex-col justify-start items-start fixed top-0 left-0 select-none h-full bg-sidebar",
+              "w-16 px-2",
+              "border-r border-border",
+            )}
+          >
+            <Navigation className="py-4 md:pt-6" collapsed={true} />
+          </div>
+        )}
+        <main className="w-full min-w-0 h-auto grow shrink flex flex-col justify-start items-center">
+          <Suspense
+            fallback={
+              <div className="w-full h-64 flex items-center justify-center bg-transparent">
+                <Spinner size="lg" />
+              </div>
+            }
+          >
+            <Outlet />
+          </Suspense>
+        </main>
+      </div>
+    </>
   );
 };
 

@@ -13,7 +13,6 @@ import "@fontsource/fira-code/700.css";
 import "./i18n";
 import "./index.css";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import RandomBackground from "@/components/RandomBackground";
 import Spinner from "@/components/Spinner";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { InstanceProvider, useInstance } from "@/contexts/InstanceContext";
@@ -63,7 +62,6 @@ function Main() {
 
   return (
     <ErrorBoundary>
-      <RandomBackground />
       <QueryClientProvider client={queryClient}>
         <InstanceProvider>
           <AuthProvider>

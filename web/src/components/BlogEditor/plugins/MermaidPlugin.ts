@@ -425,6 +425,10 @@ export function createMermaidPlugin(options: { isDark: boolean }): Plugin<Mermai
           decorationSet: pluginState.decorationSet.map(transaction.mapping, transaction.doc),
         };
 
+        if (transaction.getMeta("composition")) {
+          return nextPluginState;
+        }
+
         if (mermaidMeta?.loaded && !pluginState.initialized) {
           return {
             ...getNewState({ doc: transaction.doc, pluginState: nextPluginState, view: currentView }),
@@ -494,7 +498,7 @@ export function createMermaidPlugin(options: { isDark: boolean }): Plugin<Mermai
             scheduleInit(view);
           }
 
-          if (!ps?.initialized) return;
+          if (!ps?.initialized || view.composing) return;
 
           // Debounced re-render for the active mermaid diagram only.
           // The expensive render itself is deferred into requestIdleCallback so

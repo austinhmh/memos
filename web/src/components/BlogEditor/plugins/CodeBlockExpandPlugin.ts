@@ -13,7 +13,7 @@ type CodeBlockExpandMeta = {
   overflowPositions?: Set<number>;
 };
 
-const codeBlockExpandPluginKey = new PluginKey<CodeBlockExpandState>("codeBlockExpand");
+export const codeBlockExpandPluginKey = new PluginKey<CodeBlockExpandState>("codeBlockExpand");
 
 function isMermaid(node: ProsemirrorNode): boolean {
   if (node.type.name !== "code_block") return false;
@@ -53,6 +53,10 @@ function mapCodeBlockPositions(positions: Set<number>, tr: Transaction): Set<num
     }
   });
   return nextPositions;
+}
+
+function isCompositionTransaction(tr: Transaction): boolean {
+  return !!tr.getMeta("composition");
 }
 
 function createExpandButton(pos: number, expanded: boolean): HTMLButtonElement {
@@ -168,6 +172,14 @@ function collectOverflowPositions(view: EditorView, previousOverflowPositions: S
   return overflowPositions;
 }
 
+export function createCodeBlockExpandDecorationsForTest(
+  doc: ProsemirrorNode,
+  expandedPositions: Set<number>,
+  overflowPositions: Set<number>,
+): DecorationSet {
+  return createDecorations(doc, expandedPositions, overflowPositions);
+}
+
 export function createCodeBlockExpandPlugin(): Plugin<CodeBlockExpandState> {
   return new Plugin<CodeBlockExpandState>({
     key: codeBlockExpandPluginKey,
@@ -198,6 +210,14 @@ export function createCodeBlockExpandPlugin(): Plugin<CodeBlockExpandState> {
           return pluginState;
         }
 
+        if (isCompositionTransaction(tr)) {
+          return {
+            expandedPositions,
+            overflowPositions,
+            decorations: pluginState.decorations.map(tr.mapping, tr.doc),
+          };
+        }
+
         return {
           expandedPositions,
           overflowPositions,
@@ -216,6 +236,10 @@ export function createCodeBlockExpandPlugin(): Plugin<CodeBlockExpandState> {
 
         raf = requestAnimationFrame(() => {
           raf = 0;
+          if (view.composing) {
+            return;
+          }
+
           const pluginState = codeBlockExpandPluginKey.getState(view.state);
           if (!pluginState) {
             return;
@@ -245,6 +269,9 @@ export function createCodeBlockExpandPlugin(): Plugin<CodeBlockExpandState> {
 
       return {
         update() {
+          if (view.composing) {
+            return;
+          }
           observeCodeBlocks();
           scheduleMeasure();
         },

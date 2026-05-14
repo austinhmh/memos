@@ -46,14 +46,14 @@ const RandomBackground = () => {
       if (cached.length > 0) {
         apply(cached);
       }
-      fetchBgImagesFromServer().then((serverImages) => {
-        if (serverImages.length > 0) {
+      fetchBgImagesFromServer()
+        .then((serverImages) => {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(serverImages));
-          if (cached.length === 0) {
-            apply(serverImages);
-          }
-        }
-      });
+          apply(serverImages);
+        })
+        .catch((error) => {
+          console.error("Failed to fetch background images:", error);
+        });
     }
 
     const onSettingsChanged = () => {

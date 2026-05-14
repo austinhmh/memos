@@ -15,6 +15,7 @@ interface BackgroundImage {
 
 const BG_PREFIX = "_bg_";
 const STORAGE_KEY = "memos-background-images";
+const BACKGROUND_LIST_PAGE_SIZE = 1000;
 
 const isBgAttachment = (filename: string) => filename.startsWith(BG_PREFIX);
 
@@ -33,18 +34,27 @@ const loadFromLocalStorage = (): BackgroundImage[] => {
 };
 
 async function fetchBgImagesFromServer(): Promise<BackgroundImage[]> {
-  try {
-    const { attachments } = await attachmentServiceClient.listAttachments({});
-    return attachments
-      .filter((a) => isBgAttachment(a.filename))
-      .map((a) => ({
-        url: getAttachmentUrl(a),
-        name: a.name,
-        filename: a.filename.slice(BG_PREFIX.length),
-      }));
-  } catch {
-    return [];
-  }
+  const bgImages: BackgroundImage[] = [];
+  let pageToken = "";
+
+  do {
+    const { attachments, nextPageToken } = await attachmentServiceClient.listAttachments({
+      pageSize: BACKGROUND_LIST_PAGE_SIZE,
+      pageToken,
+    });
+    bgImages.push(
+      ...attachments
+        .filter((a) => isBgAttachment(a.filename))
+        .map((a) => ({
+          url: getAttachmentUrl(a),
+          name: a.name,
+          filename: a.filename.slice(BG_PREFIX.length),
+        })),
+    );
+    pageToken = nextPageToken ?? "";
+  } while (pageToken);
+
+  return bgImages;
 }
 
 const BackgroundSection = () => {
@@ -56,11 +66,18 @@ const BackgroundSection = () => {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const serverImages = await fetchBgImagesFromServer();
-      if (cancelled) return;
-      setImages(serverImages);
-      syncToLocalStorage(serverImages);
-      setLoading(false);
+      try {
+        const serverImages = await fetchBgImagesFromServer();
+        if (cancelled) return;
+        setImages(serverImages);
+        syncToLocalStorage(serverImages);
+      } catch (error) {
+        console.error("Failed to fetch background images:", error);
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
     })();
     return () => {
       cancelled = true;
