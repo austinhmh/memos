@@ -87,6 +87,11 @@ export const SlashMenu = ({ view, items, menuState }: SlashMenuProps) => {
         tr = tr.split(deleteFrom);
         view.dispatch(tr);
         setTimeout(() => {
+          if (isViewComposing(view)) {
+            void runAfterCompositionSettled(view, () => executeItem(item));
+            return;
+          }
+
           const newState = view.state;
           const cursorPos = newState.selection.$from.pos;
           const $cur = newState.doc.resolve(cursorPos);
@@ -121,6 +126,10 @@ export const SlashMenu = ({ view, items, menuState }: SlashMenuProps) => {
     if (!menuState.open || !view) return;
 
     const handler = (e: KeyboardEvent) => {
+      if (e.isComposing || isViewComposing(view)) {
+        return;
+      }
+
       if (e.key === "ArrowDown") {
         e.preventDefault();
         setSelectedIndex((i) => (i + 1) % Math.max(filtered.length, 1));

@@ -110,6 +110,9 @@ function createDecorations(doc: ProsemirrorNode, expandedPositions: Set<number>,
           button.addEventListener("click", (event) => {
             event.preventDefault();
             event.stopPropagation();
+            if (isViewComposing(view)) {
+              return;
+            }
             view.dispatch(view.state.tr.setMeta(codeBlockExpandPluginKey, { togglePos: pos } satisfies CodeBlockExpandMeta));
           });
 
@@ -207,7 +210,16 @@ export function createCodeBlockExpandPlugin(): Plugin<CodeBlockExpandState> {
           return pluginState;
         }
 
-        if (isCompositionTransaction(tr) || (tr.docChanged && !meta)) {
+        if (isCompositionTransaction(tr)) {
+          const mappedDecorations = pluginState.decorations.map(tr.mapping, tr.doc);
+          return {
+            expandedPositions,
+            overflowPositions,
+            decorations: mappedDecorations,
+          };
+        }
+
+        if (tr.docChanged && !meta) {
           const mappedDecorations = pluginState.decorations.map(tr.mapping, tr.doc);
           return {
             expandedPositions,
@@ -229,6 +241,10 @@ export function createCodeBlockExpandPlugin(): Plugin<CodeBlockExpandState> {
       let observer: ResizeObserver | undefined;
 
       const scheduleMeasure = () => {
+        if (isViewComposing(view)) {
+          return;
+        }
+
         if (raf) {
           cancelAnimationFrame(raf);
         }
@@ -265,6 +281,17 @@ export function createCodeBlockExpandPlugin(): Plugin<CodeBlockExpandState> {
         view.dom.querySelectorAll(".code-block pre").forEach((pre) => observer?.observe(pre));
       };
 
+      let deferredUpdateCancel: (() => void) | undefined;
+
+      const scheduleDeferredUpdate = () => {
+        deferredUpdateCancel?.();
+        deferredUpdateCancel = runAfterCompositionSettled(view, () => {
+          deferredUpdateCancel = undefined;
+          observeCodeBlocks();
+          scheduleMeasure();
+        });
+      };
+
       const handleResize = () => scheduleMeasure();
       window.addEventListener("resize", handleResize);
       observeCodeBlocks();
@@ -273,10 +300,7 @@ export function createCodeBlockExpandPlugin(): Plugin<CodeBlockExpandState> {
       return {
         update() {
           if (isViewComposing(view)) {
-            void runAfterCompositionSettled(view, () => {
-              observeCodeBlocks();
-              scheduleMeasure();
-            });
+            scheduleDeferredUpdate();
             return;
           }
           observeCodeBlocks();
@@ -286,6 +310,7 @@ export function createCodeBlockExpandPlugin(): Plugin<CodeBlockExpandState> {
           if (raf) {
             cancelAnimationFrame(raf);
           }
+          deferredUpdateCancel?.();
           observer?.disconnect();
           window.removeEventListener("resize", handleResize);
         },

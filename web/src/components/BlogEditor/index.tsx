@@ -80,6 +80,11 @@ type IdleTaskWindow = Window &
     cancelIdleCallback?: (handle: number) => void;
   };
 
+type PendingSave = {
+  doc: Node;
+  version: number;
+};
+
 const scheduleIdleTask = (callback: () => void, timeout = SERIALIZE_IDLE_TIMEOUT) => {
   if (typeof window === "undefined") {
     return globalThis.setTimeout(callback, 0);
@@ -304,10 +309,16 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const serializeTaskRef = useRef<number>();
   const saveLoopPromiseRef = useRef<Promise<void> | null>(null);
-  const pendingDocForSaveRef = useRef<Node | null>(null);
+  const pendingDocForSaveRef = useRef<PendingSave | null>(null);
+  const saveVersionRef = useRef(0);
+  const deferredAutosaveCancelRef = useRef<(() => void) | null>(null);
+  const deferredSaveCancelRef = useRef<(() => void) | null>(null);
+  const externalSyncSeqRef = useRef(0);
+  const deferredExternalSyncCancelRef = useRef<(() => void) | null>(null);
   const mountedRef = useRef(true);
   const lastPersistSucceededRef = useRef(true);
   const skipNextSaveRef = useRef(false);
+  const localDirtyRef = useRef(false);
   const readonlyRef = useRef(readonly);
   readonlyRef.current = readonly;
   const pasteListenerRef = useRef<{ dom: HTMLElement; handler: (e: Event) => void } | null>(null);
@@ -373,6 +384,7 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
         }
         lastSavedRef.current = normalizedContent;
         lastSavedTagsRef.current = updatedMemo.tags ?? [];
+        localDirtyRef.current = false;
         lastPersistSucceededRef.current = true;
         return true;
       } catch (err) {
@@ -393,12 +405,32 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
 
     try {
       while (pendingDocForSaveRef.current) {
-        const latestDoc = pendingDocForSaveRef.current;
+        const view = viewRef.current;
+        if (view && isViewComposing(view)) {
+          deferredSaveCancelRef.current?.();
+          deferredSaveCancelRef.current = runAfterCompositionSettled(view, () => {
+            deferredSaveCancelRef.current = null;
+            if (!mountedRef.current || viewRef.current !== view) return;
+            const pending = pendingDocForSaveRef.current;
+            const nextVersion = Math.max(saveVersionRef.current + 1, (pending?.version ?? 0) + 1);
+            saveVersionRef.current = nextVersion;
+            pendingDocForSaveRef.current = { doc: view.state.doc, version: nextVersion };
+            void startSaveLoopRef.current?.();
+          });
+          return;
+        }
+
+        const pendingSave = pendingDocForSaveRef.current;
         pendingDocForSaveRef.current = null;
 
-        const md = serializer.serialize(latestDoc);
+        const md = serializer.serialize(pendingSave.doc);
         const normalizedContent = normalizeContent(md);
+        const pendingVersion = (pendingDocForSaveRef.current as PendingSave | null)?.version;
+        if (pendingVersion !== undefined && pendingVersion > pendingSave.version) {
+          continue;
+        }
         if (normalizedContent.trim() === lastSavedRef.current.trim()) {
+          localDirtyRef.current = false;
           continue;
         }
 
@@ -428,6 +460,16 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
       }
 
       if (pendingDocForSaveRef.current && mountedRef.current) {
+        const view = viewRef.current;
+        if (view && isViewComposing(view)) {
+          deferredSaveCancelRef.current?.();
+          deferredSaveCancelRef.current = runAfterCompositionSettled(view, () => {
+            deferredSaveCancelRef.current = null;
+            if (!mountedRef.current || viewRef.current !== view) return;
+            void startSaveLoopRef.current?.();
+          });
+          return;
+        }
         void startSaveLoopRef.current?.();
       }
     });
@@ -439,6 +481,12 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
 
   const waitForPendingSaves = useCallback(async () => {
     while (saveLoopPromiseRef.current || pendingDocForSaveRef.current) {
+      const view = viewRef.current;
+      if (view && isViewComposing(view)) {
+        await new Promise<void>((resolve) => runAfterCompositionSettled(view, resolve));
+        continue;
+      }
+
       if (saveLoopPromiseRef.current) {
         await saveLoopPromiseRef.current;
         continue;
@@ -452,7 +500,9 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
 
   const flushPendingSave = useCallback(
     (doc: Node, immediate = false) => {
-      pendingDocForSaveRef.current = doc;
+      const nextVersion = saveVersionRef.current + 1;
+      saveVersionRef.current = nextVersion;
+      pendingDocForSaveRef.current = { doc, version: nextVersion };
 
       if (serializeTaskRef.current !== undefined) {
         cancelIdleTask(serializeTaskRef.current);
@@ -460,6 +510,17 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
       }
 
       if (immediate) {
+        const view = viewRef.current;
+        if (view && isViewComposing(view)) {
+          deferredSaveCancelRef.current?.();
+          deferredSaveCancelRef.current = runAfterCompositionSettled(view, () => {
+            deferredSaveCancelRef.current = null;
+            if (!mountedRef.current || viewRef.current !== view) return;
+            flushPendingSave(view.state.doc, true);
+          });
+          return waitForPendingSaves();
+        }
+
         void startSaveLoopRef.current?.();
         return waitForPendingSaves();
       }
@@ -603,18 +664,34 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
           if (!readonlyRef.current && tr.docChanged) {
             if (skipNextSaveRef.current) {
               skipNextSaveRef.current = false;
+              localDirtyRef.current = false;
               return;
             }
-            if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-            const latestDoc = nextState.doc;
+
+            localDirtyRef.current = true;
+            if (saveTimerRef.current) {
+              clearTimeout(saveTimerRef.current);
+              saveTimerRef.current = undefined;
+            }
+            deferredAutosaveCancelRef.current?.();
+            deferredAutosaveCancelRef.current = null;
+
             const scheduleAutosave = () => {
               if (!mountedRef.current || viewRef.current !== this) return;
+              if (saveTimerRef.current) {
+                clearTimeout(saveTimerRef.current);
+              }
               saveTimerRef.current = setTimeout(() => {
-                flushPendingSave(latestDoc);
+                const currentView = viewRef.current;
+                if (!currentView || currentView !== this) return;
+                flushPendingSave(currentView.state.doc);
               }, AUTOSAVE_DELAY);
             };
             if (isViewComposing(this)) {
-              void runAfterCompositionSettled(this, scheduleAutosave);
+              deferredAutosaveCancelRef.current = runAfterCompositionSettled(this, () => {
+                deferredAutosaveCancelRef.current = null;
+                scheduleAutosave();
+              });
               return;
             }
             scheduleAutosave();
@@ -691,7 +768,15 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
 
     const syncExternalContent = () => {
       const currentView = viewRef.current;
-      if (!mountedRef.current || currentView !== view || isViewComposing(view)) return;
+      if (!mountedRef.current || currentView !== view) return;
+      if (isViewComposing(view)) {
+        deferredExternalSyncCancelRef.current?.();
+        deferredExternalSyncCancelRef.current = runAfterCompositionSettled(view, () => {
+          deferredExternalSyncCancelRef.current = null;
+          syncExternalContent();
+        });
+        return;
+      }
 
       const normalizedContent = normalizeContent(memo.content);
       if (normalizedContent === lastSavedRef.current) return;
@@ -701,17 +786,35 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
         return;
       }
 
-      lastSavedRef.current = normalizedContent;
-      skipNextSaveRef.current = true;
+      if (localDirtyRef.current) {
+        return;
+      }
+
+      const requestSeq = externalSyncSeqRef.current + 1;
+      externalSyncSeqRef.current = requestSeq;
 
       parseInWorker(normalizedContent).then((json) => {
-        if (!mountedRef.current || !viewRef.current || isViewComposing(viewRef.current)) return;
+        const latestView = viewRef.current;
+        if (!mountedRef.current || !latestView || latestView !== view || requestSeq !== externalSyncSeqRef.current) return;
+        if (isViewComposing(latestView)) {
+          deferredExternalSyncCancelRef.current?.();
+          deferredExternalSyncCancelRef.current = runAfterCompositionSettled(latestView, () => {
+            deferredExternalSyncCancelRef.current = null;
+            if (requestSeq === externalSyncSeqRef.current) {
+              syncExternalContent();
+            }
+          });
+          return;
+        }
+        if (localDirtyRef.current || normalizeContent(memo.content) !== normalizedContent) return;
         try {
           const doc = Node.fromJSON(schema, json);
-          const v = viewRef.current;
-          const tr = v.state.tr.replaceWith(0, v.state.doc.content.size, doc.content);
-          v.dispatch(tr);
+          skipNextSaveRef.current = true;
+          latestView.dispatch(latestView.state.tr.replaceWith(0, latestView.state.doc.content.size, doc.content));
+          lastSavedRef.current = normalizedContent;
+          localDirtyRef.current = false;
         } catch (err) {
+          skipNextSaveRef.current = false;
           console.error("[BlogEditor] external content sync failed:", err);
         }
       });
@@ -750,6 +853,13 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
   useEffect(() => {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      deferredAutosaveCancelRef.current?.();
+      deferredAutosaveCancelRef.current = null;
+      deferredSaveCancelRef.current?.();
+      deferredSaveCancelRef.current = null;
+      deferredExternalSyncCancelRef.current?.();
+      deferredExternalSyncCancelRef.current = null;
+      externalSyncSeqRef.current += 1;
       cancelIdleTask(serializeTaskRef.current);
       serializeTaskRef.current = undefined;
       pendingDocForSaveRef.current = null;

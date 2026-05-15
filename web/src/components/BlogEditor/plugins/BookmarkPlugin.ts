@@ -71,6 +71,7 @@ class BookmarkNodeView implements NodeView {
   private view: EditorView;
   private getPos: () => number | undefined;
   private lastUrl: string;
+  private pendingRenderCancel?: () => void;
   private isEditing = false;
 
   constructor(node: Node, view: EditorView, getPos: () => number | undefined) {
@@ -133,6 +134,10 @@ class BookmarkNodeView implements NodeView {
   }
 
   private handleInputKeydown = (e: KeyboardEvent) => {
+    if (e.isComposing || isViewComposing(this.view)) {
+      return;
+    }
+
     if (e.key === "Enter") {
       e.preventDefault();
       e.stopPropagation();
@@ -159,6 +164,10 @@ class BookmarkNodeView implements NodeView {
   private handleInputBlur = () => {
     const url = this.inputElement.value.trim();
     if (url && url !== this.lastUrl) {
+      if (isViewComposing(this.view)) {
+        void runAfterCompositionSettled(this.view, () => this.commitUrl(url));
+        return;
+      }
       this.commitUrl(url);
     } else if (!url && !this.lastUrl) {
       setTimeout(() => {
@@ -185,6 +194,11 @@ class BookmarkNodeView implements NodeView {
   }
 
   private commitUrl(rawUrl: string) {
+    if (isViewComposing(this.view)) {
+      void runAfterCompositionSettled(this.view, () => this.commitUrl(rawUrl));
+      return;
+    }
+
     const url = this.normalizeUrl(rawUrl);
     if (!url) return;
     const pos = this.getPos();
@@ -199,6 +213,11 @@ class BookmarkNodeView implements NodeView {
   }
 
   private deleteNode() {
+    if (isViewComposing(this.view)) {
+      void runAfterCompositionSettled(this.view, () => this.deleteNode());
+      return;
+    }
+
     const pos = this.getPos();
     if (pos === undefined) return;
     const node = this.view.state.doc.nodeAt(pos);
@@ -211,6 +230,10 @@ class BookmarkNodeView implements NodeView {
   }
 
   private enterEditing() {
+    if (isViewComposing(this.view)) {
+      return;
+    }
+
     const pos = this.getPos();
     if (pos === undefined) return;
     const tr = this.view.state.tr.setMeta(bookmarkPluginKey, { editingPos: pos });
@@ -218,12 +241,33 @@ class BookmarkNodeView implements NodeView {
   }
 
   private exitEditing() {
+    if (isViewComposing(this.view)) {
+      void runAfterCompositionSettled(this.view, () => this.exitEditing());
+      return;
+    }
+
     const tr = this.view.state.tr.setMeta(bookmarkPluginKey, { editingPos: null });
     this.view.dispatch(tr);
     this.view.focus();
   }
 
+  private renderWhenSettled(url: string, editing: boolean) {
+    this.pendingRenderCancel?.();
+    this.pendingRenderCancel = runAfterCompositionSettled(this.view, () => {
+      this.pendingRenderCancel = undefined;
+      this.render(url, editing);
+    });
+  }
+
   private render(url: string, editing: boolean) {
+    if (isViewComposing(this.view)) {
+      this.isEditing = editing;
+      this.renderWhenSettled(url, editing);
+      return;
+    }
+
+    this.pendingRenderCancel?.();
+    this.pendingRenderCancel = undefined;
     this.isEditing = editing;
 
     if (editing) {
@@ -232,15 +276,19 @@ class BookmarkNodeView implements NodeView {
       this.editButton.style.display = "none";
       this.inputElement.value = url;
       setTimeout(() => {
-        if (isViewComposing(this.view)) {
-          void runAfterCompositionSettled(this.view, () => {
+      if (isViewComposing(this.view)) {
+        void runAfterCompositionSettled(this.view, () => {
+          if (this.inputElement !== document.activeElement) {
             this.inputElement.focus();
-            if (url) this.inputElement.select();
-          });
-          return;
-        }
+          }
+          if (url && this.inputElement === document.activeElement) this.inputElement.select();
+        });
+        return;
+      }
+      if (this.inputElement !== document.activeElement) {
         this.inputElement.focus();
-        if (url) this.inputElement.select();
+      }
+      if (url && this.inputElement === document.activeElement) this.inputElement.select();
       }, 50);
     } else {
       this.inputContainer.style.display = "none";
@@ -258,6 +306,10 @@ class BookmarkNodeView implements NodeView {
   private renderCard(url: string) {
     const cached = metadataCache.get(url);
     if (cached !== undefined) {
+      if (isViewComposing(this.view)) {
+        this.renderWhenSettled(url, false);
+        return;
+      }
       if (cached) {
         this.renderCardWithData(url, cached);
       } else {
@@ -269,15 +321,33 @@ class BookmarkNodeView implements NodeView {
     this.renderSkeletonCard();
     void fetchURLMetadata(url).then((data) => {
       if (this.lastUrl !== url) return;
-      if (data) {
-        this.renderCardWithData(url, data);
-      } else {
-        this.renderFallbackCard(url);
+      const renderFetchedCard = () => {
+        if (this.lastUrl !== url) return;
+        if (isViewComposing(this.view)) {
+          this.renderWhenSettled(url, false);
+          return;
+        }
+        if (data) {
+          this.renderCardWithData(url, data);
+        } else {
+          this.renderFallbackCard(url);
+        }
+      };
+
+      if (isViewComposing(this.view)) {
+        void runAfterCompositionSettled(this.view, renderFetchedCard);
+        return;
       }
+      renderFetchedCard();
     });
   }
 
   private renderSkeletonCard() {
+    if (isViewComposing(this.view)) {
+      this.renderWhenSettled(this.lastUrl, false);
+      return;
+    }
+
     this.cardElement.innerHTML = "";
     this.cardElement.className = "bookmark-card bookmark-card-telegram bookmark-card-loading";
 
@@ -305,6 +375,11 @@ class BookmarkNodeView implements NodeView {
   }
 
   private renderCardWithData(url: string, data: URLMetadata) {
+    if (isViewComposing(this.view)) {
+      this.renderWhenSettled(url, false);
+      return;
+    }
+
     const safeUrl = sanitizeUrl(url);
     if (!safeUrl) return;
     this.cardElement.innerHTML = "";
@@ -358,6 +433,11 @@ class BookmarkNodeView implements NodeView {
   }
 
   private renderFallbackCard(url: string) {
+    if (isViewComposing(this.view)) {
+      this.renderWhenSettled(url, false);
+      return;
+    }
+
     const safeUrl = sanitizeUrl(url);
     if (!safeUrl) return;
     this.cardElement.innerHTML = "";
@@ -419,6 +499,7 @@ class BookmarkNodeView implements NodeView {
   }
 
   destroy() {
+    this.pendingRenderCancel?.();
     activeNodeViews.delete(this);
   }
 }
@@ -450,6 +531,20 @@ export function createBookmarkPlugin(): Plugin<BookmarkState> {
     view() {
       return {
         update(view: EditorView) {
+          if (isViewComposing(view)) {
+            void runAfterCompositionSettled(view, () => {
+              const ps = bookmarkPluginKey.getState(view.state);
+              const newEditingPos = ps?.editingPos ?? null;
+              if (newEditingPos !== lastEditingPos) {
+                lastEditingPos = newEditingPos;
+                for (const nv of activeNodeViews) {
+                  nv.syncEditingState();
+                }
+              }
+            });
+            return;
+          }
+
           const ps = bookmarkPluginKey.getState(view.state);
           const newEditingPos = ps?.editingPos ?? null;
           if (newEditingPos !== lastEditingPos) {

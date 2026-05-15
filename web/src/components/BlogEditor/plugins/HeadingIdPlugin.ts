@@ -3,7 +3,7 @@ import { Plugin, PluginKey, type Transaction } from "prosemirror-state";
 import { Decoration, DecorationSet } from "prosemirror-view";
 import headingToSlug from "@/outline-vendor/shared/editor/lib/headingToSlug";
 import { EditorStyleHelper } from "@/outline-vendor/shared/editor/styles/EditorStyleHelper";
-import { isCompositionTransaction } from "./CompositionGuardPlugin";
+import { isCompositionTransaction, isViewComposing } from "./CompositionGuardPlugin";
 
 type HeadingIdState = {
   decorations: DecorationSet;
@@ -152,7 +152,11 @@ export function createHeadingIdPlugin(): Plugin<HeadingIdState> {
       decorations(state) {
         return headingIdPluginKey.getState(state)?.decorations ?? null;
       },
-      handleClick(_view, _pos, event) {
+      handleClick(view, _pos, event) {
+        if (isViewComposing(view)) {
+          return false;
+        }
+
         const target = event.target as HTMLElement;
         const link = target.closest("a[href^='#']") as HTMLAnchorElement | null;
         if (!link) return false;

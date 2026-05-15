@@ -6,7 +6,7 @@ import { Decoration, DecorationSet } from "prosemirror-view";
 import { getRenderLimitMessage, MERMAID_RENDER_LIMIT } from "@/lib/markdown/renderLimits";
 import { normalizeMermaidCode } from "@/lib/mermaid/normalizeMermaidCode";
 import { sanitizeSvg } from "@/lib/sanitize-svg";
-import { isCompositionTransaction, isViewComposing } from "./CompositionGuardPlugin";
+import { isCompositionTransaction, isViewComposing, runAfterCompositionSettled } from "./CompositionGuardPlugin";
 
 export const mermaidPluginKey = new PluginKey<MermaidState>("mermaid");
 
@@ -86,6 +86,7 @@ class MermaidRenderer {
   readonly retryButton: HTMLButtonElement;
   private lastRenderedKey = "";
   private pendingRender: PendingRender | null = null;
+  private view?: EditorView;
   private isVisible = false;
   private static observer: IntersectionObserver | null = null;
   private static observedRenderers = new WeakMap<Element, MermaidRenderer>();
@@ -143,13 +144,17 @@ class MermaidRenderer {
   private handleIntersection(isIntersecting: boolean) {
     this.isVisible = isIntersecting;
     if (isIntersecting) {
-      void this.flushPendingRender();
+      void this.flushPendingRender(this.view);
     }
   }
 
   setEditing = (editing: boolean) => {
     this.toggleButton.textContent = editing ? "隐藏代码" : "显示代码";
     this.toggleButton.setAttribute("aria-pressed", editing ? "true" : "false");
+  };
+
+  setView = (view?: EditorView) => {
+    this.view = view;
   };
 
   private setRetryVisible = (visible: boolean) => {
@@ -170,7 +175,7 @@ class MermaidRenderer {
     this.setRetryVisible(false);
 
     if (this.isVisible) {
-      void this.flushPendingRender();
+      void this.flushPendingRender(this.view);
     }
 
     return this.element;
@@ -183,30 +188,43 @@ class MermaidRenderer {
     this.diagramElement.setAttribute("aria-busy", "true");
     this.setRetryVisible(false);
     if (this.isVisible) {
-      void this.flushPendingRender();
+      void this.flushPendingRender(this.view);
     }
   };
 
-  private flushPendingRender = async () => {
+  private flushPendingRender = async (view?: EditorView) => {
     const pending = this.pendingRender;
     if (!pending) return;
 
-    await this.render(pending.block, pending.isDark);
+    await this.render(pending.block, pending.isDark, view);
 
     if (this.pendingRender === pending) {
       this.pendingRender = null;
     }
   };
 
-  render = async (block: { node: Node; pos: number }, isDark: boolean) => {
+  render = async (block: { node: Node; pos: number }, isDark: boolean, view: EditorView | undefined = this.view) => {
     const element = this.diagramElement;
     const text = block.node.textContent;
     const renderKey = `${isDark ? "dark" : "light"}-${text}`;
+    const shouldDeferDomWrite = () => !!view && isViewComposing(view);
+    const deferDomWrite = () => {
+      if (!view) return;
+      this.pendingRender = { block, isDark };
+      void runAfterCompositionSettled(view, () => {
+        if (!this.pendingRender) return;
+        void this.flushPendingRender(view);
+      });
+    };
 
     if (renderKey === this.lastRenderedKey) return;
 
     const limitMessage = getRenderLimitMessage(text, MERMAID_RENDER_LIMIT);
     if (limitMessage) {
+      if (shouldDeferDomWrite()) {
+        deferDomWrite();
+        return;
+      }
       this.lastRenderedKey = renderKey;
       element.classList.add("parse-error");
       element.classList.remove("empty");
@@ -219,6 +237,10 @@ class MermaidRenderer {
 
     const cache = Cache.get(renderKey);
     if (cache) {
+      if (shouldDeferDomWrite()) {
+        deferDomWrite();
+        return;
+      }
       this.lastRenderedKey = renderKey;
       element.classList.remove("parse-error", "empty");
       element.innerHTML = cache;
@@ -265,6 +287,10 @@ class MermaidRenderer {
         throw new Error("Unsafe Mermaid SVG output");
       }
 
+      if (shouldDeferDomWrite()) {
+        deferDomWrite();
+        return;
+      }
       if (text) {
         Cache.set(renderKey, safeSvg);
       }
@@ -275,6 +301,10 @@ class MermaidRenderer {
       element.setAttribute("aria-busy", "false");
       this.setRetryVisible(false);
     } catch (error) {
+      if (shouldDeferDomWrite()) {
+        deferDomWrite();
+        return;
+      }
       const isEmpty = block.node.textContent.trim().length === 0;
       if (isEmpty) {
         element.innerText = "Empty diagram";
@@ -346,12 +376,17 @@ function getNewState({ doc, pluginState, view }: { doc: Node; pluginState: Merma
       ((bestDecoration?.spec as { diagramId?: string } | undefined)?.diagramId === pluginState.editingId ||
         renderer.diagramId === pluginState.editingId);
 
+    renderer.setView(view);
     renderer.setEditing(editing);
 
     renderer.toggleButton.onclick = (event) => {
       event.preventDefault();
       event.stopPropagation();
       if (!view) return;
+
+      if (isViewComposing(view)) {
+        return;
+      }
 
       const nextEditing = editing ? undefined : renderer.diagramId;
       const tr = view.state.tr.setMeta(mermaidPluginKey, { editingId: nextEditing });
@@ -364,6 +399,9 @@ function getNewState({ doc, pluginState, view }: { doc: Node; pluginState: Merma
     renderer.retryButton.onclick = (event) => {
       event.preventDefault();
       event.stopPropagation();
+      if (view && isViewComposing(view)) {
+        return;
+      }
       renderer.retry(block, pluginState.isDark);
     };
 
@@ -480,6 +518,10 @@ export function createMermaidPlugin(options: { isDark: boolean }): Plugin<Mermai
         timer = setTimeout(() => {
           timer = undefined;
           try {
+            if (isViewComposing(targetView)) {
+              scheduleInit(targetView);
+              return;
+            }
             const pluginState = mermaidPluginKey.getState(targetView.state);
             if (pluginState?.initialized) return;
             targetView.dispatch(targetView.state.tr.setMeta(mermaidPluginKey, { loaded: true }));
@@ -519,6 +561,7 @@ export function createMermaidPlugin(options: { isDark: boolean }): Plugin<Mermai
               pendingRenderIdleTask = scheduleMermaidIdleTask(() => {
                 pendingRenderIdleTask = undefined;
                 try {
+                  if (isViewComposing(view)) return;
                   const latestState = mermaidPluginKey.getState(view.state);
                   if (!latestState) return;
                   const codeBlock = findParentCodeBlock(view.state);
@@ -532,7 +575,7 @@ export function createMermaidPlugin(options: { isDark: boolean }): Plugin<Mermai
                   for (const d of decorations) {
                     const renderer = d.spec.renderer as MermaidRenderer | undefined;
                     if (renderer) {
-                      void renderer.render(codeBlock, latestState.isDark);
+                      void renderer.render(codeBlock, latestState.isDark, view);
                     }
                   }
                 } catch {

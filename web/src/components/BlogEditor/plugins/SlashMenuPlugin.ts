@@ -2,7 +2,7 @@ import { Plugin, PluginKey, type Transaction } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 
 import type { ReactNode } from "react";
-import { isCompositionTransaction, isViewComposing, runAfterCompositionSettled } from "./CompositionGuardPlugin";
+import { isCompositionTransaction, isViewComposing } from "./CompositionGuardPlugin";
 
 export interface SlashMenuItem {
   id: string;
@@ -63,6 +63,10 @@ export function createSlashMenuPlugin(onStateChange: (state: SlashMenuState) => 
       handleKeyDown(view, event) {
         const state = slashMenuPluginKey.getState(view.state);
 
+        if (event.isComposing || isViewComposing(view)) {
+          return false;
+        }
+
         if (event.key === "/" && !state?.open) {
           const { $from } = view.state.selection;
           if ($from.parent.type.spec.code) return false;
@@ -74,23 +78,25 @@ export function createSlashMenuPlugin(onStateChange: (state: SlashMenuState) => 
 
           setTimeout(() => {
             if (isViewComposing(view)) {
-              void runAfterCompositionSettled(view, () => {
-                const next: SlashMenuState = {
-                  open: true,
-                  query: "",
-                  from: view.state.selection.$from.pos - 1,
-                  to: view.state.selection.$from.pos,
-                };
-                view.dispatch(view.state.tr.setMeta(slashMenuPluginKey, next));
-              });
               return;
             }
+
+            const { $from: currentFrom } = view.state.selection;
+            if (currentFrom.parent.type.spec.code) return;
+
+            const textBeforeSlash = currentFrom.parent.textBetween(
+              Math.max(0, currentFrom.parentOffset - 1),
+              currentFrom.parentOffset,
+              undefined,
+              "\ufffc",
+            );
+            if (textBeforeSlash !== "/") return;
 
             const next: SlashMenuState = {
               open: true,
               query: "",
-              from: view.state.selection.$from.pos - 1,
-              to: view.state.selection.$from.pos,
+              from: currentFrom.pos - 1,
+              to: currentFrom.pos,
             };
             view.dispatch(view.state.tr.setMeta(slashMenuPluginKey, next));
           });
@@ -125,6 +131,9 @@ export function createSlashMenuPlugin(onStateChange: (state: SlashMenuState) => 
     view() {
       return {
         update(view) {
+          if (isViewComposing(view)) {
+            return;
+          }
           const state = slashMenuPluginKey.getState(view.state);
           if (state) onStateChange(state);
         },

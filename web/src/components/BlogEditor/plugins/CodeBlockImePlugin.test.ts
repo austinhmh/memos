@@ -1,10 +1,24 @@
 import { EditorState, TextSelection } from "prosemirror-state";
 import { DecorationSet, EditorView } from "prosemirror-view";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+class TestIntersectionObserver {
+  observe = vi.fn();
+  unobserve = vi.fn();
+  disconnect = vi.fn();
+}
+
+globalThis.IntersectionObserver = TestIntersectionObserver as unknown as typeof IntersectionObserver;
 import { blogEditorSchema } from "../lib/schema";
 import { codeBlockExpandPluginKey, createCodeBlockExpandPlugin } from "./CodeBlockExpandPlugin";
 import { codeFenceActivePluginKey, createCodeFenceActivePlugin } from "./CodeFenceActivePlugin";
-import { createCompositionGuardPlugin, isViewComposing, runAfterCompositionSettled } from "./CompositionGuardPlugin";
+import {
+  createCompositionGuardPlugin,
+  isCompositionTransaction,
+  isViewComposing,
+  runAfterCompositionSettled,
+} from "./CompositionGuardPlugin";
+import { createMermaidPlugin, mermaidPluginKey } from "./MermaidPlugin";
 import { createTablePlugins } from "./TableControlsPlugin";
 
 const createCodeBlockState = () => {
@@ -40,6 +54,21 @@ const createEditorView = (plugins = [createCompositionGuardPlugin()]) => {
   return { view, host };
 };
 
+const createMermaidState = () => {
+  const paragraph = blogEditorSchema.nodes.paragraph.create(null, blogEditorSchema.text("before"));
+  const codeBlock = blogEditorSchema.nodes.code_block.create({ language: "mermaid" }, blogEditorSchema.text("graph TD\nA-->B"));
+  const doc = blogEditorSchema.nodes.doc.create(null, [paragraph, codeBlock]);
+  const codeStart = paragraph.nodeSize + 1;
+  const state = EditorState.create({
+    doc,
+    schema: blogEditorSchema,
+    plugins: [createCompositionGuardPlugin(), createMermaidPlugin({ isDark: false })],
+    selection: TextSelection.create(doc, codeStart + codeBlock.textContent.length),
+  });
+
+  return state.apply(state.tr.setMeta(mermaidPluginKey, { loaded: true }));
+};
+
 const wait = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
 
 describe("code block IME composition handling", () => {
@@ -51,6 +80,22 @@ describe("code block IME composition handling", () => {
     const tr = state.tr.insertText("创建").setMeta("composition", 1);
     const nextState = state.apply(tr);
 
+    const activeAfter = codeFenceActivePluginKey.getState(nextState);
+    const expandAfter = codeBlockExpandPluginKey.getState(nextState);
+
+    expect(activeAfter?.find()).toEqual(activeBefore?.map(tr.mapping, tr.doc).find());
+    expect(expandAfter?.decorations.find()).toEqual(expandBefore?.decorations.map(tr.mapping, tr.doc).find());
+  });
+
+  it("recognizes composition transactions even when the meta value is falsy", () => {
+    const state = createCodeBlockState();
+    const activeBefore = codeFenceActivePluginKey.getState(state);
+    const expandBefore = codeBlockExpandPluginKey.getState(state);
+
+    const tr = state.tr.insertText("创建").setMeta("composition", 0);
+    expect(isCompositionTransaction(tr)).toBe(true);
+
+    const nextState = state.apply(tr);
     const activeAfter = codeFenceActivePluginKey.getState(nextState);
     const expandAfter = codeBlockExpandPluginKey.getState(nextState);
 
@@ -111,6 +156,25 @@ describe("code block IME composition handling", () => {
     }
   });
 
+  it("cancels deferred callbacks before composition settles", async () => {
+    const { view, host } = createEditorView();
+    try {
+      let ran = false;
+      view.dom.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+      const cancel = runAfterCompositionSettled(view, () => {
+        ran = true;
+      });
+
+      cancel();
+      view.dom.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+      await wait(90);
+      expect(ran).toBe(false);
+    } finally {
+      view.destroy();
+      host.remove();
+    }
+  });
+
   it("maps table control decorations instead of rebuilding them during composition", () => {
     const cell = blogEditorSchema.nodes.table_cell.create(null, blogEditorSchema.text("chuang"));
     const row = blogEditorSchema.nodes.table_row.create(null, [cell]);
@@ -129,6 +193,77 @@ describe("code block IME composition handling", () => {
     const after = state.plugins[0].getState(nextState) as DecorationSet;
 
     expect(after.find()).toEqual(before.map(tr.mapping, tr.doc).find());
+  });
+
+  it("does not rebuild code block expand widgets for empty mapped sets during composition", () => {
+    const paragraph = blogEditorSchema.nodes.paragraph.create(null, blogEditorSchema.text("before"));
+    const doc = blogEditorSchema.nodes.doc.create(null, [paragraph]);
+    const state = EditorState.create({
+      doc,
+      schema: blogEditorSchema,
+      plugins: [createCodeBlockExpandPlugin()],
+    });
+
+    const tr = state.tr.insertText("创建").setMeta("composition", undefined);
+    const nextState = state.apply(tr);
+    const after = codeBlockExpandPluginKey.getState(nextState);
+
+    expect(isCompositionTransaction(tr)).toBe(true);
+    expect(after?.decorations.find()).toEqual([]);
+  });
+
+  it("does not rebuild table widgets for empty mapped sets during composition", () => {
+    const paragraph = blogEditorSchema.nodes.paragraph.create(null, blogEditorSchema.text("before"));
+    const doc = blogEditorSchema.nodes.doc.create(null, [paragraph]);
+    const state = EditorState.create({
+      doc,
+      schema: blogEditorSchema,
+      plugins: createTablePlugins({ isEditable: () => true }),
+    });
+
+    const tr = state.tr.insertText("创建").setMeta("composition", undefined);
+    const nextState = state.apply(tr);
+    const after = state.plugins[0].getState(nextState) as DecorationSet;
+
+    expect(isCompositionTransaction(tr)).toBe(true);
+    expect(after.find()).toEqual([]);
+  });
+
+  it("keeps mermaid widgets mapped instead of rebuilt during composition", () => {
+    const state = createMermaidState();
+    const before = mermaidPluginKey.getState(state);
+    const beforeRenderer = before?.decorationSet.find(0, state.doc.content.size, (spec) => !!spec.renderer)[0]?.spec.renderer;
+
+    const tr = state.tr.insertText("创建").setMeta("composition", 1);
+    const nextState = state.apply(tr);
+    const after = mermaidPluginKey.getState(nextState);
+    const afterRenderer = after?.decorationSet.find(0, nextState.doc.content.size, (spec) => !!spec.renderer)[0]?.spec.renderer;
+
+    expect(after?.decorationSet.find()).toEqual(before?.decorationSet.map(tr.mapping, tr.doc).find());
+    expect(afterRenderer).toBe(beforeRenderer);
+  });
+
+  it("does not dispatch delayed slash-menu cleanup while composition is active", async () => {
+    const { view, host } = createEditorView();
+    try {
+      const dispatch = vi.spyOn(view, "dispatch");
+      view.dom.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+      runAfterCompositionSettled(view, () => {
+        if (!isViewComposing(view)) {
+          view.dispatch(view.state.tr.insertText("after"));
+        }
+      });
+
+      await wait(70);
+      expect(dispatch).not.toHaveBeenCalled();
+
+      view.dom.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+      await wait(90);
+      expect(dispatch).toHaveBeenCalledTimes(1);
+    } finally {
+      view.destroy();
+      host.remove();
+    }
   });
 
   it("delays autosave scheduling while code block composition is active", async () => {

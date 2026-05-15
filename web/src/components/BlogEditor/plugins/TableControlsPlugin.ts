@@ -301,8 +301,7 @@ export const createTableControlsPlugin = (options: { isEditable: () => boolean }
       init: (_, state) => createTableControlDecorations(state, options.isEditable()),
       apply(tr, decorations, _oldState, newState) {
         if (isCompositionTransaction(tr)) {
-          const mappedDecorations = decorations.map(tr.mapping, tr.doc);
-          return mappedDecorations.find().length > 0 ? mappedDecorations : createTableControlDecorations(newState, options.isEditable());
+          return decorations.map(tr.mapping, tr.doc);
         }
 
         if (!tr.docChanged && !tr.selectionSet) {
