@@ -6,6 +6,7 @@ import { Decoration, DecorationSet } from "prosemirror-view";
 import { getRenderLimitMessage, MERMAID_RENDER_LIMIT } from "@/lib/markdown/renderLimits";
 import { normalizeMermaidCode } from "@/lib/mermaid/normalizeMermaidCode";
 import { sanitizeSvg } from "@/lib/sanitize-svg";
+import { isCompositionTransaction, isViewComposing } from "./CompositionGuardPlugin";
 
 export const mermaidPluginKey = new PluginKey<MermaidState>("mermaid");
 
@@ -425,7 +426,7 @@ export function createMermaidPlugin(options: { isDark: boolean }): Plugin<Mermai
           decorationSet: pluginState.decorationSet.map(transaction.mapping, transaction.doc),
         };
 
-        if (transaction.getMeta("composition")) {
+        if (isCompositionTransaction(transaction)) {
           return nextPluginState;
         }
 
@@ -498,7 +499,10 @@ export function createMermaidPlugin(options: { isDark: boolean }): Plugin<Mermai
             scheduleInit(view);
           }
 
-          if (!ps?.initialized || view.composing) return;
+          if (!ps?.initialized) return;
+          if (isViewComposing(view)) {
+            return;
+          }
 
           // Debounced re-render for the active mermaid diagram only.
           // The expensive render itself is deferred into requestIdleCallback so
@@ -558,6 +562,10 @@ export function createMermaidPlugin(options: { isDark: boolean }): Plugin<Mermai
           const target = event.target as HTMLElement;
           const diagram = target?.closest(".mermaid-diagram-wrapper");
           if (!diagram) return false;
+
+          if (isViewComposing(view)) {
+            return false;
+          }
 
           const codeBlock = diagram.previousElementSibling;
           if (!codeBlock) return false;

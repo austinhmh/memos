@@ -1,6 +1,7 @@
 import type { Node as ProsemirrorNode } from "prosemirror-model";
 import { Plugin, PluginKey, type Transaction } from "prosemirror-state";
 import { Decoration, DecorationSet, type EditorView } from "prosemirror-view";
+import { isCompositionTransaction, isViewComposing, runAfterCompositionSettled } from "./CompositionGuardPlugin";
 
 type CodeBlockExpandState = {
   decorations: DecorationSet;
@@ -53,10 +54,6 @@ function mapCodeBlockPositions(positions: Set<number>, tr: Transaction): Set<num
     }
   });
   return nextPositions;
-}
-
-function isCompositionTransaction(tr: Transaction): boolean {
-  return !!tr.getMeta("composition");
 }
 
 function createExpandButton(pos: number, expanded: boolean): HTMLButtonElement {
@@ -210,11 +207,13 @@ export function createCodeBlockExpandPlugin(): Plugin<CodeBlockExpandState> {
           return pluginState;
         }
 
-        if (isCompositionTransaction(tr)) {
+        if (isCompositionTransaction(tr) || (tr.docChanged && !meta)) {
+          const mappedDecorations = pluginState.decorations.map(tr.mapping, tr.doc);
           return {
             expandedPositions,
             overflowPositions,
-            decorations: pluginState.decorations.map(tr.mapping, tr.doc),
+            decorations:
+              mappedDecorations.find().length > 0 ? mappedDecorations : createDecorations(tr.doc, expandedPositions, overflowPositions),
           };
         }
 
@@ -236,7 +235,7 @@ export function createCodeBlockExpandPlugin(): Plugin<CodeBlockExpandState> {
 
         raf = requestAnimationFrame(() => {
           raf = 0;
-          if (view.composing) {
+          if (isViewComposing(view)) {
             return;
           }
 
@@ -253,6 +252,10 @@ export function createCodeBlockExpandPlugin(): Plugin<CodeBlockExpandState> {
       };
 
       const observeCodeBlocks = () => {
+        if (isViewComposing(view)) {
+          return;
+        }
+
         observer?.disconnect();
         observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(scheduleMeasure);
         if (!observer) {
@@ -269,7 +272,11 @@ export function createCodeBlockExpandPlugin(): Plugin<CodeBlockExpandState> {
 
       return {
         update() {
-          if (view.composing) {
+          if (isViewComposing(view)) {
+            void runAfterCompositionSettled(view, () => {
+              observeCodeBlocks();
+              scheduleMeasure();
+            });
             return;
           }
           observeCodeBlocks();

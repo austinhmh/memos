@@ -1,7 +1,8 @@
-import { Plugin, PluginKey } from "prosemirror-state";
+import { Plugin, PluginKey, type Transaction } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 
 import type { ReactNode } from "react";
+import { isCompositionTransaction, isViewComposing, runAfterCompositionSettled } from "./CompositionGuardPlugin";
 
 export interface SlashMenuItem {
   id: string;
@@ -32,6 +33,10 @@ export function createSlashMenuPlugin(onStateChange: (state: SlashMenuState) => 
       apply(tr, prev, _oldState, newState) {
         const meta = tr.getMeta(slashMenuPluginKey);
         if (meta) return meta as SlashMenuState;
+
+        if (isCompositionTransaction(tr)) {
+          return prev;
+        }
 
         if (!prev.open) return prev;
 
@@ -68,6 +73,19 @@ export function createSlashMenuPlugin(onStateChange: (state: SlashMenuState) => 
           }
 
           setTimeout(() => {
+            if (isViewComposing(view)) {
+              void runAfterCompositionSettled(view, () => {
+                const next: SlashMenuState = {
+                  open: true,
+                  query: "",
+                  from: view.state.selection.$from.pos - 1,
+                  to: view.state.selection.$from.pos,
+                };
+                view.dispatch(view.state.tr.setMeta(slashMenuPluginKey, next));
+              });
+              return;
+            }
+
             const next: SlashMenuState = {
               open: true,
               query: "",

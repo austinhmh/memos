@@ -1,6 +1,6 @@
 import type { Attrs, Node as ProseMirrorNode } from "prosemirror-model";
 import type { Command, EditorState, Transaction } from "prosemirror-state";
-import { Plugin, TextSelection } from "prosemirror-state";
+import { Plugin, PluginKey, TextSelection } from "prosemirror-state";
 import {
   addColumn,
   addRow,
@@ -14,6 +14,7 @@ import {
 } from "prosemirror-tables";
 import type { EditorView, Decoration as ProseMirrorDecoration } from "prosemirror-view";
 import { Decoration, DecorationSet } from "prosemirror-view";
+import { isCompositionTransaction, isViewComposing } from "./CompositionGuardPlugin";
 
 type MutableAttrs = Record<string, unknown>;
 
@@ -291,12 +292,35 @@ const handleTableControlMouseDown = (view: EditorView, event: MouseEvent): boole
 
 export const createTableControlDecorationsForTest = createTableControlDecorations;
 
+const tableControlsPluginKey = new PluginKey<DecorationSet>("tableControls");
+
 export const createTableControlsPlugin = (options: { isEditable: () => boolean }) => {
-  return new Plugin({
+  return new Plugin<DecorationSet>({
+    key: tableControlsPluginKey,
+    state: {
+      init: (_, state) => createTableControlDecorations(state, options.isEditable()),
+      apply(tr, decorations, _oldState, newState) {
+        if (isCompositionTransaction(tr)) {
+          const mappedDecorations = decorations.map(tr.mapping, tr.doc);
+          return mappedDecorations.find().length > 0 ? mappedDecorations : createTableControlDecorations(newState, options.isEditable());
+        }
+
+        if (!tr.docChanged && !tr.selectionSet) {
+          return decorations;
+        }
+
+        return createTableControlDecorations(newState, options.isEditable());
+      },
+    },
     props: {
-      decorations: (state) => createTableControlDecorations(state, options.isEditable()),
+      decorations: (state) => tableControlsPluginKey.getState(state) ?? null,
       handleDOMEvents: {
-        mousedown: handleTableControlMouseDown,
+        mousedown(view, event) {
+          if (isViewComposing(view)) {
+            return false;
+          }
+          return handleTableControlMouseDown(view, event);
+        },
       },
     },
   });

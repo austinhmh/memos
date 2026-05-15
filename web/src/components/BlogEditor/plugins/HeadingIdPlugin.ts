@@ -3,6 +3,7 @@ import { Plugin, PluginKey, type Transaction } from "prosemirror-state";
 import { Decoration, DecorationSet } from "prosemirror-view";
 import headingToSlug from "@/outline-vendor/shared/editor/lib/headingToSlug";
 import { EditorStyleHelper } from "@/outline-vendor/shared/editor/styles/EditorStyleHelper";
+import { isCompositionTransaction } from "./CompositionGuardPlugin";
 
 type HeadingIdState = {
   decorations: DecorationSet;
@@ -128,6 +129,12 @@ export function createHeadingIdPlugin(): Plugin<HeadingIdState> {
       apply(tr, pluginState, oldState, newState) {
         if (!tr.docChanged) {
           return pluginState;
+        }
+
+        if (isCompositionTransaction(tr)) {
+          return {
+            decorations: pluginState.decorations.map(tr.mapping, tr.doc),
+          };
         }
 
         if (!transactionTouchesHeadings(tr, oldState.doc, newState.doc)) {

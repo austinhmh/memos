@@ -1,6 +1,7 @@
 import type { EditorView } from "prosemirror-view";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { isViewComposing, runAfterCompositionSettled } from "../plugins/CompositionGuardPlugin";
 import type { SlashMenuItem, SlashMenuState } from "../plugins/SlashMenuPlugin";
 
 interface SlashMenuProps {
@@ -22,6 +23,11 @@ export const SlashMenu = ({ view, items, menuState }: SlashMenuProps) => {
     let raf: number;
     const poll = () => {
       try {
+        if (isViewComposing(view)) {
+          raf = requestAnimationFrame(poll);
+          return;
+        }
+
         const { $from } = view.state.selection;
         const tb = $from.parent.textBetween(Math.max(0, $from.parentOffset - 100), $from.parentOffset, undefined, "\ufffc");
         const m = /\/([^\s/]*)$/.exec(tb);
@@ -58,7 +64,16 @@ export const SlashMenu = ({ view, items, menuState }: SlashMenuProps) => {
       const deleteTo = Math.min(to, state.doc.content.size);
 
       if (deleteFrom >= deleteTo) {
+        if (isViewComposing(view)) {
+          void runAfterCompositionSettled(view, () => item.action(view));
+          return;
+        }
         item.action(view);
+        return;
+      }
+
+      if (isViewComposing(view)) {
+        void runAfterCompositionSettled(view, () => executeItem(item));
         return;
       }
 
@@ -80,11 +95,23 @@ export const SlashMenu = ({ view, items, menuState }: SlashMenuProps) => {
           if (blockEnd > blockStart) {
             view.dispatch(newState.tr.delete(blockStart, blockEnd));
           }
-          setTimeout(() => item.action(view), 0);
+          setTimeout(() => {
+            if (isViewComposing(view)) {
+              void runAfterCompositionSettled(view, () => item.action(view));
+              return;
+            }
+            item.action(view);
+          }, 0);
         }, 0);
       } else {
         view.dispatch(state.tr.delete(deleteFrom, deleteTo));
-        setTimeout(() => item.action(view), 0);
+        setTimeout(() => {
+          if (isViewComposing(view)) {
+            void runAfterCompositionSettled(view, () => item.action(view));
+            return;
+          }
+          item.action(view);
+        }, 0);
       }
     },
     [view, menuState],
@@ -117,7 +144,7 @@ export const SlashMenu = ({ view, items, menuState }: SlashMenuProps) => {
     el?.scrollIntoView({ block: "nearest" });
   }, [selectedIndex]);
 
-  if (!menuState.open || !view || filtered.length === 0) return null;
+  if (!menuState.open || !view || filtered.length === 0 || isViewComposing(view)) return null;
 
   let left = 0;
   let top = 0;

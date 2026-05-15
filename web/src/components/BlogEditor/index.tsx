@@ -57,6 +57,7 @@ import { createBookmarkPlugin } from "./plugins/BookmarkPlugin";
 import { createCodeBlockExpandPlugin } from "./plugins/CodeBlockExpandPlugin";
 import { createCodeFenceActivePlugin } from "./plugins/CodeFenceActivePlugin";
 import { createCodeHighlightPlugin } from "./plugins/CodeHighlightPlugin";
+import { createCompositionGuardPlugin, isViewComposing, runAfterCompositionSettled } from "./plugins/CompositionGuardPlugin";
 import { createHeadingIdPlugin } from "./plugins/HeadingIdPlugin";
 import { createMermaidPlugin } from "./plugins/MermaidPlugin";
 import { createSlashMenuPlugin, type SlashMenuState } from "./plugins/SlashMenuPlugin";
@@ -536,6 +537,7 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
         plugins: [
           keymap(buildBlogEditorKeymap(manualSaveCommand)),
           keymap(tableKeymap),
+          createCompositionGuardPlugin(),
           history(),
           uploadPlaceholderPlugin,
           new UploadPlugin({
@@ -605,9 +607,17 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
             }
             if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
             const latestDoc = nextState.doc;
-            saveTimerRef.current = setTimeout(() => {
-              flushPendingSave(latestDoc);
-            }, AUTOSAVE_DELAY);
+            const scheduleAutosave = () => {
+              if (!mountedRef.current || viewRef.current !== this) return;
+              saveTimerRef.current = setTimeout(() => {
+                flushPendingSave(latestDoc);
+              }, AUTOSAVE_DELAY);
+            };
+            if (isViewComposing(this)) {
+              void runAfterCompositionSettled(this, scheduleAutosave);
+              return;
+            }
+            scheduleAutosave();
           }
         },
       });
@@ -679,28 +689,40 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
     const view = viewRef.current;
     if (!view) return;
 
-    const normalizedContent = normalizeContent(memo.content);
-    if (normalizedContent === lastSavedRef.current) return;
+    const syncExternalContent = () => {
+      const currentView = viewRef.current;
+      if (!mountedRef.current || currentView !== view || isViewComposing(view)) return;
 
-    if (normalizedContent.trim() === lastSavedRef.current.trim()) {
+      const normalizedContent = normalizeContent(memo.content);
+      if (normalizedContent === lastSavedRef.current) return;
+
+      if (normalizedContent.trim() === lastSavedRef.current.trim()) {
+        lastSavedRef.current = normalizedContent;
+        return;
+      }
+
       lastSavedRef.current = normalizedContent;
+      skipNextSaveRef.current = true;
+
+      parseInWorker(normalizedContent).then((json) => {
+        if (!mountedRef.current || !viewRef.current || isViewComposing(viewRef.current)) return;
+        try {
+          const doc = Node.fromJSON(schema, json);
+          const v = viewRef.current;
+          const tr = v.state.tr.replaceWith(0, v.state.doc.content.size, doc.content);
+          v.dispatch(tr);
+        } catch (err) {
+          console.error("[BlogEditor] external content sync failed:", err);
+        }
+      });
+    };
+
+    if (isViewComposing(view)) {
+      void runAfterCompositionSettled(view, syncExternalContent);
       return;
     }
 
-    lastSavedRef.current = normalizedContent;
-    skipNextSaveRef.current = true;
-
-    parseInWorker(normalizedContent).then((json) => {
-      if (!mountedRef.current || !viewRef.current) return;
-      try {
-        const doc = Node.fromJSON(schema, json);
-        const v = viewRef.current;
-        const tr = v.state.tr.replaceWith(0, v.state.doc.content.size, doc.content);
-        v.dispatch(tr);
-      } catch (err) {
-        console.error("[BlogEditor] external content sync failed:", err);
-      }
-    });
+    syncExternalContent();
   }, [memo.content, normalizeContent]);
 
   useEffect(() => {
@@ -713,6 +735,14 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
+
+    if (isViewComposing(view)) {
+      void runAfterCompositionSettled(view, () => {
+        if (!mountedRef.current || viewRef.current !== view || isViewComposing(view)) return;
+        view.dispatch(view.state.tr.setMeta("theme", { isDark: isDarkRef.current }));
+      });
+      return;
+    }
 
     view.dispatch(view.state.tr.setMeta("theme", { isDark }));
   }, [isDark]);

@@ -3,6 +3,7 @@ import type { EditorState, Transaction } from "prosemirror-state";
 import { NodeSelection, Plugin, PluginKey } from "prosemirror-state";
 import type { EditorView, NodeView } from "prosemirror-view";
 import { sanitizeImageUrl, sanitizeUrl } from "@/lib/sanitize-url";
+import { isViewComposing, runAfterCompositionSettled } from "./CompositionGuardPlugin";
 
 export const bookmarkPluginKey = new PluginKey<BookmarkState>("bookmark");
 
@@ -160,7 +161,13 @@ class BookmarkNodeView implements NodeView {
     if (url && url !== this.lastUrl) {
       this.commitUrl(url);
     } else if (!url && !this.lastUrl) {
-      setTimeout(() => this.deleteNode(), 0);
+      setTimeout(() => {
+        if (isViewComposing(this.view)) {
+          void runAfterCompositionSettled(this.view, () => this.deleteNode());
+          return;
+        }
+        this.deleteNode();
+      }, 0);
     } else {
       this.exitEditing();
     }
@@ -225,6 +232,13 @@ class BookmarkNodeView implements NodeView {
       this.editButton.style.display = "none";
       this.inputElement.value = url;
       setTimeout(() => {
+        if (isViewComposing(this.view)) {
+          void runAfterCompositionSettled(this.view, () => {
+            this.inputElement.focus();
+            if (url) this.inputElement.select();
+          });
+          return;
+        }
         this.inputElement.focus();
         if (url) this.inputElement.select();
       }, 50);
