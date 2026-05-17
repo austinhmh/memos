@@ -37,6 +37,7 @@ const MemoDetail = () => {
   const uid = params.uid;
   const memoName = `${memoNamePrefix}${uid}`;
   const [showCommentEditor, setShowCommentEditor] = useState(false);
+  const [blogEditorSaveStatus, setBlogEditorSaveStatus] = useState<"saved" | "unsaved">("saved");
 
   // Resizable panels
   const [leftWidth, setLeftWidth] = useState(20);
@@ -145,7 +146,7 @@ const MemoDetail = () => {
     >
       {!md && (
         <MobileHeader>
-          <MemoDetailSidebarDrawer memo={memo} parentPage={locationState?.from} />
+          <MemoDetailSidebarDrawer memo={memo} parentPage={locationState?.from} saveStatus={blogEditorSaveStatus} />
         </MobileHeader>
       )}
 
@@ -222,7 +223,7 @@ const MemoDetail = () => {
                     </div>
                   }
                 >
-                  <BlogEditor memo={stableMemo ?? memo} readonly={false} />
+                  <BlogEditor memo={stableMemo ?? memo} readonly={false} onSaveStatusChange={setBlogEditorSaveStatus} />
                 </Suspense>
               ) : (
                 <div className="blog-editor">
@@ -243,7 +244,7 @@ const MemoDetail = () => {
               onMouseDown={() => handleMouseDown("right")}
             />
             <div className="shrink-0 self-stretch h-full overflow-y-auto hide-scrollbar pt-4 px-3 pb-8" style={{ width: `${rightWidth}%` }}>
-              <MemoDetailSidebar className="py-2" memo={memo} parentPage={locationState?.from} />
+              <MemoDetailSidebar className="py-2" memo={memo} parentPage={locationState?.from} saveStatus={blogEditorSaveStatus} />
 
               {memo.attachments.length > 0 && (
                 <div className="mt-4">
@@ -300,7 +301,7 @@ const MemoDetail = () => {
       {!md && (
         <div className="w-full px-4 sm:px-6">
           <div className="mt-4 pt-4 border-t border-border">
-            <MemoDetailSidebar className="py-2" memo={memo} parentPage={locationState?.from} />
+            <MemoDetailSidebar className="py-2" memo={memo} parentPage={locationState?.from} saveStatus={blogEditorSaveStatus} />
           </div>
 
           {memo.attachments.length > 0 && (

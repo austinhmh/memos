@@ -35,6 +35,7 @@ const BlogDetail = () => {
   const md = useMediaQuery("md");
   const updateMetadataMemo = useUpdateMemo();
   const [showCommentEditor, setShowCommentEditor] = useState(false);
+  const [blogEditorSaveStatus, setBlogEditorSaveStatus] = useState<"saved" | "unsaved">("saved");
 
   // Resizable three-column panels
   const [leftWidth, setLeftWidth] = useState(20);
@@ -137,7 +138,7 @@ const BlogDetail = () => {
     >
       {!md && (
         <MobileHeader>
-          <MemoDetailSidebarDrawer memo={memo} parentPage={locationState?.from || "/blog"} />
+          <MemoDetailSidebarDrawer memo={memo} parentPage={locationState?.from || "/blog"} saveStatus={blogEditorSaveStatus} />
         </MobileHeader>
       )}
 
@@ -215,7 +216,7 @@ const BlogDetail = () => {
 
           {canEdit ? (
             <Suspense fallback={<div style={{ padding: "2rem", color: "#888" }}>正在加载文档…</div>}>
-              <BlogEditor memo={memo} readonly={false} />
+              <BlogEditor memo={memo} readonly={false} onSaveStatusChange={setBlogEditorSaveStatus} />
             </Suspense>
           ) : (
             <div className="blog-editor">
@@ -229,7 +230,12 @@ const BlogDetail = () => {
           {!md && (
             <>
               <div className="mt-6 pt-4 border-t border-border">
-                <MemoDetailSidebar className="py-2" memo={memo} parentPage={locationState?.from || "/blog"} />
+                <MemoDetailSidebar
+                  className="py-2"
+                  memo={memo}
+                  parentPage={locationState?.from || "/blog"}
+                  saveStatus={blogEditorSaveStatus}
+                />
               </div>
 
               {memo.attachments.length > 0 && (

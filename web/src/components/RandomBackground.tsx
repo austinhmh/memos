@@ -1,10 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchBgImagesFromServer, STORAGE_KEY } from "@/components/Settings/BackgroundSection";
+import type { User } from "@/types/proto/api/v1/user_service_pb";
 
 interface BackgroundImage {
   url: string;
   name: string;
   filename: string;
+}
+
+interface Props {
+  currentUser?: User;
 }
 
 const pickRandom = (images: BackgroundImage[]): string | null => {
@@ -20,7 +25,7 @@ const applyBgClass = (url: string | null) => {
   }
 };
 
-const RandomBackground = () => {
+const RandomBackground = ({ currentUser }: Props) => {
   const [bgUrl, setBgUrl] = useState<string | null>(null);
   const initializedRef = useRef(false);
 
@@ -39,6 +44,13 @@ const RandomBackground = () => {
       setBgUrl(url);
       applyBgClass(url);
     };
+
+    if (!currentUser) {
+      setBgUrl(null);
+      applyBgClass(null);
+      initializedRef.current = false;
+      return;
+    }
 
     if (!initializedRef.current) {
       initializedRef.current = true;
@@ -61,7 +73,7 @@ const RandomBackground = () => {
     };
     window.addEventListener("background-images-changed", onSettingsChanged);
     return () => window.removeEventListener("background-images-changed", onSettingsChanged);
-  }, []);
+  }, [currentUser]);
 
   if (!bgUrl) return null;
 

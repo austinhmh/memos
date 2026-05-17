@@ -36,7 +36,7 @@ const RootLayout = () => {
 
   return (
     <>
-      <RandomBackground />
+      <RandomBackground currentUser={currentUser} />
       <div className="w-full min-h-full min-w-0 flex flex-row justify-center items-start sm:pl-16 overflow-x-hidden">
         {sm && (
           <div

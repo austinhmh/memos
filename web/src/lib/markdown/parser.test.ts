@@ -194,6 +194,40 @@ describe("highlight rule (==text==)", () => {
     expect(types).toContain("highlight_open");
     expect(types).toContain("highlight_close");
   });
+
+  it("parses colored highlight markup", () => {
+    const children = inlineChildren("=={color:FDEA9B}highlighted==");
+    const highlight = children.find((t) => t.type === "highlight_open");
+    const text = children.find((t) => t.type === "text");
+
+    expect(highlight?.attrGet("data-color")).toBe("#FDEA9B");
+    expect(text?.content).toBe("highlighted");
+  });
+});
+
+describe("text color rule ({{color:RRGGBB|text}})", () => {
+  it("parses text color markup", () => {
+    const children = inlineChildren("{{color:DC2626|red text}}");
+    const types = children.map((t) => t.type);
+
+    expect(types).toContain("text_color_open");
+    expect(types).toContain("text_color_close");
+  });
+
+  it("parses text color attrs", () => {
+    const children = inlineChildren("{{color:DC2626|red text}}");
+    const textColor = children.find((t) => t.type === "text_color_open");
+    const text = children.find((t) => t.type === "text");
+
+    expect(textColor?.attrGet("data-color")).toBe("#DC2626");
+    expect(text?.content).toBe("red text");
+  });
+
+  it("does not parse color syntax as a tag", () => {
+    const children = inlineChildren("{{color:DC2626|red text}} =={color:FDEA9B}highlighted==");
+
+    expect(children.some((t) => t.type === "tag")).toBe(false);
+  });
 });
 
 describe("underline rule (__text__)", () => {

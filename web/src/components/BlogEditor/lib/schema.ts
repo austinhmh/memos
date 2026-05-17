@@ -2,6 +2,14 @@ import { Schema } from "prosemirror-model";
 import { sanitizeImageUrl, sanitizeUrl } from "@/lib/sanitize-url";
 import { getCellAttrs, setCellAttrs } from "../plugins/TableControlsPlugin";
 
+const sanitizeHighlightColor = (color: string | null | undefined) => {
+  if (!color) return null;
+  const value = color.trim();
+  return /^#[0-9a-fA-F]{6}$/.test(value) ? value : null;
+};
+
+const sanitizeTextColor = sanitizeHighlightColor;
+
 /**
  * ProseMirror schema for the blog editor (Outline-style).
  * code_block uses `language` attr for fence info (e.g. "mermaid").
@@ -51,6 +59,7 @@ export const blogEditorSchema = new Schema({
         {
           tag: ".code-block",
           preserveWhitespace: "full",
+          contentElement: (dom: HTMLElement) => dom.querySelector("code") || dom,
           getAttrs: (dom: HTMLElement) => ({
             language: (dom as HTMLElement).dataset?.language ?? "",
           }),
@@ -357,8 +366,48 @@ export const blogEditorSchema = new Schema({
       toDOM: () => ["s"],
     },
     highlight: {
-      parseDOM: [{ tag: "mark" }],
-      toDOM: () => ["mark"],
+      attrs: { color: { default: null } },
+      parseDOM: [
+        {
+          tag: "mark",
+          getAttrs: (dom: HTMLElement) => ({ color: sanitizeHighlightColor(dom.getAttribute("data-color")) }),
+        },
+        {
+          tag: "span[style]",
+          getAttrs: (dom: HTMLElement) => {
+            const backgroundColor = dom.style.backgroundColor;
+            if (!backgroundColor) return false;
+            return { color: null };
+          },
+        },
+      ],
+      toDOM: (node) => {
+        const color = sanitizeHighlightColor(node.attrs.color as string | null);
+        return ["mark", color ? { "data-color": color, style: `background-color: ${color}` } : {}, 0];
+      },
+    },
+    text_color: {
+      attrs: { color: {} },
+      parseDOM: [
+        {
+          tag: "span[data-color]",
+          getAttrs: (dom: HTMLElement) => {
+            const color = sanitizeTextColor(dom.getAttribute("data-color"));
+            return color ? { color } : false;
+          },
+        },
+        {
+          style: "color",
+          getAttrs: (color: string) => {
+            const safeColor = sanitizeTextColor(color);
+            return safeColor ? { color: safeColor } : false;
+          },
+        },
+      ],
+      toDOM: (node) => {
+        const color = sanitizeTextColor(node.attrs.color as string | null) || "#111827";
+        return ["span", { "data-color": color, style: `color: ${color}` }, 0];
+      },
     },
     underline: {
       parseDOM: [{ style: "text-decoration=underline" }],

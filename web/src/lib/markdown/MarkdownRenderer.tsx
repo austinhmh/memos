@@ -17,6 +17,14 @@ const LARGE_CODE_BLOCK_THRESHOLD = 6_000;
 const INITIAL_BLOCKS = 12;
 const BLOCKS_PER_LOAD = 8;
 
+const sanitizeHighlightColor = (color: string | null | undefined) => {
+  if (!color) return null;
+  const value = color.trim();
+  return /^#[0-9a-fA-F]{6}$/.test(value) ? value : null;
+};
+
+const sanitizeTextColor = sanitizeHighlightColor;
+
 interface MarkdownRendererProps {
   content: string;
   className?: string;
@@ -445,7 +453,24 @@ function renderInline(tokens: Token[], rawContent: string): React.ReactNode[] {
 
     if (token.type === "highlight_open") {
       const { children, endIndex } = collectInline(tokens, i, "highlight_open", "highlight_close", rawContent);
-      result.push(<mark key={i}>{children}</mark>);
+      const color = sanitizeHighlightColor(token.attrGet("data-color"));
+      result.push(
+        <mark key={i} data-color={color || undefined} style={color ? { backgroundColor: color } : undefined}>
+          {children}
+        </mark>,
+      );
+      i = endIndex + 1;
+      continue;
+    }
+
+    if (token.type === "text_color_open") {
+      const { children, endIndex } = collectInline(tokens, i, "text_color_open", "text_color_close", rawContent);
+      const color = sanitizeTextColor(token.attrGet("data-color"));
+      result.push(
+        <span key={i} data-color={color || undefined} style={color ? { color } : undefined}>
+          {children}
+        </span>,
+      );
       i = endIndex + 1;
       continue;
     }

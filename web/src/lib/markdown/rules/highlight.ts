@@ -1,11 +1,35 @@
 import type MarkdownIt from "markdown-it";
 import type { StateInline } from "markdown-it";
 
-function tokenize(state: StateInline, _silent: boolean): boolean {
+const COLOR_RE = /^\{(?:#([0-9a-fA-F]{6})|color:([0-9a-fA-F]{6}))\}/;
+
+function tokenize(state: StateInline, silent: boolean): boolean {
   const start = state.pos;
   const marker = state.src.charCodeAt(start);
   if (marker !== 0x3d /* = */) return false;
   if (state.src.charCodeAt(start + 1) !== 0x3d) return false;
+
+  const colorMatch = COLOR_RE.exec(state.src.slice(start + 2));
+  if (colorMatch) {
+    const contentStart = start + 2 + colorMatch[0].length;
+    const contentEnd = state.src.indexOf("==", contentStart);
+    if (contentEnd <= contentStart) return false;
+    if (silent) return true;
+
+    const openToken = state.push("highlight_open", "mark", 1);
+    openToken.markup = "==";
+    openToken.attrSet("data-color", `#${colorMatch[1] || colorMatch[2]}`);
+
+    const children: StateInline["tokens"] = [];
+    state.md.inline.parse(state.src.slice(contentStart, contentEnd), state.md, state.env, children);
+    state.tokens.push(...children);
+
+    const closeToken = state.push("highlight_close", "mark", -1);
+    closeToken.markup = "==";
+
+    state.pos = contentEnd + 2;
+    return true;
+  }
 
   const scanned = state.scanDelims(state.pos, true);
   let len = scanned.length;
@@ -50,6 +74,11 @@ function postProcess(state: StateInline, delimiters: StateInline.Delimiter[]) {
     openToken.nesting = 1;
     openToken.markup = "==";
     openToken.content = "";
+
+    const color = openToken.attrGet("data-color");
+    if (color) {
+      openToken.attrSet("data-color", color);
+    }
 
     const closeToken = state.tokens[endDelim.token];
     closeToken.type = "highlight_close";

@@ -276,19 +276,19 @@ class BookmarkNodeView implements NodeView {
       this.editButton.style.display = "none";
       this.inputElement.value = url;
       setTimeout(() => {
-      if (isViewComposing(this.view)) {
-        void runAfterCompositionSettled(this.view, () => {
-          if (this.inputElement !== document.activeElement) {
-            this.inputElement.focus();
-          }
-          if (url && this.inputElement === document.activeElement) this.inputElement.select();
-        });
-        return;
-      }
-      if (this.inputElement !== document.activeElement) {
-        this.inputElement.focus();
-      }
-      if (url && this.inputElement === document.activeElement) this.inputElement.select();
+        if (isViewComposing(this.view)) {
+          void runAfterCompositionSettled(this.view, () => {
+            if (this.inputElement !== document.activeElement) {
+              this.inputElement.focus();
+            }
+            if (url && this.inputElement === document.activeElement) this.inputElement.select();
+          });
+          return;
+        }
+        if (this.inputElement !== document.activeElement) {
+          this.inputElement.focus();
+        }
+        if (url && this.inputElement === document.activeElement) this.inputElement.select();
       }, 50);
     } else {
       this.inputContainer.style.display = "none";

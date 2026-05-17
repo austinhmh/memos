@@ -1,3 +1,4 @@
+import { DOMParser as ProseMirrorDOMParser } from "prosemirror-model";
 import { EditorState, TextSelection } from "prosemirror-state";
 import { DecorationSet, EditorView } from "prosemirror-view";
 import { describe, expect, it, vi } from "vitest";
@@ -9,6 +10,7 @@ class TestIntersectionObserver {
 }
 
 globalThis.IntersectionObserver = TestIntersectionObserver as unknown as typeof IntersectionObserver;
+
 import { blogEditorSchema } from "../lib/schema";
 import { codeBlockExpandPluginKey, createCodeBlockExpandPlugin } from "./CodeBlockExpandPlugin";
 import { codeFenceActivePluginKey, createCodeFenceActivePlugin } from "./CodeFenceActivePlugin";
@@ -72,6 +74,30 @@ const createMermaidState = () => {
 const wait = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
 
 describe("code block IME composition handling", () => {
+  it("parses code block DOM content from the inner code element only", () => {
+    const wrapper = document.createElement("div");
+    const codeBlock = document.createElement("div");
+    codeBlock.className = "code-block";
+    codeBlock.dataset.language = "";
+
+    const control = document.createElement("button");
+    control.textContent = "创建";
+    control.setAttribute("contenteditable", "false");
+
+    const pre = document.createElement("pre");
+    const code = document.createElement("code");
+    code.textContent = "创建";
+    pre.appendChild(code);
+    codeBlock.append(control, pre);
+    wrapper.appendChild(codeBlock);
+
+    const doc = ProseMirrorDOMParser.fromSchema(blogEditorSchema).parse(wrapper);
+    const parsedCodeBlock = doc.firstChild;
+
+    expect(parsedCodeBlock?.type.name).toBe("code_block");
+    expect(parsedCodeBlock?.textContent).toBe("创建");
+  });
+
   it("keeps code block decoration sets mapped instead of rebuilt during composition transactions", () => {
     const state = createCodeBlockState();
     const activeBefore = codeFenceActivePluginKey.getState(state);

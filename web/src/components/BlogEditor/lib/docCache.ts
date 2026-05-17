@@ -50,6 +50,24 @@ async function setCached(entry: CachedDoc): Promise<void> {
   }
 }
 
+const WORKER_PARSE_TIMEOUT = 5000;
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("parse worker timeout")), timeoutMs);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
 function toTimestampKey(updateTime: unknown): string {
   if (!updateTime) return "";
   if (typeof updateTime === "string") return updateTime;
@@ -106,7 +124,7 @@ export function parseInWorker(content: string): Promise<Record<string, unknown>>
 
 export async function loadDoc(
   schema: Schema,
-  _parser: { parse(content: string): Node },
+  parser: { parse(content: string): Node },
   memoName: string,
   updateTime: unknown,
   content: string,
@@ -130,11 +148,20 @@ export async function loadDoc(
 
   // 2. Parse in Web Worker (off main thread) - NO fallback to main thread parse
   console.time("[loadDoc] worker-parse");
-  const json = await parseInWorker(content);
-  console.timeEnd("[loadDoc] worker-parse");
+  let json: Record<string, unknown>;
+  try {
+    json = await withTimeout(parseInWorker(content), WORKER_PARSE_TIMEOUT);
+    console.timeEnd("[loadDoc] worker-parse");
+  } catch (err) {
+    console.timeEnd("[loadDoc] worker-parse");
+    console.warn("[loadDoc] worker parse failed, falling back to main thread parser", err);
+    const fallbackDoc = parser.parse(content);
+    void setCached({ memoName, updateTime: ts, json: fallbackDoc.toJSON() });
+    return fallbackDoc;
+  }
 
   // 3. Cache (fire-and-forget)
-  setCached({ memoName, updateTime: ts, json });
+  void setCached({ memoName, updateTime: ts, json });
 
   // 4. Build Node from JSON on main thread (fast ~ms)
   console.time("[loadDoc] fromJSON");

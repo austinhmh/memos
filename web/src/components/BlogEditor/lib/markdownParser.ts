@@ -9,6 +9,7 @@ import { markdownCheckboxes } from "@/lib/markdown/rules/checkboxes";
 import { markdownHighlight } from "@/lib/markdown/rules/highlight";
 import { markdownMath } from "@/lib/markdown/rules/math";
 import { markdownTag } from "@/lib/markdown/rules/tag";
+import { markdownTextColor } from "@/lib/markdown/rules/textColor";
 import { markdownUnderlines } from "@/lib/markdown/rules/underlines";
 import { sanitizeImageUrl, sanitizeUrl } from "@/lib/sanitize-url";
 
@@ -27,6 +28,14 @@ const getAlign = (tok: Token) => {
   return { alignment: match ? match[1] : null };
 };
 
+const sanitizeHighlightColor = (color: string | null | undefined) => {
+  if (!color) return null;
+  const value = color.trim();
+  return /^#[0-9a-fA-F]{6}$/.test(value) ? value : null;
+};
+
+const sanitizeTextColor = sanitizeHighlightColor;
+
 let cachedTokenizer: MarkdownIt | null = null;
 
 /**
@@ -43,6 +52,7 @@ function getProseMirrorTokenizer(): MarkdownIt {
   md.use(markdownMath);
   md.use(markdownCheckboxes);
   md.use(markdownTag);
+  md.use(markdownTextColor);
   md.use(markdownHighlight);
   md.use(markdownUnderlines);
   md.use(markdownItContainer, "notice", { marker: ":", validate: () => true });
@@ -198,7 +208,14 @@ export function createMdParser(schema: Schema): MarkdownParser {
     em: { mark: "em" },
     strong: { mark: "strong" },
     s: { mark: "s" },
-    highlight: { mark: "highlight" },
+    highlight: {
+      mark: "highlight",
+      getAttrs: (tok: Token) => ({ color: sanitizeHighlightColor(tok.attrGet("data-color")) }),
+    },
+    text_color: {
+      mark: "text_color",
+      getAttrs: (tok: Token) => ({ color: sanitizeTextColor(tok.attrGet("data-color")) || "#111827" }),
+    },
     underline: { mark: "underline" },
     link: {
       mark: "link",

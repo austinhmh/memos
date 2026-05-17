@@ -2,7 +2,7 @@ import type { EditorView } from "prosemirror-view";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { isViewComposing, runAfterCompositionSettled } from "../plugins/CompositionGuardPlugin";
-import type { SlashMenuItem, SlashMenuState } from "../plugins/SlashMenuPlugin";
+import { matchSlashMenuText, type SlashMenuItem, type SlashMenuState } from "../plugins/SlashMenuPlugin";
 
 interface SlashMenuProps {
   view: EditorView | null;
@@ -30,8 +30,8 @@ export const SlashMenu = ({ view, items, menuState }: SlashMenuProps) => {
 
         const { $from } = view.state.selection;
         const tb = $from.parent.textBetween(Math.max(0, $from.parentOffset - 100), $from.parentOffset, undefined, "\ufffc");
-        const m = /\/([^\s/]*)$/.exec(tb);
-        setLiveQuery(m ? m[1] : "");
+        const match = matchSlashMenuText(tb);
+        setLiveQuery(match?.query ?? "");
       } catch {
         /* ignore */
       }

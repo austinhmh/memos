@@ -11,6 +11,14 @@ type MarkSpec = {
   escape?: boolean;
 };
 
+const sanitizeHighlightColor = (color: unknown) => {
+  if (typeof color !== "string") return null;
+  const value = color.trim();
+  return /^#[0-9a-fA-F]{6}$/.test(value) ? value : null;
+};
+
+const colorToMarkdownValue = (color: string) => color.slice(1).toUpperCase();
+
 /**
  * Create a Markdown serializer for the blog editor schema.
  * code_block uses `language` attr (outputs ```language\n...\n```).
@@ -173,8 +181,23 @@ export function createMdSerializer(): MarkdownSerializer {
     },
     code: { open: "`", close: "`", escape: false },
     s: { open: "~~", close: "~~", mixable: true },
-    highlight: { open: "==", close: "==", mixable: true },
-    underline: { open: "<u>", close: "</u>", mixable: true },
+    highlight: {
+      open: (_state, mark) => {
+        const color = sanitizeHighlightColor(mark.attrs.color);
+        return color ? `=={color:${colorToMarkdownValue(color)}}` : "==";
+      },
+      close: "==",
+      mixable: true,
+    },
+    text_color: {
+      open: (_state, mark) => {
+        const color = sanitizeHighlightColor(mark.attrs.color) || "#111827";
+        return `{{color:${colorToMarkdownValue(color)}|`;
+      },
+      close: "}}",
+      mixable: true,
+    },
+    underline: { open: "__", close: "__", mixable: true, expelEnclosingWhitespace: true },
   };
 
   return new MarkdownSerializer(nodes, marks);

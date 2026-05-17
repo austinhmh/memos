@@ -12,15 +12,17 @@ import { cn } from "@/lib/utils";
 import { Memo, Memo_PropertySchema, MemoRelation_Type } from "@/types/proto/api/v1/memo_service_pb";
 import { useTranslate } from "@/utils/i18n";
 import { isSuperUser } from "@/utils/user";
+import type { BlogEditorSaveStatus } from "../BlogEditor";
 import MemoRelationForceGraph from "../MemoRelationForceGraph";
 
 interface Props {
   memo: Memo;
   className?: string;
   parentPage?: string;
+  saveStatus?: BlogEditorSaveStatus;
 }
 
-const MemoDetailSidebar = ({ memo, className, parentPage }: Props) => {
+const MemoDetailSidebar = ({ memo, className, parentPage, saveStatus = "saved" }: Props) => {
   const t = useTranslate();
   const currentUser = useCurrentUser();
   const queryClient = useQueryClient();
@@ -31,6 +33,7 @@ const MemoDetailSidebar = ({ memo, className, parentPage }: Props) => {
   const hasSpecialProperty = property.hasLink || property.hasTaskList || property.hasCode || property.hasIncompleteTasks;
   const shouldShowRelationGraph = memo.relations.filter((r) => r.type === MemoRelation_Type.REFERENCE).length > 0;
   const canEdit = !!currentUser && (memo.creator === currentUser.name || isSuperUser(currentUser));
+  const saveStatusText = saveStatus === "unsaved" ? "未保存" : "已保存";
 
   const invalidateMemo = useCallback(
     (name: string) => {
@@ -121,6 +124,11 @@ const MemoDetailSidebar = ({ memo, className, parentPage }: Props) => {
           <div className="w-full flex flex-col">
             <p className="flex flex-row justify-start items-center w-full gap-1 mb-1 text-sm leading-6 text-muted-foreground select-none">
               <span>{t("common.last-updated-at")}</span>
+              <span
+                className={cn("inline-block h-2 w-2 rounded-full", saveStatus === "unsaved" ? "bg-red-500" : "bg-emerald-500")}
+                title={saveStatusText}
+                aria-label={saveStatusText}
+              />
             </p>
             <p className="text-sm text-muted-foreground">{memo.updateTime && timestampDate(memo.updateTime).toLocaleString()}</p>
           </div>

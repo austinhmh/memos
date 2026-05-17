@@ -6,7 +6,7 @@ import { history, redo, undo } from "prosemirror-history";
 import { keymap } from "prosemirror-keymap";
 import { Node, Slice } from "prosemirror-model";
 import { liftListItem, sinkListItem, splitListItem } from "prosemirror-schema-list";
-import { type Command, EditorState, type Plugin, TextSelection } from "prosemirror-state";
+import { type Command, EditorState, Plugin, PluginKey, TextSelection } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
@@ -44,6 +44,7 @@ import type { Memo } from "@/types/proto/api/v1/memo_service_pb";
 import { MemoSchema } from "@/types/proto/api/v1/memo_service_pb";
 import { getAttachmentUrl } from "@/utils/attachment";
 import { getThemeWithFallback, resolveTheme } from "@/utils/theme";
+import { SelectionToolbar } from "./components/SelectionToolbar";
 import { SlashMenu } from "./components/SlashMenu";
 import { loadDoc, parseInWorker } from "./lib/docCache";
 import { buildMarkdownInputRules, codeBlockOnEnter } from "./lib/inputRules";
@@ -63,10 +64,13 @@ import { createMermaidPlugin } from "./plugins/MermaidPlugin";
 import { createSlashMenuPlugin, type SlashMenuState } from "./plugins/SlashMenuPlugin";
 import { createTablePlugins, tableKeymap } from "./plugins/TableControlsPlugin";
 
+export type BlogEditorSaveStatus = "saved" | "unsaved";
+
 interface BlogEditorProps {
   memo: Memo;
   readonly?: boolean;
   onReady?: () => void;
+  onSaveStatusChange?: (status: BlogEditorSaveStatus) => void;
   normalizeBeforeSave?: (content: string) => string;
 }
 
@@ -118,6 +122,34 @@ const cancelIdleTask = (handle?: number) => {
 const schema = blogEditorSchema;
 const parser = createMdParser(schema);
 const serializer = createMdSerializer();
+const selectionToolbarUpdatePluginKey = new PluginKey("selection-toolbar-update");
+
+const createSelectionToolbarUpdatePlugin = (onUpdate: () => void) =>
+  new Plugin({
+    key: selectionToolbarUpdatePluginKey,
+    view: (view) => {
+      const handleSelectionChange = () => {
+        const selection = window.getSelection();
+        if (!selection?.anchorNode || !view.dom.contains(selection.anchorNode)) {
+          return;
+        }
+        onUpdate();
+      };
+
+      document.addEventListener("selectionchange", handleSelectionChange);
+
+      return {
+        update: (view, prevState) => {
+          if (!prevState.selection.eq(view.state.selection) || prevState.doc !== view.state.doc) {
+            onUpdate();
+          }
+        },
+        destroy: () => {
+          document.removeEventListener("selectionchange", handleSelectionChange);
+        },
+      };
+    },
+  });
 
 const toUploadableFile = async (file: File | string) => {
   if (file instanceof File) {
@@ -227,8 +259,38 @@ const blurEditor: Command = (_state, _dispatch, view) => {
   return true;
 };
 
+const getDocumentTextSelection = (state: EditorState): TextSelection | null => {
+  let from: number | null = null;
+  let to: number | null = null;
+
+  state.doc.descendants((node, pos) => {
+    if (!node.isText || node.textContent.trim().length === 0) {
+      return true;
+    }
+
+    from = from === null ? pos : Math.min(from, pos);
+    to = to === null ? pos + node.nodeSize : Math.max(to, pos + node.nodeSize);
+    return true;
+  });
+
+  if (from === null || to === null || from === to) return null;
+  return TextSelection.create(state.doc, from, to);
+};
+
+const selectEntireDocument: Command = (state, dispatch) => {
+  const selection = getDocumentTextSelection(state);
+  if (!selection || state.selection.eq(selection)) {
+    return false;
+  }
+
+  dispatch?.(state.tr.setSelection(selection));
+  return true;
+};
+
+const selectEditorContent = chainCommands(selectAll(schema.nodes.code_block), selectAll(schema.nodes.blockquote), selectEntireDocument);
+
 const buildBlogEditorKeymap = (manualSave: Command): Record<string, Command> => ({
-  "Mod-a": chainCommands(selectAll(schema.nodes.code_block), selectAll(schema.nodes.blockquote)),
+  "Mod-a": selectEditorContent,
   "Mod-s": manualSave,
   "Mod-z": undo,
   "Mod-y": redo,
@@ -299,7 +361,7 @@ const buildBlogEditorKeymap = (manualSave: Command): Record<string, Command> => 
     : {}),
 });
 
-const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: BlogEditorProps) => {
+const BlogEditor = ({ memo, readonly = false, onReady, onSaveStatusChange, normalizeBeforeSave }: BlogEditorProps) => {
   const queryClient = useQueryClient();
   const dictionary = useDictionary();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -324,6 +386,11 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
   const pasteListenerRef = useRef<{ dom: HTMLElement; handler: (e: Event) => void } | null>(null);
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
+  const onSaveStatusChangeRef = useRef(onSaveStatusChange);
+  onSaveStatusChangeRef.current = onSaveStatusChange;
+  const notifySaveStatus = useCallback((status: BlogEditorSaveStatus) => {
+    onSaveStatusChangeRef.current?.(status);
+  }, []);
 
   const normalizeContent = useCallback(
     (content: string) => (normalizeBeforeSave ? normalizeBeforeSave(content) : content),
@@ -336,6 +403,7 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
   contentRef.current = normalizeContent(memo.content);
 
   const [slashMenuState, setSlashMenuState] = useState<SlashMenuState>({ open: false, query: "", from: 0, to: 0 });
+  const [editorUpdateVersion, setEditorUpdateVersion] = useState(0);
   const setSlashMenuStateRef = useRef(setSlashMenuState);
   setSlashMenuStateRef.current = setSlashMenuState;
   const slashMenuItems = useRef(buildSlashMenuItems(schema)).current;
@@ -355,6 +423,10 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
   }, []);
 
   useEffect(() => {
+    notifySaveStatus("saved");
+  }, [memo.name, notifySaveStatus]);
+
+  useEffect(() => {
     lastSavedTagsRef.current = memo.tags ?? [];
   }, [memo.name, memo.tags]);
 
@@ -362,6 +434,7 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
     async (normalizedContent: string) => {
       if (normalizedContent.trim() === lastSavedRef.current.trim()) {
         lastPersistSucceededRef.current = true;
+        notifySaveStatus("saved");
         return false;
       }
 
@@ -386,6 +459,7 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
         lastSavedTagsRef.current = updatedMemo.tags ?? [];
         localDirtyRef.current = false;
         lastPersistSucceededRef.current = true;
+        notifySaveStatus("saved");
         return true;
       } catch (err) {
         console.error(err);
@@ -394,7 +468,7 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
         return false;
       }
     },
-    [memo.name, queryClient],
+    [memo.name, notifySaveStatus, queryClient],
   );
 
   const persistContentRef = useRef(persistContent);
@@ -431,6 +505,7 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
         }
         if (normalizedContent.trim() === lastSavedRef.current.trim()) {
           localDirtyRef.current = false;
+          notifySaveStatus("saved");
           continue;
         }
 
@@ -446,7 +521,7 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
         setIsSaving(false);
       }
     }
-  }, [normalizeContent]);
+  }, [normalizeContent, notifySaveStatus]);
 
   const startSaveLoopRef = useRef<() => Promise<void>>();
   const startSaveLoop = useCallback(() => {
@@ -599,6 +674,7 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
           keymap(buildBlogEditorKeymap(manualSaveCommand)),
           keymap(tableKeymap),
           createCompositionGuardPlugin(),
+          createSelectionToolbarUpdatePlugin(() => setEditorUpdateVersion((version) => version + 1)),
           history(),
           uploadPlaceholderPlugin,
           new UploadPlugin({
@@ -632,6 +708,15 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
         state,
         editable: () => !readonlyRef.current,
         attributes: { class: "blog-editor-content ProseMirror blog-editor-prosemirror", spellcheck: "false" },
+        handleKeyDown(view, event) {
+          if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "a") {
+            if (selectEditorContent(view.state, view.dispatch, view)) {
+              event.preventDefault();
+              return true;
+            }
+          }
+          return false;
+        },
         handleClickOn(view, _pos, node, nodePos, event) {
           const target = event.target as HTMLElement | null;
           if (!target || node.type !== schema.nodes.checkbox_item) {
@@ -660,15 +745,18 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
         dispatchTransaction(this: EditorView, tr) {
           const nextState = this.state.apply(tr);
           this.updateState(nextState);
+          setEditorUpdateVersion((version) => version + 1);
 
           if (!readonlyRef.current && tr.docChanged) {
             if (skipNextSaveRef.current) {
               skipNextSaveRef.current = false;
               localDirtyRef.current = false;
+              notifySaveStatus("saved");
               return;
             }
 
             localDirtyRef.current = true;
+            notifySaveStatus("unsaved");
             if (saveTimerRef.current) {
               clearTimeout(saveTimerRef.current);
               saveTimerRef.current = undefined;
@@ -700,6 +788,7 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
       });
 
       viewRef.current = view;
+      setEditorUpdateVersion((version) => version + 1);
       setLoading(false);
       onReadyRef.current?.();
 
@@ -783,6 +872,7 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
 
       if (normalizedContent.trim() === lastSavedRef.current.trim()) {
         lastSavedRef.current = normalizedContent;
+        notifySaveStatus("saved");
         return;
       }
 
@@ -877,6 +967,7 @@ const BlogEditor = ({ memo, readonly = false, onReady, normalizeBeforeSave }: Bl
       <div ref={containerRef} style={loading ? { height: 0, overflow: "hidden" } : undefined} />
 
       <SlashMenu view={viewRef.current} items={slashMenuItems} menuState={slashMenuState} />
+      <SelectionToolbar view={viewRef.current} readonly={readonly || loading} updateVersion={editorUpdateVersion} />
 
       {!readonly && (
         <div className="blog-editor-padding" onClick={() => viewRef.current?.focus()} role="button" tabIndex={-1} aria-hidden />
