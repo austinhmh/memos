@@ -38,6 +38,25 @@ const defaultState: SelectionToolbarState = {
   textColor: null,
 };
 
+const areToolbarStatesEqual = (a: SelectionToolbarState, b: SelectionToolbarState) =>
+  a.visible === b.visible &&
+  a.top === b.top &&
+  a.left === b.left &&
+  a.bold === b.bold &&
+  a.italic === b.italic &&
+  a.underline === b.underline &&
+  a.strike === b.strike &&
+  a.highlightColor === b.highlightColor &&
+  a.textColor === b.textColor;
+
+const applyToolbarState = (setState: React.Dispatch<React.SetStateAction<SelectionToolbarState>>, nextState: SelectionToolbarState) => {
+  setState((prev) => (areToolbarStatesEqual(prev, nextState) ? prev : nextState));
+};
+
+const hideToolbar = (setState: React.Dispatch<React.SetStateAction<SelectionToolbarState>>) => {
+  applyToolbarState(setState, defaultState);
+};
+
 const HIGHLIGHT_COLORS = ["#FDEA9B", "#FED46A", "#FA551E", "#B4DC19", "#C8AFF0", "#3CBEFC"];
 const TEXT_COLORS = ["#111827", "#DC2626", "#2563EB", "#16A34A", "#9333EA", "#EA580C"];
 const TOOLBAR_VERTICAL_OFFSET = 10;
@@ -151,7 +170,7 @@ export const SelectionToolbar: React.FC<SelectionToolbarProps> = ({ view, readon
     if (!view) {
       savedSelectionRef.current = null;
       setColorMenuOpen(false);
-      setState((prev) => (prev.visible ? defaultState : prev));
+      hideToolbar(setState);
       return;
     }
 
@@ -159,7 +178,7 @@ export const SelectionToolbar: React.FC<SelectionToolbarProps> = ({ view, readon
     if (!selection || !shouldShowToolbar(view, readonly)) {
       savedSelectionRef.current = null;
       setColorMenuOpen(false);
-      setState((prev) => (prev.visible ? defaultState : prev));
+      hideToolbar(setState);
       return;
     }
 
@@ -167,7 +186,7 @@ export const SelectionToolbar: React.FC<SelectionToolbarProps> = ({ view, readon
     if (!rect) {
       savedSelectionRef.current = null;
       setColorMenuOpen(false);
-      setState((prev) => (prev.visible ? defaultState : prev));
+      hideToolbar(setState);
       return;
     }
 
@@ -179,7 +198,7 @@ export const SelectionToolbar: React.FC<SelectionToolbarProps> = ({ view, readon
     const left = Math.max(TOOLBAR_MARGIN, Math.min(maxLeft, center - toolbarWidth / 2));
     const top = Math.max(TOOLBAR_MARGIN, rect.top - toolbarHeight - TOOLBAR_VERTICAL_OFFSET);
 
-    setState({
+    const nextState: SelectionToolbarState = {
       visible: true,
       top,
       left,
@@ -189,7 +208,8 @@ export const SelectionToolbar: React.FC<SelectionToolbarProps> = ({ view, readon
       strike: hasMark(view.state, selection, view.state.schema.marks.s),
       highlightColor: getSelectionMarkColor(view.state, selection, "highlight", HIGHLIGHT_COLORS[0]),
       textColor: getSelectionMarkColor(view.state, selection, "text_color"),
-    });
+    };
+    applyToolbarState(setState, nextState);
   }, [readonly, view]);
 
   useLayoutEffect(() => {
@@ -324,6 +344,7 @@ export const SelectionToolbar: React.FC<SelectionToolbarProps> = ({ view, readon
       className="selection-toolbar"
       style={{ top: state.top, left: state.left }}
       onMouseDown={(event) => event.preventDefault()}
+      data-testid="selection-toolbar"
       role="toolbar"
       aria-label="选中文本格式工具栏"
     >
@@ -336,6 +357,7 @@ export const SelectionToolbar: React.FC<SelectionToolbarProps> = ({ view, readon
             title={button.title}
             aria-label={button.title}
             aria-pressed={button.active}
+            data-testid={`selection-toolbar-${button.title}`}
             onClick={button.onClick}
           >
             {button.label}
@@ -349,12 +371,13 @@ export const SelectionToolbar: React.FC<SelectionToolbarProps> = ({ view, readon
             title="颜色"
             aria-label="颜色"
             aria-expanded={colorMenuOpen}
+            data-testid="selection-toolbar-颜色"
             onClick={toggleColorMenu}
           >
             色
           </button>
           {colorMenuOpen && (
-            <div className="selection-toolbar-color-menu" role="menu" aria-label="颜色菜单">
+            <div className="selection-toolbar-color-menu" role="menu" aria-label="颜色菜单" data-testid="selection-toolbar-color-menu">
               <div className="selection-toolbar-color-section">
                 <div className="selection-toolbar-color-title">文字颜色</div>
                 <div className="selection-toolbar-color-grid">
@@ -363,6 +386,7 @@ export const SelectionToolbar: React.FC<SelectionToolbarProps> = ({ view, readon
                     className={cn("selection-toolbar-color-clear", !state.textColor && "is-active")}
                     title="清除文字颜色"
                     aria-label="清除文字颜色"
+                    data-testid="selection-toolbar-clear-text-color"
                     onClick={() => applyMarkColor("text_color", null)}
                   >
                     默认
@@ -376,6 +400,7 @@ export const SelectionToolbar: React.FC<SelectionToolbarProps> = ({ view, readon
                       title={`文字颜色 ${color}`}
                       aria-label={`文字颜色 ${color}`}
                       aria-pressed={state.textColor === color}
+                      data-testid={`selection-toolbar-text-color-${color.slice(1)}`}
                       onClick={() => applyMarkColor("text_color", color)}
                     />
                   ))}
@@ -389,6 +414,7 @@ export const SelectionToolbar: React.FC<SelectionToolbarProps> = ({ view, readon
                     className={cn("selection-toolbar-color-clear", !state.highlightColor && "is-active")}
                     title="清除高亮"
                     aria-label="清除高亮"
+                    data-testid="selection-toolbar-clear-highlight"
                     onClick={() => applyMarkColor("highlight", null)}
                   >
                     无
@@ -402,6 +428,7 @@ export const SelectionToolbar: React.FC<SelectionToolbarProps> = ({ view, readon
                       title={`高亮 ${color}`}
                       aria-label={`高亮 ${color}`}
                       aria-pressed={state.highlightColor === color}
+                      data-testid={`selection-toolbar-highlight-color-${color.slice(1)}`}
                       onClick={() => applyMarkColor("highlight", color)}
                     />
                   ))}

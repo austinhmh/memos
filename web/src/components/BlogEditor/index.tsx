@@ -707,7 +707,14 @@ const BlogEditor = ({ memo, readonly = false, onReady, onSaveStatusChange, norma
       const view = new EditorView(el, {
         state,
         editable: () => !readonlyRef.current,
-        attributes: { class: "blog-editor-content ProseMirror blog-editor-prosemirror", spellcheck: "false" },
+        attributes: {
+          class: "blog-editor-content ProseMirror blog-editor-prosemirror",
+          spellcheck: "false",
+          role: "textbox",
+          "aria-label": "Blog editor",
+          "aria-multiline": "true",
+          "data-testid": "blog-editor-content",
+        },
         handleKeyDown(view, event) {
           if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "a") {
             if (selectEditorContent(view.state, view.dispatch, view)) {
