@@ -49,6 +49,21 @@ func NewRSSService(profile *profile.Profile, store *store.Store, markdownService
 	}
 }
 
+func (s *RSSService) baseURL(c echo.Context) string {
+	if s.Profile != nil {
+		instanceURL := strings.TrimSpace(s.Profile.InstanceURL)
+		if instanceURL != "" {
+			parsed, err := url.Parse(instanceURL)
+			if err == nil && parsed.User == nil && parsed.Host != "" && (parsed.Scheme == "http" || parsed.Scheme == "https") {
+				parsed.RawQuery = ""
+				parsed.Fragment = ""
+				return strings.TrimRight(parsed.String(), "/")
+			}
+		}
+	}
+	return c.Scheme() + "://" + c.Request().Host
+}
+
 func (s *RSSService) RegisterRoutes(g *echo.Group) {
 	g.GET("/explore/rss.xml", s.GetExploreRSS)
 	g.GET("/u/:username/rss.xml", s.GetUserRSS)
@@ -70,7 +85,7 @@ func (s *RSSService) GetExploreRSS(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "Failed to find memo list").SetInternal(err)
 	}
 
-	baseURL := c.Scheme() + "://" + c.Request().Host
+	baseURL := s.baseURL(c)
 	rss, lastModified, err := s.generateRSSFromMemoList(ctx, memoList, baseURL, nil)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "Failed to generate rss").SetInternal(err)
@@ -114,7 +129,7 @@ func (s *RSSService) GetUserRSS(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "Failed to find memo list").SetInternal(err)
 	}
 
-	baseURL := c.Scheme() + "://" + c.Request().Host
+	baseURL := s.baseURL(c)
 	rss, lastModified, err := s.generateRSSFromMemoList(ctx, memoList, baseURL, user)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "Failed to generate rss").SetInternal(err)

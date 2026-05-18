@@ -64,10 +64,46 @@ func TestUserRSSDoesNotServeArchivedUserFromCachedBody(t *testing.T) {
 	require.False(t, strings.Contains(second.Body.String(), "archived user rss content"))
 }
 
+func TestRSSUsesConfiguredInstanceURLInsteadOfHostHeader(t *testing.T) {
+	ctx := context.Background()
+	testStore := teststore.NewTestingStore(ctx, t)
+	defer testStore.Close()
+	service := NewRSSService(&profile.Profile{Mode: "prod", InstanceURL: "https://memos.example.com/base/"}, testStore, markdown.NewService())
+
+	user, err := testStore.CreateUser(ctx, &store.User{Username: "rss-host-owner", Role: store.RoleUser, Email: "rss-host-owner@example.com"})
+	require.NoError(t, err)
+	_, err = testStore.CreateMemo(ctx, &store.Memo{UID: "rss-host-memo", CreatorID: user.ID, Content: "host header rss content", Visibility: store.Public})
+	require.NoError(t, err)
+
+	resp := performRSSRequestWithHost(t, service.GetExploreRSS, "/explore/rss.xml", "evil.example")
+	require.Equal(t, http.StatusOK, resp.Code)
+	require.Contains(t, resp.Body.String(), "https://memos.example.com/base/memos/rss-host-memo")
+	require.NotContains(t, resp.Body.String(), "evil.example")
+}
+
+func TestRSSFallsBackToRequestHostWithoutInstanceURL(t *testing.T) {
+	service := NewRSSService(&profile.Profile{Mode: "prod"}, nil, markdown.NewService())
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/explore/rss.xml", nil)
+	req.Host = "fallback.example"
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	require.Equal(t, "http://fallback.example", service.baseURL(c))
+}
+
 func performRSSRequest(t *testing.T, handler echo.HandlerFunc, target string) *httptest.ResponseRecorder {
+	t.Helper()
+	return performRSSRequestWithHost(t, handler, target, "")
+}
+
+func performRSSRequestWithHost(t *testing.T, handler echo.HandlerFunc, target string, host string) *httptest.ResponseRecorder {
 	t.Helper()
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodGet, target, nil)
+	if host != "" {
+		req.Host = host
+	}
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 	if strings.HasPrefix(target, "/u/") {
