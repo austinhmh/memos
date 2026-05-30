@@ -1,0 +1,29 @@
+---
+description: 测试部署时固定使用项目脚本和 test 标签，并创建全新本地环境
+alwaysApply: true
+---
+
+# 测试部署流程规则
+
+当需要构建、部署或验证这个项目的可运行测试环境时，必须遵守以下流程。
+
+## 固定流程
+
+1. 构建只能使用项目根目录的 `./build-push.sh`，镜像 tag 固定为 `test`。
+2. 更新/启动测试环境只能使用项目根目录的 `./pull.sh`，镜像 tag 固定为 `test`。
+3. 每次测试都要创建全新的本地环境，不复用旧容器或旧数据目录。
+
+## 禁止事项
+
+- 禁止用 `docker build`、`docker compose build`、`pnpm build`、`pnpm release`、`go build` 等命令替代 `./build-push.sh` 做测试构建。
+- 禁止绕过 `./pull.sh` 手写 `docker run` 或用其他部署方式更新测试环境。
+- 禁止复用默认 `~/.memos` 作为测试数据目录。
+
+## 推荐命令
+
+```bash
+./build-push.sh --local test
+MEMOS_DATA_DIR="$(mktemp -d)" ./pull.sh --local --name "memos-test-$(date +%s)" test
+```
+
+如需验证远程镜像推送/拉取链路，可去掉两个命令中的 `--local`，但 tag 仍必须是 `test`。
