@@ -80,7 +80,7 @@ func setIndexHeaders(c echo.Context) {
 	c.Response().Header().Set("X-Frame-Options", "DENY")
 	c.Response().Header().Set("X-Content-Type-Options", "nosniff")
 	c.Response().Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
-	c.Response().Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; font-src 'self' data:; object-src 'none'; frame-ancestors 'none'")
+	c.Response().Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; font-src 'self' data:; object-src 'none'; frame-ancestors 'none'")
 }
 
 func getFileSystem(path string) http.FileSystem {

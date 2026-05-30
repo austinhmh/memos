@@ -5,6 +5,7 @@ import { MemoFilterProvider } from "./contexts/MemoFilterContext";
 import useNavigateTo from "./hooks/useNavigateTo";
 import { useUserLocale } from "./hooks/useUserLocale";
 import { useUserTheme } from "./hooks/useUserTheme";
+import { sanitizeImageUrl } from "./lib/sanitize-url";
 import { cleanupExpiredOAuthState } from "./utils/oauth";
 
 const App = () => {
@@ -61,7 +62,7 @@ const App = () => {
 
     document.title = instanceGeneralSetting.customProfile.title;
     const link = document.querySelector("link[rel~='icon']") as HTMLLinkElement;
-    link.href = instanceGeneralSetting.customProfile.logoUrl || "/logo.webp";
+    link.href = sanitizeImageUrl(instanceGeneralSetting.customProfile.logoUrl) || "/logo.webp";
   }, [instanceGeneralSetting.customProfile]);
 
   return (

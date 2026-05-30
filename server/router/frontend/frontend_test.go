@@ -39,6 +39,9 @@ func TestServeUsesNoStoreForSPAFallbackRoutes(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "<!doctype html>")
 	require.Equal(t, "no-cache, no-store, must-revalidate", rec.Header().Get(echo.HeaderCacheControl))
 	require.Equal(t, "DENY", rec.Header().Get("X-Frame-Options"))
+	csp := rec.Header().Get("Content-Security-Policy")
+	require.Contains(t, csp, "script-src 'self'")
+	require.NotContains(t, csp, "script-src 'self' 'unsafe-inline'")
 }
 
 func TestServeStaticLikeMissingResourcesReturnNotFound(t *testing.T) {

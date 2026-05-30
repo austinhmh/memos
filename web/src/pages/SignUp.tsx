@@ -12,6 +12,7 @@ import { authServiceClient, userServiceClient } from "@/connect";
 import { useInstance } from "@/contexts/InstanceContext";
 import useLoading from "@/hooks/useLoading";
 import { handleError } from "@/lib/error";
+import { sanitizeImageUrl } from "@/lib/sanitize-url";
 import { User_Role, UserSchema } from "@/types/proto/api/v1/user_service_pb";
 import { useTranslate } from "@/utils/i18n";
 
@@ -21,6 +22,7 @@ const SignUp = () => {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const { generalSetting: instanceGeneralSetting, profile } = useInstance();
+  const logoUrl = sanitizeImageUrl(instanceGeneralSetting.customProfile?.logoUrl) || "/logo.webp";
 
   const handleUsernameInputChanged = (e: React.ChangeEvent<HTMLInputElement>) => {
     const text = e.target.value as string;
@@ -77,7 +79,7 @@ const SignUp = () => {
     <div className="py-4 sm:py-8 w-80 max-w-full min-h-svh mx-auto flex flex-col justify-start items-center">
       <div className="w-full py-4 grow flex flex-col justify-center items-center">
         <div className="w-full flex flex-row justify-center items-center mb-6">
-          <img className="h-14 w-auto rounded-full shadow" src={instanceGeneralSetting.customProfile?.logoUrl || "/logo.webp"} alt="" />
+          <img className="h-14 w-auto rounded-full shadow" src={logoUrl} alt="" />
           <p className="ml-2 text-5xl text-foreground opacity-80">{instanceGeneralSetting.customProfile?.title || "Memos"}</p>
         </div>
         {!instanceGeneralSetting.disallowUserRegistration ? (
