@@ -1,339 +1,230 @@
 import type { Attrs, Node as ProseMirrorNode } from "prosemirror-model";
-import type { Command, EditorState, Transaction } from "prosemirror-state";
+import type { Command } from "prosemirror-state";
 import { Plugin, PluginKey, TextSelection } from "prosemirror-state";
+import { columnResizing, goToNextCell, tableEditing } from "prosemirror-tables";
+import { DecorationSet, type EditorView, type ViewMutationRecord } from "prosemirror-view";
+import { isCompositionTransaction } from "./CompositionGuardPlugin";
 import {
-  addColumn,
-  addRow,
-  columnResizing,
-  goToNextCell,
-  isInTable,
-  selectedRect,
-  TableMap,
-  tableEditing,
-  toggleHeader,
-} from "prosemirror-tables";
-import type { EditorView, Decoration as ProseMirrorDecoration } from "prosemirror-view";
-import { Decoration, DecorationSet } from "prosemirror-view";
-import { isCompositionTransaction, isViewComposing } from "./CompositionGuardPlugin";
+  deleteSelectedTablePart,
+  enterNearTableGapCursor,
+  insertTextNearTableBoundary,
+  moveOutOfTable,
+  moveToAdjacentSelectedCell,
+  typeTextNearTableGapCursor,
+} from "./tableCommands";
 
 type MutableAttrs = Record<string, unknown>;
 
-const TABLE_ADD_ROW_CLASS = "table-add-row";
-const TABLE_ADD_COLUMN_CLASS = "table-add-column";
-const FIRST_CLASS = "first";
+const tableControlStatePluginKey = new PluginKey<DecorationSet>("tableControlsState");
 
-const classNames = (...values: Array<string | false | undefined>) => values.filter(Boolean).join(" ");
-
-const chainTransactions = (...commands: Array<Command | undefined>): Command => {
-  return (state, dispatch) => {
-    let currentState = state;
-    const dispatcher = (tr: Transaction) => {
-      currentState = currentState.apply(tr);
-      dispatch?.(tr);
-    };
-
-    for (const command of commands) {
-      command?.(currentState, dispatcher);
-    }
-
-    return true;
-  };
-};
-
-const collapseSelection = (): Command => {
-  return (state, dispatch) => {
-    if (!dispatch) {
-      return true;
-    }
-
-    dispatch(state.tr.setSelection(TextSelection.near(state.selection.$from)));
-    return true;
-  };
-};
-
-const getCellsInRow =
-  (index: number) =>
-  (state: EditorState): number[] => {
-    if (!isInTable(state)) {
-      return [];
-    }
-
-    const rect = selectedRect(state);
-    const cells: number[] = [];
-    let previous: number | undefined;
-
-    for (let i = 0; i < rect.map.width; i += 1) {
-      const cell = rect.tableStart + rect.map.map[index * rect.map.width + i];
-      if (previous === cell) {
-        continue;
-      }
-      previous = cell;
-      cells.push(cell);
-    }
-
-    return cells;
-  };
-
-const isHeaderEnabled = (state: EditorState, type: "row" | "column") => {
-  if (!isInTable(state)) {
+const selectTextInsideClickedTableCell = (view: EditorView, event: MouseEvent) => {
+  if (event.button !== 0 || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) {
     return false;
   }
 
-  const rect = selectedRect(state);
-  if (type === "row") {
-    return getCellsInRow(0)(state).some((pos) => state.doc.nodeAt(pos)?.type.spec.tableRole === "header_cell");
-  }
-
-  for (let row = 0; row < rect.map.height; row += 1) {
-    const pos = rect.tableStart + rect.map.map[row * rect.map.width];
-    if (state.doc.nodeAt(pos)?.type.spec.tableRole !== "header_cell") {
-      return false;
-    }
-  }
-  return rect.map.height > 0;
-};
-
-const addRowWithAlignment = (
-  tr: Transaction,
-  rect: ReturnType<typeof selectedRect>,
-  index: number,
-  copyFromRow: number | undefined,
-  state: EditorState,
-): Transaction => {
-  let sourceRowAlignments: Array<string | null> | undefined;
-
-  if (copyFromRow !== undefined && copyFromRow >= 0 && copyFromRow < rect.map.height) {
-    sourceRowAlignments = getCellsInRow(copyFromRow)(state).map((pos) => state.doc.nodeAt(pos)?.attrs.alignment ?? null);
-  }
-
-  const nextTr = addRow(tr, rect, index);
-  if (!sourceRowAlignments) {
-    return nextTr;
-  }
-
-  const nextState = state.apply(nextTr);
-  for (const [columnIndex, newCellPos] of getCellsInRow(index)(nextState).entries()) {
-    const alignment = sourceRowAlignments[columnIndex];
-    const newCellNode = nextTr.doc.nodeAt(newCellPos);
-    if (alignment && newCellNode) {
-      nextTr.setNodeMarkup(newCellPos, undefined, { ...newCellNode.attrs, alignment });
-    }
-  }
-
-  return nextTr;
-};
-
-export const addRowBeforeIndex = ({ index }: { index: number }): Command => {
-  return (state, dispatch) => {
-    if (!isInTable(state)) {
-      return false;
-    }
-
-    const headerSpecialCase = index === 0 && isHeaderEnabled(state, "row");
-    const copyFromRow = index === 0 ? 0 : index - 1;
-    const addRowCommand: Command = (currentState, currentDispatch) => {
-      currentDispatch?.(addRowWithAlignment(currentState.tr, selectedRect(currentState), index, copyFromRow, currentState));
-      return true;
-    };
-
-    return chainTransactions(
-      headerSpecialCase ? toggleHeader("row") : undefined,
-      addRowCommand,
-      headerSpecialCase ? toggleHeader("row") : undefined,
-      collapseSelection(),
-    )(state, dispatch);
-  };
-};
-
-export const addColumnBeforeIndex = ({ index }: { index: number }): Command => {
-  return (state, dispatch) => {
-    if (!isInTable(state)) {
-      return false;
-    }
-
-    const headerSpecialCase = index === 0 && isHeaderEnabled(state, "column");
-    const addColumnCommand: Command = (currentState, currentDispatch) => {
-      currentDispatch?.(addColumn(currentState.tr, selectedRect(currentState), index));
-      return true;
-    };
-
-    return chainTransactions(
-      headerSpecialCase ? toggleHeader("column") : undefined,
-      addColumnCommand,
-      headerSpecialCase ? toggleHeader("column") : undefined,
-      collapseSelection(),
-    )(state, dispatch);
-  };
-};
-
-const buildAddRowDecoration = (pos: number, index: number): ProseMirrorDecoration => {
-  const className = classNames(TABLE_ADD_ROW_CLASS, index === 0 && FIRST_CLASS);
-  return Decoration.widget(
-    pos + 1,
-    () => {
-      const plus = document.createElement("a");
-      plus.role = "button";
-      plus.className = className;
-      plus.textContent = "+";
-      plus.dataset.index = index.toString();
-      plus.dataset.position = pos.toString();
-      plus.setAttribute("aria-label", "Insert row");
-      plus.setAttribute("contenteditable", "false");
-      return plus;
-    },
-    { key: `${className}-${index}-${pos}` },
-  );
-};
-
-const buildAddColumnDecoration = (pos: number, index: number): ProseMirrorDecoration => {
-  const className = classNames(TABLE_ADD_COLUMN_CLASS, index === 0 && FIRST_CLASS);
-  return Decoration.widget(
-    pos + 1,
-    () => {
-      const plus = document.createElement("a");
-      plus.role = "button";
-      plus.className = className;
-      plus.textContent = "+";
-      plus.dataset.index = index.toString();
-      plus.dataset.position = pos.toString();
-      plus.setAttribute("aria-label", "Insert column");
-      plus.setAttribute("contenteditable", "false");
-      return plus;
-    },
-    { key: `${className}-${index}-${pos}` },
-  );
-};
-
-const createTableControlDecorations = (state: EditorState, editable: boolean): DecorationSet => {
-  if (!editable) {
-    return DecorationSet.empty;
-  }
-
-  const { doc } = state;
-  const decorations: ProseMirrorDecoration[] = [];
-
-  doc.descendants((node, tablePos) => {
-    if (node.type.spec.tableRole !== "table") {
-      return true;
-    }
-
-    const map = TableMap.get(node);
-    const tableStart = tablePos + 1;
-    const firstColumnCells = new Map<number, number>();
-    const seenRows = new Set<number>();
-
-    for (let row = 0; row < map.height; row += 1) {
-      const currentFirstCellPos = tableStart + map.map[row * map.width];
-      firstColumnCells.set(row, currentFirstCellPos);
-
-      if (seenRows.has(currentFirstCellPos)) {
-        continue;
-      }
-      seenRows.add(currentFirstCellPos);
-
-      if (row === 0) {
-        decorations.push(buildAddRowDecoration(currentFirstCellPos, 0));
-      }
-
-      const firstCellNode = doc.nodeAt(currentFirstCellPos);
-      const rowspan = Number(firstCellNode?.attrs.rowspan ?? 1);
-      decorations.push(buildAddRowDecoration(currentFirstCellPos, row + rowspan));
-    }
-
-    const seenColumns = new Set<number>();
-    for (let col = 0; col < map.width; col += 1) {
-      const cellPos = tableStart + map.map[col];
-      if (seenColumns.has(cellPos)) {
-        continue;
-      }
-      seenColumns.add(cellPos);
-
-      if (col === 0) {
-        decorations.push(buildAddColumnDecoration(cellPos, 0));
-      }
-      decorations.push(buildAddColumnDecoration(cellPos, col + 1));
-    }
-
-    return false;
-  });
-
-  return DecorationSet.create(doc, decorations);
-};
-
-const handleTableControlMouseDown = (view: EditorView, event: MouseEvent): boolean => {
-  if (!(event.target instanceof HTMLElement)) {
+  const target = event.target instanceof Element ? event.target : document.elementFromPoint(event.clientX, event.clientY);
+  const cell = target?.closest(".blog-editor-content th, .blog-editor-content td");
+  if (!(cell instanceof HTMLElement) || !view.dom.contains(cell)) {
     return false;
   }
 
-  const targetAddRow = event.target.closest(`.${TABLE_ADD_ROW_CLASS}`);
-  if (targetAddRow instanceof HTMLElement) {
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    const index = Number(targetAddRow.getAttribute("data-index"));
-    const position = Number(targetAddRow.getAttribute("data-position"));
-    view.dispatch(view.state.tr.setSelection(TextSelection.near(view.state.doc.resolve(position))));
-    addRowBeforeIndex({ index })(view.state, view.dispatch);
-    return true;
+  const cellContentStart = view.posAtDOM(cell, 0);
+  const cellPosition = cellContentStart - 1;
+  const cellNode = view.state.doc.nodeAt(cellPosition);
+  const role = cellNode?.type.spec.tableRole;
+  if (!cellNode || (role !== "cell" && role !== "header_cell")) {
+    return false;
   }
 
-  const targetAddColumn = event.target.closest(`.${TABLE_ADD_COLUMN_CLASS}`);
-  if (targetAddColumn instanceof HTMLElement) {
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    const index = Number(targetAddColumn.getAttribute("data-index"));
-    const position = Number(targetAddColumn.getAttribute("data-position"));
-    view.dispatch(view.state.tr.setSelection(TextSelection.near(view.state.doc.resolve(position))));
-    addColumnBeforeIndex({ index })(view.state, view.dispatch);
-    return true;
-  }
-
-  return false;
+  event.preventDefault();
+  event.stopPropagation();
+  const posAtPointer = view.posAtCoords({ left: event.clientX, top: event.clientY });
+  const rawTextOffset = posAtPointer ? posAtPointer.pos - cellContentStart : 0;
+  const textOffset = Math.max(0, Math.min(rawTextOffset, cellNode.content.size));
+  const selection = TextSelection.near(view.state.doc.resolve(cellContentStart + textOffset), 1);
+  view.dispatch(view.state.tr.setSelection(selection).scrollIntoView());
+  view.focus();
+  return true;
 };
 
-export const createTableControlDecorationsForTest = createTableControlDecorations;
-
-const tableControlsPluginKey = new PluginKey<DecorationSet>("tableControls");
-
-export const createTableControlsPlugin = (options: { isEditable: () => boolean }) => {
-  return new Plugin<DecorationSet>({
-    key: tableControlsPluginKey,
+const createTableControlStatePlugin = () =>
+  new Plugin<DecorationSet>({
+    key: tableControlStatePluginKey,
     state: {
-      init: (_, state) => createTableControlDecorations(state, options.isEditable()),
-      apply(tr, decorations, _oldState, newState) {
+      init: () => DecorationSet.empty,
+      apply(tr, decorationSet) {
         if (isCompositionTransaction(tr)) {
-          return decorations.map(tr.mapping, tr.doc);
+          return decorationSet.map(tr.mapping, tr.doc);
         }
-
-        if (!tr.docChanged && !tr.selectionSet) {
-          return decorations;
-        }
-
-        return createTableControlDecorations(newState, options.isEditable());
+        return DecorationSet.empty;
       },
     },
     props: {
-      decorations: (state) => tableControlsPluginKey.getState(state) ?? null,
+      decorations: (state) => tableControlStatePluginKey.getState(state) ?? null,
       handleDOMEvents: {
-        mousedown(view, event) {
-          if (isViewComposing(view)) {
+        beforeinput(view, event) {
+          const inputEvent = event as InputEvent;
+          const text =
+            inputEvent.inputType === "insertText" || inputEvent.inputType === "insertCompositionText" ? inputEvent.data || "" : "";
+          if (!insertTextNearTableBoundary(text)(view.state, view.dispatch, view)) {
             return false;
           }
-          return handleTableControlMouseDown(view, event);
+
+          event.preventDefault();
+          return true;
         },
+        mousedown(view, event) {
+          return selectTextInsideClickedTableCell(view, event);
+        },
+      },
+      handleKeyDown(view, event) {
+        if (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) {
+          return false;
+        }
+
+        const command =
+          event.key === "ArrowDown"
+            ? moveToAdjacentSelectedCell("vert", 1)
+            : event.key === "ArrowUp"
+              ? moveToAdjacentSelectedCell("vert", -1)
+              : event.key === "ArrowLeft"
+                ? moveToAdjacentSelectedCell("horiz", -1)
+                : event.key === "ArrowRight"
+                  ? moveToAdjacentSelectedCell("horiz", 1)
+                  : null;
+        if (!command || !command(view.state, view.dispatch, view)) {
+          return false;
+        }
+
+        event.preventDefault();
+        return true;
+      },
+      handleKeyPress(view, event) {
+        const text = event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey ? event.key : "";
+        return insertTextNearTableBoundary(text)(view.state, view.dispatch, view);
+      },
+      handleTextInput(view, _from, _to, text) {
+        return typeTextNearTableGapCursor(text)(view.state, view.dispatch, view);
       },
     },
   });
-};
 
-export const createTablePlugins = (options: { isEditable: () => boolean }) => [
-  createTableControlsPlugin(options),
-  columnResizing(),
+class BlogEditorTableView {
+  dom: HTMLDivElement;
+  table: HTMLTableElement;
+  colgroup: HTMLTableColElement;
+  contentDOM: HTMLTableSectionElement;
+
+  constructor(
+    private node: ProseMirrorNode,
+    private defaultCellMinWidth: number,
+  ) {
+    this.dom = document.createElement("div");
+    this.dom.className = "tableWrapper";
+    this.table = this.dom.appendChild(document.createElement("table"));
+    this.table.style.setProperty("--default-cell-min-width", `${defaultCellMinWidth}px`);
+    this.colgroup = this.table.appendChild(document.createElement("colgroup"));
+    this.updateColumnsOnResize(node);
+    this.contentDOM = this.table.appendChild(document.createElement("tbody"));
+  }
+
+  update(node: ProseMirrorNode) {
+    if (node.type !== this.node.type) {
+      return false;
+    }
+
+    this.node = node;
+    this.updateColumnsOnResize(node);
+    return true;
+  }
+
+  ignoreMutation(record: ViewMutationRecord) {
+    if (record.type === "selection") {
+      return true;
+    }
+
+    const mutation = record as MutationRecord;
+    if (
+      mutation.type === "attributes" &&
+      mutation.target === this.dom &&
+      (mutation.attributeName === "class" || mutation.attributeName === "style")
+    ) {
+      return true;
+    }
+
+    return (
+      (mutation.type === "attributes" && (mutation.target === this.table || this.colgroup.contains(mutation.target))) ||
+      (mutation.type === "childList" &&
+        mutation.target === this.table &&
+        Array.from(mutation.addedNodes).every((node) => node === this.colgroup))
+    );
+  }
+
+  private updateColumnsOnResize(node: ProseMirrorNode) {
+    let totalWidth = 0;
+    let fixedWidth = true;
+    let nextDOM = this.colgroup.firstElementChild as HTMLTableColElement | null;
+    const row = node.firstChild;
+    if (!row) {
+      return;
+    }
+
+    for (let i = 0; i < row.childCount; i += 1) {
+      const { colspan, colwidth } = row.child(i).attrs;
+      for (let j = 0; j < colspan; j += 1) {
+        const hasWidth = Array.isArray(colwidth) ? colwidth[j] : undefined;
+        const cssWidth = hasWidth ? `${hasWidth}px` : "";
+        totalWidth += hasWidth || this.defaultCellMinWidth;
+        if (!hasWidth) {
+          fixedWidth = false;
+        }
+
+        if (!nextDOM) {
+          const colElement = document.createElement("col");
+          colElement.style.width = cssWidth;
+          this.colgroup.appendChild(colElement);
+        } else {
+          if (nextDOM.style.width !== cssWidth) {
+            nextDOM.style.width = cssWidth;
+          }
+          nextDOM = nextDOM.nextElementSibling as HTMLTableColElement | null;
+        }
+      }
+    }
+
+    while (nextDOM) {
+      const after = nextDOM.nextElementSibling as HTMLTableColElement | null;
+      nextDOM.parentNode?.removeChild(nextDOM);
+      nextDOM = after;
+    }
+
+    if (fixedWidth) {
+      this.table.style.width = `${totalWidth}px`;
+      this.table.style.minWidth = "";
+      return;
+    }
+
+    this.table.style.width = "";
+    this.table.style.minWidth = `${totalWidth}px`;
+  }
+}
+
+export const createTablePlugins = (_options: { isEditable: () => boolean }) => [
+  createTableControlStatePlugin(),
+  columnResizing({ View: BlogEditorTableView }),
   tableEditing(),
 ];
 
 export const tableKeymap: Record<string, Command> = {
   Tab: goToNextCell(1),
   "Shift-Tab": goToNextCell(-1),
+  Backspace: deleteSelectedTablePart,
+  Delete: deleteSelectedTablePart,
+  ArrowDown: moveToAdjacentSelectedCell("vert", 1),
+  ArrowUp: moveToAdjacentSelectedCell("vert", -1),
+  ArrowLeft: moveToAdjacentSelectedCell("horiz", -1),
+  ArrowRight: moveToAdjacentSelectedCell("horiz", 1),
+  Enter: enterNearTableGapCursor,
 };
 
 export const getCellAttrs = (dom: HTMLElement | string): Attrs => {

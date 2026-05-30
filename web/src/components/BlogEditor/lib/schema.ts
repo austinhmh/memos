@@ -168,8 +168,8 @@ export const blogEditorSchema = new Schema({
       group: "block",
       tableRole: "table",
       isolating: true,
-      parseDOM: [{ tag: "table" }],
-      toDOM: () => ["table", ["tbody", 0]],
+      parseDOM: [{ tag: "div.tableWrapper", contentElement: "table" }, { tag: "table" }],
+      toDOM: () => ["div", { class: "tableWrapper" }, ["table", ["tbody", 0]]],
     },
     table_row: {
       content: "(table_cell | table_header)*",

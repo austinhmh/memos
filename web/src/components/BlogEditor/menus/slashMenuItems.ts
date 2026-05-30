@@ -32,6 +32,7 @@ import toggleList from "@/outline-vendor/shared/editor/commands/toggleList";
 import toggleWrap from "@/outline-vendor/shared/editor/commands/toggleWrap";
 import { bookmarkPluginKey } from "../plugins/BookmarkPlugin";
 import type { SlashMenuItem } from "../plugins/SlashMenuPlugin";
+import { createTable } from "../plugins/tableCommands";
 
 const I = 18;
 
@@ -266,20 +267,7 @@ export function buildSlashMenuItems(schema: Schema): SlashMenuItem[] {
       ...colors.table,
       keywords: "table grid spreadsheet 表格 biaoge bg 表 biao 网格 wangge",
       group: "常用",
-      action: (view) => {
-        const { state, dispatch } = view;
-        const cell = schema.nodes.table_cell.createAndFill()!;
-        const headerCell = schema.nodes.table_header.createAndFill()!;
-        const headerRow = schema.nodes.table_row.create(null, [
-          headerCell,
-          headerCell.copy(headerCell.content),
-          headerCell.copy(headerCell.content),
-        ]);
-        const row = schema.nodes.table_row.create(null, [cell, cell.copy(cell.content), cell.copy(cell.content)]);
-        const table = schema.nodes.table.create(null, [headerRow, row, row.copy(row.content)]);
-        dispatch(state.tr.replaceSelectionWith(table).scrollIntoView());
-        view.focus();
-      },
+      action: run((view) => createTable({ rowsCount: 3, colsCount: 3 })(view.state, view.dispatch, view)),
     });
   }
 

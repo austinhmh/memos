@@ -1,7 +1,8 @@
 import { create } from "@bufbuild/protobuf";
 import { FieldMaskSchema } from "@bufbuild/protobuf/wkt";
 import { useQueryClient } from "@tanstack/react-query";
-import { baseKeymap, chainCommands, toggleMark as pmToggleMark, setBlockType } from "prosemirror-commands";
+import { baseKeymap, chainCommands, createParagraphNear, toggleMark as pmToggleMark, setBlockType } from "prosemirror-commands";
+import { gapCursor } from "prosemirror-gapcursor";
 import { history, redo, undo } from "prosemirror-history";
 import { keymap } from "prosemirror-keymap";
 import { Node, Slice } from "prosemirror-model";
@@ -46,6 +47,7 @@ import { getAttachmentUrl } from "@/utils/attachment";
 import { getThemeWithFallback, resolveTheme } from "@/utils/theme";
 import { SelectionToolbar } from "./components/SelectionToolbar";
 import { SlashMenu } from "./components/SlashMenu";
+import { TableControlsOverlay } from "./components/TableControlsOverlay";
 import { loadDoc, parseInWorker } from "./lib/docCache";
 import { buildMarkdownInputRules, codeBlockOnEnter } from "./lib/inputRules";
 import isMarkdown from "./lib/isMarkdown";
@@ -259,6 +261,157 @@ const blurEditor: Command = (_state, _dispatch, view) => {
   return true;
 };
 
+const focusEditorAtDocumentStart = (view: EditorView) => {
+  if (!view.editable) {
+    view.focus();
+    return;
+  }
+
+  const { state } = view;
+  const firstChild = state.doc.firstChild;
+  if (!firstChild || firstChild.isTextblock) {
+    view.dispatch(state.tr.setSelection(TextSelection.near(state.doc.resolve(1), 1)).scrollIntoView());
+    view.focus();
+    return;
+  }
+
+  const paragraph = state.schema.nodes.paragraph?.create();
+  if (!paragraph) {
+    view.focus();
+    return;
+  }
+
+  const tr = state.tr.insert(0, paragraph);
+  tr.setSelection(TextSelection.near(tr.doc.resolve(1), 1)).scrollIntoView();
+  view.dispatch(tr);
+  view.focus();
+};
+
+const focusEditorAtDocumentEnd = (view: EditorView, forceNewTextblock = false) => {
+  if (!view.editable) {
+    view.focus();
+    return;
+  }
+
+  const { state } = view;
+  const docEnd = state.doc.content.size;
+  const lastChild = state.doc.lastChild;
+  if (!lastChild) {
+    view.dispatch(state.tr.setSelection(TextSelection.near(state.doc.resolve(docEnd), -1)).scrollIntoView());
+    view.focus();
+    return;
+  }
+
+  if (lastChild.isTextblock && (!forceNewTextblock || lastChild.textContent.length === 0)) {
+    view.dispatch(state.tr.setSelection(TextSelection.near(state.doc.resolve(docEnd), -1)).scrollIntoView());
+    view.focus();
+    return;
+  }
+
+  const paragraph = state.schema.nodes.paragraph?.create();
+  if (!paragraph) {
+    view.focus();
+    return;
+  }
+
+  const tr = state.tr.insert(docEnd, paragraph);
+  tr.setSelection(TextSelection.near(tr.doc.resolve(docEnd + 1), 1)).scrollIntoView();
+  view.dispatch(tr);
+  view.focus();
+};
+
+const focusEditorAtPointerEdge = (view: EditorView, clientY: number) => {
+  const firstElement = view.dom.firstElementChild;
+  const lastElement = view.dom.lastElementChild;
+  if (!(firstElement instanceof HTMLElement) || !(lastElement instanceof HTMLElement)) {
+    focusEditorAtDocumentEnd(view);
+    return;
+  }
+
+  const firstRect = firstElement.getBoundingClientRect();
+  const lastRect = lastElement.getBoundingClientRect();
+  if (clientY < firstRect.top) {
+    focusEditorAtDocumentStart(view);
+    return;
+  }
+  if (clientY > lastRect.bottom) {
+    focusEditorAtDocumentEnd(view, true);
+    return;
+  }
+
+  const onlyChild = view.state.doc.childCount === 1 ? view.state.doc.firstChild : null;
+  if (onlyChild && !onlyChild.isTextblock) {
+    const midpoint = firstRect.top + (lastRect.bottom - firstRect.top) / 2;
+    if (clientY < midpoint) {
+      focusEditorAtDocumentStart(view);
+      return;
+    }
+    focusEditorAtDocumentEnd(view);
+    return;
+  }
+
+  view.focus();
+};
+
+type PointerEdgeEvent = {
+  target: EventTarget | null;
+  clientX: number;
+  clientY: number;
+  defaultPrevented?: boolean;
+  preventDefault: () => void;
+};
+
+const shouldFocusEditorAtPointerEdge = (view: EditorView, target: Element | null, clientX: number, clientY: number) => {
+  if (!target) {
+    return false;
+  }
+
+  const elementAtPointer = document.elementFromPoint(clientX, clientY);
+  if (
+    target.closest(".table-controls-overlay") ||
+    target.closest("button,a,input,textarea,select,[contenteditable='false']") ||
+    target.closest(".blog-editor-content table") ||
+    elementAtPointer?.closest(".blog-editor-content table")
+  ) {
+    return false;
+  }
+
+  const isInsideEditorContent = view.dom.contains(target);
+  if (!isInsideEditorContent) {
+    return true;
+  }
+
+  const pos = view.posAtCoords({ left: clientX, top: clientY });
+  if (pos) {
+    return false;
+  }
+
+  const isEditorRootClick = target === view.dom;
+  const tableOnlyDocument = view.state.doc.childCount === 1 && !view.state.doc.firstChild?.isTextblock;
+  if (clientY > view.dom.getBoundingClientRect().bottom) {
+    return true;
+  }
+  if (isEditorRootClick || tableOnlyDocument) {
+    return true;
+  }
+  return true;
+};
+
+const focusEditorAtPointerEdgeFromEvent = (view: EditorView, event: PointerEdgeEvent) => {
+  if (event.defaultPrevented) {
+    return false;
+  }
+
+  const target = event.target instanceof Element ? event.target : null;
+  if (!shouldFocusEditorAtPointerEdge(view, target, event.clientX, event.clientY)) {
+    return false;
+  }
+
+  event.preventDefault();
+  focusEditorAtPointerEdge(view, event.clientY);
+  return true;
+};
+
 const getDocumentTextSelection = (state: EditorState): TextSelection | null => {
   let from: number | null = null;
   let to: number | null = null;
@@ -338,6 +491,7 @@ const buildBlogEditorKeymap = (manualSave: Command): Record<string, Command> => 
   Enter: chainCommands(
     codeBlockOnEnter(schema),
     enterInCode,
+    createParagraphNear,
     splitListItem(schema.nodes.checkbox_item),
     splitListItem(schema.nodes.list_item),
     splitHeading(schema.nodes.heading),
@@ -365,6 +519,7 @@ const BlogEditor = ({ memo, readonly = false, onReady, onSaveStatusChange, norma
   const queryClient = useQueryClient();
   const dictionary = useDictionary();
   const containerRef = useRef<HTMLDivElement>(null);
+  const editorRootRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -676,6 +831,7 @@ const BlogEditor = ({ memo, readonly = false, onReady, onSaveStatusChange, norma
           createCompositionGuardPlugin(),
           createSelectionToolbarUpdatePlugin(() => setEditorUpdateVersion((version) => version + 1)),
           history(),
+          gapCursor(),
           uploadPlaceholderPlugin,
           new UploadPlugin({
             dictionary,
@@ -748,6 +904,9 @@ const BlogEditor = ({ memo, readonly = false, onReady, onSaveStatusChange, norma
             }),
           );
           return true;
+        },
+        handleClick(view, _pos, event) {
+          return focusEditorAtPointerEdgeFromEvent(view, event);
         },
         dispatchTransaction(this: EditorView, tr) {
           const nextState = this.state.apply(tr);
@@ -963,8 +1122,20 @@ const BlogEditor = ({ memo, readonly = false, onReady, onSaveStatusChange, norma
     };
   }, []);
 
+  const handleEditorRootClick = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      const view = viewRef.current;
+      if (!view || readonly || loading) {
+        return;
+      }
+
+      focusEditorAtPointerEdgeFromEvent(view, event.nativeEvent);
+    },
+    [loading, readonly],
+  );
+
   return (
-    <div className="blog-editor" style={{ position: "relative" }}>
+    <div ref={editorRootRef} className="blog-editor" style={{ position: "relative" }} onClick={handleEditorRootClick}>
       {loading && (
         <div className="blog-editor-content ProseMirror" style={{ padding: "2rem", color: "#888" }}>
           <p>正在加载文档…</p>
@@ -975,9 +1146,21 @@ const BlogEditor = ({ memo, readonly = false, onReady, onSaveStatusChange, norma
 
       <SlashMenu view={viewRef.current} items={slashMenuItems} menuState={slashMenuState} />
       <SelectionToolbar view={viewRef.current} readonly={readonly || loading} updateVersion={editorUpdateVersion} />
+      <TableControlsOverlay
+        view={viewRef.current}
+        rootRef={editorRootRef}
+        readonly={readonly || loading}
+        updateVersion={editorUpdateVersion}
+      />
 
       {!readonly && (
-        <div className="blog-editor-padding" onClick={() => viewRef.current?.focus()} role="button" tabIndex={-1} aria-hidden />
+        <div
+          className="blog-editor-padding"
+          onClick={(event) => viewRef.current && focusEditorAtPointerEdge(viewRef.current, event.clientY)}
+          role="button"
+          tabIndex={-1}
+          aria-hidden
+        />
       )}
 
       {!readonly && <div className="blog-editor-status">{isSaving ? "保存中…" : "自动保存"}</div>}
