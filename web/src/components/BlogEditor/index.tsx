@@ -76,7 +76,7 @@ interface BlogEditorProps {
   normalizeBeforeSave?: (content: string) => string;
 }
 
-const AUTOSAVE_DELAY = 2000;
+const AUTOSAVE_DELAY = 1000;
 const PASTED_IMAGE_FILENAME = "pasted-image.png";
 const SERIALIZE_IDLE_TIMEOUT = 1200;
 

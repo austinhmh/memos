@@ -227,13 +227,27 @@ export const isRowSelection = (selection: Selection): selection is RowSelection 
 
 export const isColumnSelection = (selection: Selection): selection is ColumnSelection => selection instanceof ColumnSelection;
 
-const isCompleteTableCellSelection = (state: EditorState): boolean => {
+const getSelectedCellRect = (state: EditorState) => {
   if (!(state.selection instanceof CellSelection)) {
-    return false;
+    return null;
   }
 
-  const rect = selectedRect(state);
-  return rect.top === 0 && rect.left === 0 && rect.bottom === rect.map.height && rect.right === rect.map.width;
+  return selectedRect(state);
+};
+
+const isFullRowCellSelection = (state: EditorState): boolean => {
+  const rect = getSelectedCellRect(state);
+  return Boolean(rect && rect.left === 0 && rect.right === rect.map.width);
+};
+
+const isFullColumnCellSelection = (state: EditorState): boolean => {
+  const rect = getSelectedCellRect(state);
+  return Boolean(rect && rect.top === 0 && rect.bottom === rect.map.height);
+};
+
+const isCompleteTableCellSelection = (state: EditorState): boolean => {
+  const rect = getSelectedCellRect(state);
+  return Boolean(rect && rect.top === 0 && rect.left === 0 && rect.bottom === rect.map.height && rect.right === rect.map.width);
 };
 
 const getSelectedTablePosition = (state: EditorState): number | null => {
@@ -665,7 +679,7 @@ export const deleteCellSelectionContent: Command = (state, dispatch) => {
 
 export const deleteColSelection = (): Command => {
   return (state, dispatch) => {
-    if (isColumnSelection(state.selection)) {
+    if (state.selection instanceof CellSelection && isFullColumnCellSelection(state)) {
       return isCompleteTableCellSelection(state) ? deleteSelectedTableAtPosition(state, dispatch) : deleteColumn(state, dispatch);
     }
     return false;
@@ -674,10 +688,50 @@ export const deleteColSelection = (): Command => {
 
 export const deleteRowSelection = (): Command => {
   return (state, dispatch) => {
-    if (isRowSelection(state.selection)) {
+    if (state.selection instanceof CellSelection && isFullRowCellSelection(state)) {
       return isCompleteTableCellSelection(state) ? deleteSelectedTableAtPosition(state, dispatch) : deleteRow(state, dispatch);
     }
     return false;
+  };
+};
+
+type DeleteTableRangeOptions = {
+  fromIndex: number;
+  toIndex: number;
+  cellPosition?: number;
+};
+
+export const deleteColumnRange = ({ fromIndex, toIndex, cellPosition }: DeleteTableRangeOptions): Command => {
+  return (state, dispatch) => {
+    const commandState = stateWithCellSelection(state, cellPosition);
+    if (!commandState) {
+      return false;
+    }
+
+    const start = Math.min(fromIndex, toIndex);
+    const end = Math.max(fromIndex, toIndex);
+    return chainTransactions(
+      selectColumnAtIndex(start, false, cellPosition),
+      selectColumnAtIndex(end, true, cellPosition),
+      deleteColSelection(),
+    )(commandState, dispatch);
+  };
+};
+
+export const deleteRowRange = ({ fromIndex, toIndex, cellPosition }: DeleteTableRangeOptions): Command => {
+  return (state, dispatch) => {
+    const commandState = stateWithCellSelection(state, cellPosition);
+    if (!commandState) {
+      return false;
+    }
+
+    const start = Math.min(fromIndex, toIndex);
+    const end = Math.max(fromIndex, toIndex);
+    return chainTransactions(
+      selectRowAtIndex(start, false, cellPosition),
+      selectRowAtIndex(end, true, cellPosition),
+      deleteRowSelection(),
+    )(commandState, dispatch);
   };
 };
 
@@ -696,10 +750,10 @@ export const deleteTableIfSelected = (): Command => {
 };
 
 export const deleteSelectedTablePart: Command = chainCommands(
-  deleteCellSelectionContent,
   deleteColSelection(),
   deleteRowSelection(),
   deleteTableIfSelected(),
+  deleteCellSelectionContent,
 );
 
 export const deleteTableAtPosition = (tablePos: number): Command => {

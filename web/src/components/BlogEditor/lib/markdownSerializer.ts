@@ -165,6 +165,14 @@ export function createMdSerializer(): MarkdownSerializer {
       state.write(sanitizeUrl(node.attrs.url as string) || "");
       state.closeBlock(node);
     },
+    attachment(state, node) {
+      const safeHref = sanitizeUrl(node.attrs.href as string) || "";
+      const title = state.esc(String(node.attrs.title || ""), false);
+      const size = Number(node.attrs.size || 0);
+      state.ensureNewLine();
+      state.write(`[${title} ${size}](${state.esc(safeHref, false)})`);
+      state.closeBlock(node);
+    },
   };
 
   const marks: Record<string, MarkSpec> = {

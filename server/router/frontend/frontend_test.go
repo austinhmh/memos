@@ -31,17 +31,19 @@ func TestServeUsesNoStoreForSPAFallbackRoutes(t *testing.T) {
 	e := echo.New()
 	NewFrontendService(nil, nil).Serve(context.Background(), e)
 
-	req := httptest.NewRequest(http.MethodGet, "/explore", nil)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
+	for _, path := range []string{"/explore", "/blog", "/writing", "/writing/test-memo"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
 
-	require.Equal(t, http.StatusOK, rec.Code)
-	require.Contains(t, rec.Body.String(), "<!doctype html>")
-	require.Equal(t, "no-cache, no-store, must-revalidate", rec.Header().Get(echo.HeaderCacheControl))
-	require.Equal(t, "DENY", rec.Header().Get("X-Frame-Options"))
-	csp := rec.Header().Get("Content-Security-Policy")
-	require.Contains(t, csp, "script-src 'self'")
-	require.NotContains(t, csp, "script-src 'self' 'unsafe-inline'")
+		require.Equal(t, http.StatusOK, rec.Code, path)
+		require.Contains(t, rec.Body.String(), "<!doctype html>", path)
+		require.Equal(t, "no-cache, no-store, must-revalidate", rec.Header().Get(echo.HeaderCacheControl), path)
+		require.Equal(t, "DENY", rec.Header().Get("X-Frame-Options"), path)
+		csp := rec.Header().Get("Content-Security-Policy")
+		require.Contains(t, csp, "script-src 'self'", path)
+		require.NotContains(t, csp, "script-src 'self' 'unsafe-inline'", path)
+	}
 }
 
 func TestServeStaticLikeMissingResourcesReturnNotFound(t *testing.T) {

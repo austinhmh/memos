@@ -257,9 +257,9 @@ sequenceDiagram
     User->>PM: 输入/编辑内容
     PM->>PM: dispatchTransaction()
     Note over PM: tr.docChanged = true
-    PM->>BlogEditor: 启动 2 秒防抖计时器
+    PM->>BlogEditor: 启动 1 秒防抖计时器
     
-    Note over BlogEditor: 2 秒无操作后...
+    Note over BlogEditor: 1 秒无操作后...
     
     BlogEditor->>BlogEditor: flushPendingSave(doc)
     BlogEditor->>BlogEditor: requestIdleCallback()
@@ -312,7 +312,7 @@ flowchart TB
         end
         
         subgraph SaveFlow["保存流程"]
-            Timer["2s 防抖计时器"]
+            Timer["1s 防抖计时器"]
             IdleTask["requestIdleCallback"]
             Serializer["Markdown Serializer"]
             Normalizer["normalizeBeforeSave<br/>(ensureBlogTag)"]
@@ -334,7 +334,7 @@ flowchart TB
 ### BlogEditor 自动保存机制详解
 
 1. **触发条件**：任何导致 `tr.docChanged === true` 的 ProseMirror 事务
-2. **防抖延迟**：2000ms（`AUTOSAVE_DELAY`），每次新编辑重置计时器
+2. **防抖延迟**：1000ms（`AUTOSAVE_DELAY`），每次新编辑重置计时器
 3. **序列化调度**：通过 `requestIdleCallback` 在浏览器空闲时执行，超时 1200ms（`SERIALIZE_IDLE_TIMEOUT`）
 4. **序列化**：ProseMirror 文档 → Markdown 字符串
 5. **规范化**：调用 `normalizeBeforeSave`（即 `ensureBlogTag`），确保 `#blog` 标签存在

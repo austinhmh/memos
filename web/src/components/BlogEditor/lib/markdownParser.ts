@@ -99,6 +99,42 @@ function getProseMirrorTokenizer(): MarkdownIt {
   });
 
   const bareUrlPattern = /^https?:\/\/\S+$/;
+  const isAttachmentUrl = (href: string) => {
+    const safeHref = sanitizeUrl(href) || "";
+    return /^\/file\/attachments\/[^/]+\/.+/.test(safeHref) || /^https?:\/\/[^/]+\/file\/attachments\/[^/]+\/.+/.test(safeHref);
+  };
+
+  md.core.ruler.push("prosemirror_attachments", (state) => {
+    const tokens = state.tokens;
+    let i = 0;
+    while (i < tokens.length) {
+      if (
+        tokens[i].type === "paragraph_open" &&
+        i + 2 < tokens.length &&
+        tokens[i + 1].type === "inline" &&
+        tokens[i + 2].type === "paragraph_close"
+      ) {
+        const children = tokens[i + 1].children || [];
+        if (children.length === 3 && children[0].type === "link_open" && children[1].type === "text" && children[2].type === "link_close") {
+          const href = sanitizeUrl(children[0].attrGet("href")) || "";
+          if (href && isAttachmentUrl(href)) {
+            const content = children[1].content;
+            const parts = content.split(" ");
+            const size = Number.parseInt(parts.pop() || "0", 10);
+            const title = parts.join(" ") || decodeURIComponent(href.split("/").pop() || "");
+            const token = new state.Token("attachment", "a", 0);
+            token.attrSet("href", href);
+            token.attrSet("title", title);
+            token.attrSet("size", String(Number.isFinite(size) ? size : 0));
+            tokens.splice(i, 3, token);
+            continue;
+          }
+        }
+      }
+      i++;
+    }
+  });
+
   md.core.ruler.push("prosemirror_bookmark", (state) => {
     const tokens = state.tokens;
     let i = 0;
@@ -229,6 +265,14 @@ export function createMdParser(schema: Schema): MarkdownParser {
       node: "bookmark",
       getAttrs: (tok: Token) => ({
         url: sanitizeUrl(tok.attrGet("url")) || "",
+      }),
+    },
+    attachment: {
+      node: "attachment",
+      getAttrs: (tok: Token) => ({
+        href: sanitizeUrl(tok.attrGet("href")) || "",
+        title: tok.attrGet("title") || "",
+        size: Number.parseInt(tok.attrGet("size") || "0", 10),
       }),
     },
   };

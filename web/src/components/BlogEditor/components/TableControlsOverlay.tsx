@@ -6,12 +6,12 @@ import {
   addColumnBeforeIndex,
   addRowBeforeIndex,
   deleteColSelection,
+  deleteColumnRange,
+  deleteRowRange,
   deleteRowSelection,
   deleteSelectedTablePart,
   deleteTableAtPosition,
   getTableCellPosition,
-  isColumnSelection,
-  isRowSelection,
   isTableSelected,
   selectColumnAtIndex,
   selectRowAtIndex,
@@ -65,6 +65,9 @@ type SelectionAction = {
   left: number;
   top: number;
   tablePos: number;
+  fromIndex?: number;
+  toIndex?: number;
+  cellPosition?: number;
 };
 
 type PinnedSelectionAction = SelectionAction & {
@@ -113,11 +116,13 @@ const getSelectedStateForTable = (state: EditorState, tableStart: number, tableE
 
   const rect = selectedRectForSelection(state, selection);
   const isCompleteTableSelection = rect.top === 0 && rect.left === 0 && rect.bottom === rect.map.height && rect.right === rect.map.width;
+  const isFullRowSelection = rect.left === 0 && rect.right === rect.map.width;
+  const isFullColumnSelection = rect.top === 0 && rect.bottom === rect.map.height;
   return {
     rect,
-    isTable: isCompleteTableSelection && !isRowSelection(selection) && !isColumnSelection(selection),
-    isRow: isRowSelection(selection),
-    isColumn: isColumnSelection(selection),
+    isTable: isCompleteTableSelection,
+    isRow: isFullRowSelection && !isCompleteTableSelection,
+    isColumn: isFullColumnSelection && !isCompleteTableSelection,
   };
 };
 
@@ -294,6 +299,9 @@ const buildTableOverlayModels = (
         left: tableRect.left,
         top: actionTop,
         tablePos,
+        fromIndex: selectedState.rect.left,
+        toIndex: selectedState.rect.right - 1,
+        cellPosition: tableCellPosition,
       };
     } else if (selectedState?.isRow) {
       selectionAction = {
@@ -302,6 +310,9 @@ const buildTableOverlayModels = (
         left: tableRect.left,
         top: actionTop,
         tablePos,
+        fromIndex: selectedState.rect.top,
+        toIndex: selectedState.rect.bottom - 1,
+        cellPosition: tableCellPosition,
       };
     }
 
@@ -465,9 +476,13 @@ export const TableControlsOverlay = ({ view, rootRef, readonly, updateVersion }:
 
       const command =
         action.type === "row"
-          ? deleteRowSelection()
+          ? action.fromIndex === undefined || action.toIndex === undefined
+            ? deleteRowSelection()
+            : deleteRowRange({ fromIndex: action.fromIndex, toIndex: action.toIndex, cellPosition: action.cellPosition })
           : action.type === "column"
-            ? deleteColSelection()
+            ? action.fromIndex === undefined || action.toIndex === undefined
+              ? deleteColSelection()
+              : deleteColumnRange({ fromIndex: action.fromIndex, toIndex: action.toIndex, cellPosition: action.cellPosition })
             : deleteTableAtPosition(action.tablePos);
       pinnedSelectionActionRef.current = null;
       command(view.state, view.dispatch, view);
@@ -501,9 +516,13 @@ export const TableControlsOverlay = ({ view, rootRef, readonly, updateVersion }:
           : models.find((model) => model.selectionAction)?.selectionAction;
       const command =
         action?.type === "row"
-          ? deleteRowSelection()
+          ? action.fromIndex === undefined || action.toIndex === undefined
+            ? deleteRowSelection()
+            : deleteRowRange({ fromIndex: action.fromIndex, toIndex: action.toIndex, cellPosition: action.cellPosition })
           : action?.type === "column"
-            ? deleteColSelection()
+            ? action.fromIndex === undefined || action.toIndex === undefined
+              ? deleteColSelection()
+              : deleteColumnRange({ fromIndex: action.fromIndex, toIndex: action.toIndex, cellPosition: action.cellPosition })
             : action?.type === "table"
               ? deleteTableAtPosition(action.tablePos)
               : deleteSelectedTablePart;
@@ -523,7 +542,7 @@ export const TableControlsOverlay = ({ view, rootRef, readonly, updateVersion }:
 
     root.addEventListener("keydown", handleKeyDown, true);
     return () => root.removeEventListener("keydown", handleKeyDown, true);
-  }, [readonly, rootRef, update, view]);
+  }, [models, readonly, rootRef, update, view]);
 
   const renderedModels = useMemo(() => models.filter((model) => model.tableRect.width > 0 && model.tableRect.height > 0), [models]);
 
@@ -544,6 +563,7 @@ export const TableControlsOverlay = ({ view, rootRef, readonly, updateVersion }:
                 type: "table",
                 label: "删除表格",
                 tablePos: model.tablePos,
+                cellPosition: model.tableCellPosition,
               })
             }
           />
@@ -559,6 +579,9 @@ export const TableControlsOverlay = ({ view, rootRef, readonly, updateVersion }:
                   type: "row",
                   label: rowActionLabel(1),
                   tablePos: model.tablePos,
+                  fromIndex: row.index,
+                  toIndex: row.index,
+                  cellPosition: row.cellPosition,
                 })
               }
             />
@@ -575,6 +598,9 @@ export const TableControlsOverlay = ({ view, rootRef, readonly, updateVersion }:
                   type: "column",
                   label: columnActionLabel(1),
                   tablePos: model.tablePos,
+                  fromIndex: column.index,
+                  toIndex: column.index,
+                  cellPosition: column.cellPosition,
                 })
               }
             />

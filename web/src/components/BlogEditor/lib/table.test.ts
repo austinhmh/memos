@@ -40,4 +40,16 @@ describe("BlogEditor table schema", () => {
 
     expect(serializer.serialize(doc)).toBe("| A\\|B     | C\\\\D      |\n|----------|-----------|\n| 1<br>2   | x\\|y\\\\z   |");
   });
+
+  it("preserves a table followed by a paragraph through markdown serialization", () => {
+    const doc = parser.parse("before\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\nafter");
+    const serialized = serializer.serialize(doc);
+    const reparsed = parser.parse(serialized);
+
+    expect(reparsed.childCount).toBe(3);
+    expect(reparsed.child(0).type.name).toBe("paragraph");
+    expect(reparsed.child(1).type.name).toBe("table");
+    expect(reparsed.child(2).type.name).toBe("paragraph");
+    expect(reparsed.child(2).textContent).toBe("after");
+  });
 });

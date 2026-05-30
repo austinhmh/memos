@@ -225,6 +225,51 @@ export const blogEditorSchema = new Schema({
         },
       ],
     },
+    attachment: {
+      attrs: {
+        id: { default: null },
+        href: { default: null },
+        title: {},
+        size: { default: 0 },
+        preview: { default: false },
+        width: { default: null },
+        height: { default: null },
+        contentType: { default: null },
+      },
+      group: "block",
+      defining: true,
+      atom: true,
+      parseDOM: [
+        {
+          priority: 100,
+          tag: "a.attachment",
+          getAttrs: (dom: HTMLElement) => {
+            const anchor = dom as HTMLAnchorElement;
+            return {
+              id: anchor.id || null,
+              title: anchor.innerText,
+              href: sanitizeUrl(anchor.getAttribute("href")) || "",
+              size: Number.parseInt(anchor.dataset.size || "0", 10),
+              contentType: anchor.dataset.contentType || null,
+            };
+          },
+        },
+      ],
+      toDOM: (node) => [
+        "a",
+        {
+          class: "attachment",
+          id: node.attrs.id,
+          href: sanitizeUrl(node.attrs.href as string | null) || "",
+          download: node.attrs.title,
+          "data-size": node.attrs.size,
+          "data-content-type": node.attrs.contentType,
+          contentEditable: "false",
+        },
+        String(node.attrs.title || ""),
+      ],
+      leafText: (node) => node.attrs.title,
+    },
     text: {
       group: "inline",
     },

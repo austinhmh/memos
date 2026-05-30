@@ -54,7 +54,7 @@ const BlogExplorer = ({ className }: Props) => {
         }),
       );
       const uid = memo.name.split("/").pop();
-      navigate(`/blog/${uid}`);
+      navigate(`/writing/${uid}`);
     } catch (err) {
       toast.error("Failed to create document");
       console.error(err);
@@ -81,11 +81,11 @@ const BlogExplorer = ({ className }: Props) => {
         ) : (
           memos.map((memo) => {
             const uid = memo.name.split("/").pop();
-            const firstLine = memo.content.split("\n")[0].replace(/^#+\s*/, "") || "Untitled";
+            const firstLine = memo.content.split("\n")[0].replace(/^#+\s*/, "");
             return (
               <NavLink
                 key={memo.name}
-                to={`/blog/${uid}`}
+                to={`/writing/${uid}`}
                 className={({ isActive }) =>
                   cn(
                     "w-full px-3 py-2 rounded-lg text-sm transition-colors flex items-center gap-2",

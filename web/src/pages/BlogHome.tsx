@@ -65,7 +65,7 @@ const BlogHome = () => {
         }),
       );
       const uid = memo.name.split("/").pop();
-      navigate(`/memos/${uid}`);
+      navigate(`/writing/${uid}`);
     } catch (err) {
       toast.error("Failed to create document");
       console.error(err);
@@ -95,7 +95,7 @@ const BlogHome = () => {
           {memos.map((memo) => {
             const uid = memo.name.split("/").pop();
             const lines = memo.content.split("\n");
-            const title = lines[0].replace(/^#+\s*/, "") || "Untitled";
+            const title = lines[0].replace(/^#+\s*/, "");
             const preview = lines.slice(1).join("\n").trim().slice(0, 120);
             const coverImage = memo.attachments.find((attachment) => getAttachmentType(attachment) === "image/*");
             const canEdit = !!currentUser && (memo.creator === currentUser.name || !!isSuperUser(currentUser));
@@ -108,7 +108,7 @@ const BlogHome = () => {
                   "w-full text-left px-5 py-4 rounded-lg border border-border bg-card",
                   "hover:border-primary/30 hover:shadow-sm transition-all cursor-pointer",
                 )}
-                onClick={() => navigate(`/memos/${uid}`)}
+                onClick={() => navigate(`/writing/${uid}`)}
               >
                 <div className="flex items-start gap-4">
                   <div className="min-w-0 flex-1">

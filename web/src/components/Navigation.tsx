@@ -36,7 +36,7 @@ const Navigation = (props: Props) => {
   };
   const blogNavLink: NavLinkItem = {
     id: "header-blog",
-    path: Routes.BLOG,
+    path: Routes.WRITING,
     title: "Writing",
     icon: <FileTextIcon className="w-6 h-auto shrink-0" />,
   };

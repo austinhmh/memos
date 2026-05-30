@@ -81,7 +81,7 @@ const BlogDetail = () => {
     if (locationState?.from) {
       navigate(locationState.from);
     } else {
-      navigate("/blog");
+      navigate("/writing");
     }
   }, [locationState, navigate]);
 
@@ -120,7 +120,7 @@ const BlogDetail = () => {
     );
   }
 
-  const titleLine = memo.content.split("\n")[0].replace(/^#+\s*/, "") || "Untitled";
+  const titleLine = memo.content.split("\n")[0].replace(/^#+\s*/, "");
 
   const visibilityOptions = [
     { value: Visibility.PRIVATE, label: t("memo.visibility.private") },
@@ -138,7 +138,7 @@ const BlogDetail = () => {
     >
       {!md && (
         <MobileHeader>
-          <MemoDetailSidebarDrawer memo={memo} parentPage={locationState?.from || "/blog"} saveStatus={blogEditorSaveStatus} />
+          <MemoDetailSidebarDrawer memo={memo} parentPage={locationState?.from || "/writing"} saveStatus={blogEditorSaveStatus} />
         </MobileHeader>
       )}
 
@@ -186,7 +186,7 @@ const BlogDetail = () => {
               <span className="truncate">{visibilityOptions.find((o) => o.value === memo.visibility)?.label}</span>
             </div>
           )}
-          <MemoActionMenu memo={memo} readonly={readonly} isDetailPage deleteSuccessPath="/blog" />
+          <MemoActionMenu memo={memo} readonly={readonly} isDetailPage deleteSuccessPath="/writing" />
         </div>
       </div>
 
@@ -233,7 +233,7 @@ const BlogDetail = () => {
                 <MemoDetailSidebar
                   className="py-2"
                   memo={memo}
-                  parentPage={locationState?.from || "/blog"}
+                  parentPage={locationState?.from || "/writing"}
                   saveStatus={blogEditorSaveStatus}
                 />
               </div>
@@ -287,7 +287,7 @@ const BlogDetail = () => {
                         <MemoView
                           key={`${comment.name}-${comment.displayTime}`}
                           memo={comment}
-                          parentPage={locationState?.from || "/blog"}
+                          parentPage={locationState?.from || "/writing"}
                           showCreator
                           compact
                         />
@@ -321,7 +321,7 @@ const BlogDetail = () => {
               onMouseDown={() => handleMouseDown("right")}
             />
             <div className="shrink-0 self-stretch h-full overflow-y-auto hide-scrollbar pt-4 px-3 pb-8" style={{ width: `${rightWidth}%` }}>
-              <MemoDetailSidebar className="py-2" memo={memo} parentPage={locationState?.from || "/blog"} />
+              <MemoDetailSidebar className="py-2" memo={memo} parentPage={locationState?.from || "/writing"} />
 
               {memo.attachments.length > 0 && (
                 <div className="mt-4">
@@ -343,7 +343,7 @@ const BlogDetail = () => {
                       <MemoView
                         key={`${comment.name}-${comment.displayTime}`}
                         memo={comment}
-                        parentPage={locationState?.from || "/blog"}
+                        parentPage={locationState?.from || "/writing"}
                         showCreator
                         compact
                       />

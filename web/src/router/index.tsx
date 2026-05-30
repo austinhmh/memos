@@ -12,6 +12,7 @@ const Archived = lazyWithRetry(() => import("@/pages/Archived"), "Archived");
 const AuthCallback = lazyWithRetry(() => import("@/pages/AuthCallback"), "AuthCallback");
 const BlogHome = lazyWithRetry(() => import("@/pages/BlogHome"), "BlogHome");
 const BlogLayout = lazyWithRetry(() => import("@/layouts/BlogLayout"), "BlogLayout");
+const BlogDetail = lazyWithRetry(() => import("@/pages/BlogDetail"), "BlogDetail");
 const Explore = lazyWithRetry(() => import("@/pages/Explore"), "Explore");
 const Inboxes = lazyWithRetry(() => import("@/pages/Inboxes"), "Inboxes");
 const MemoDetail = lazyWithRetry(() => import("@/pages/MemoDetail"), "MemoDetailRoute");
@@ -78,11 +79,19 @@ const router = createBrowserRouter([
           { path: Routes.SETTING, element: <LazyRoute component={Setting} /> },
           { path: "memos/:uid", element: <LazyRoute component={MemoDetail} /> },
           {
+            path: "writing",
+            element: <LazyRoute component={BlogLayout} />,
+            children: [
+              { path: "", element: <LazyRoute component={BlogHome} /> },
+              { path: ":uid", element: <LazyRoute component={BlogDetail} /> },
+            ],
+          },
+          {
             path: "blog",
             element: <LazyRoute component={BlogLayout} />,
             children: [
               { path: "", element: <LazyRoute component={BlogHome} /> },
-              { path: ":uid", element: <LazyRoute component={MemoDetailRedirect} /> },
+              { path: ":uid", element: <LazyRoute component={BlogDetail} /> },
             ],
           },
           // Redirect old path to new path

@@ -8,6 +8,8 @@ import {
   addColumnBeforeIndex,
   addRowBeforeIndex,
   deleteColSelection,
+  deleteColumnRange,
+  deleteRowRange,
   deleteRowSelection,
   deleteSelectedTablePart,
   deleteTableAtPosition,
@@ -226,6 +228,64 @@ describe("tableCommands", () => {
     expect(selectColumnAtIndex(1)(state, dispatch)).toBe(true);
     expect(deleteSelectedTablePart(state, dispatch)).toBe(true);
     expect(state.doc.firstChild?.firstChild?.childCount).toBe(1);
+  });
+
+  it("shows delete action for a full-column CellSelection even if the custom ColumnSelection class is lost", () => {
+    let state = createTableState();
+    const dispatch = (tr: Transaction) => {
+      state = state.apply(tr);
+    };
+    const topCell = getTableCellPosition(state, 0, 0, 1);
+    const bottomCell = getTableCellPosition(state, 0, 1, 1);
+    expect(topCell).toBeTypeOf("number");
+    expect(bottomCell).toBeTypeOf("number");
+
+    state = state.apply(state.tr.setSelection(new CellSelection(state.doc.resolve(topCell ?? 0), state.doc.resolve(bottomCell ?? 0))));
+    expect(state.selection).toBeInstanceOf(CellSelection);
+    expect(deleteSelectedTablePart(state, dispatch)).toBe(true);
+    expect(state.doc.firstChild?.firstChild?.childCount).toBe(1);
+  });
+
+  it("shows delete action for a full-row CellSelection even if the custom RowSelection class is lost", () => {
+    let state = createTableState();
+    const dispatch = (tr: Transaction) => {
+      state = state.apply(tr);
+    };
+    const leftCell = getTableCellPosition(state, 0, 1, 0);
+    const rightCell = getTableCellPosition(state, 0, 1, 1);
+    expect(leftCell).toBeTypeOf("number");
+    expect(rightCell).toBeTypeOf("number");
+
+    state = state.apply(state.tr.setSelection(new CellSelection(state.doc.resolve(leftCell ?? 0), state.doc.resolve(rightCell ?? 0))));
+    expect(state.selection).toBeInstanceOf(CellSelection);
+    expect(deleteSelectedTablePart(state, dispatch)).toBe(true);
+    expect(state.doc.firstChild?.childCount).toBe(1);
+  });
+
+  it("deletes a selected column by stable control metadata after selection focus is lost", () => {
+    let state = createTableState();
+    const dispatch = (tr: Transaction) => {
+      state = state.apply(tr);
+    };
+    const controlCell = getTableCellPosition(state, 0, 0, 1);
+    expect(controlCell).toBeTypeOf("number");
+
+    state = state.apply(state.tr.setSelection(TextSelection.near(state.doc.resolve((controlCell ?? 0) + 1))));
+    expect(deleteColumnRange({ fromIndex: 1, toIndex: 1, cellPosition: controlCell ?? undefined })(state, dispatch)).toBe(true);
+    expect(state.doc.firstChild?.firstChild?.childCount).toBe(1);
+  });
+
+  it("deletes a selected row by stable control metadata after selection focus is lost", () => {
+    let state = createTableState();
+    const dispatch = (tr: Transaction) => {
+      state = state.apply(tr);
+    };
+    const controlCell = getTableCellPosition(state, 0, 1, 0);
+    expect(controlCell).toBeTypeOf("number");
+
+    state = state.apply(state.tr.setSelection(TextSelection.near(state.doc.resolve((controlCell ?? 0) + 1))));
+    expect(deleteRowRange({ fromIndex: 1, toIndex: 1, cellPosition: controlCell ?? undefined })(state, dispatch)).toBe(true);
+    expect(state.doc.firstChild?.childCount).toBe(1);
   });
 
   it("deletes a selected table through the Delete/Backspace command without requiring isInTable", () => {

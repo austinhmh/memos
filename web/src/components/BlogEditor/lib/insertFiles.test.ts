@@ -103,4 +103,28 @@ describe("insertFiles", () => {
 
     view.destroy();
   });
+
+  it("inserts an uploaded non-image file as an attachment node", async () => {
+    const { view } = createView();
+    const file = new File(["hello"], "notes.txt", { type: "text/plain" });
+    const event = new Event("drop");
+
+    await insertFiles(view, event, 1, [file], {
+      dictionary: { fileUploadError: "Upload failed", untitled: "Untitled" },
+      uploadFile: async () => "/file/attachments/test/notes.txt",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const attachment = Array.from({ length: view.state.doc.childCount }, (_, index) => view.state.doc.child(index)).find(
+      (node) => node.type.name === "attachment",
+    );
+    expect(attachment?.type.name).toBe("attachment");
+    expect(attachment?.attrs.href).toBe("/file/attachments/test/notes.txt");
+    expect(attachment?.attrs.title).toBe("notes.txt");
+    expect(attachment?.attrs.size).toBe(file.size);
+    expect(attachment?.attrs.contentType).toBe("text/plain");
+    expect(document.querySelector(".file.placeholder")).toBeNull();
+
+    view.destroy();
+  });
 });
