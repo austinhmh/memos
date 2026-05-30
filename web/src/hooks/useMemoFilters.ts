@@ -84,9 +84,9 @@ export const useMemoFilters = (options: UseMemoFiltersOptions = {}): string | un
         conditions.push(`has_task_list`);
       } else if (filter.factor === "property.hasCode") {
         conditions.push(`has_code`);
-      } else if (filter.factor === "displayTime") {
+      } else if (filter.factor === "displayTime" || filter.factor === "updateTime") {
         const displayWithUpdateTime = memoRelatedSetting?.displayWithUpdateTime ?? false;
-        const factor = displayWithUpdateTime ? "updated_ts" : "created_ts";
+        const factor = filter.factor === "updateTime" || displayWithUpdateTime ? "updated_ts" : "created_ts";
 
         const filterDate = new Date(filter.value);
         const filterUtcTimestamp = filterDate.getTime() + filterDate.getTimezoneOffset() * 60 * 1000;

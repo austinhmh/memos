@@ -131,7 +131,8 @@
   "filters": {
     "has-code": "hasCode",
     "has-link": "hasLink",
-    "has-task-list": "hasTaskList"
+    "has-task-list": "hasTaskList",
+    "edited-date": "Edited"
   },
   "inbox": {
     "memo-comment": "{{user}} has a comment on your {{memo}}.",
@@ -157,6 +158,7 @@
     "copy-content": "Copy Content",
     "copy-link": "Copy Link",
     "count-memos-in-date": "{{count}} {{memos}} in {{date}}",
+    "count-edited-memos-in-date": "{{count}} edited {{memos}} in {{date}}",
     "delete-confirm": "Are you sure you want to delete this memo?",
     "delete-confirm-description": "This action is irreversible. Attachments, links, and references will also be removed.",
     "direction": "Direction",

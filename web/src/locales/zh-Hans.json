@@ -131,7 +131,8 @@
   "filters": {
     "has-code": "有代码",
     "has-link": "有链接",
-    "has-task-list": "有待办"
+    "has-task-list": "有待办",
+    "edited-date": "编辑日期"
   },
   "inbox": {
     "memo-comment": "{{user}} 评论了您的“{{memo}}”。",
@@ -157,6 +158,7 @@
     "copy-link": "复制链接",
     "copy-content": "复制内容",
     "count-memos-in-date": "{{date}} 有 {{count}} 条备忘录",
+    "count-edited-memos-in-date": "{{date}} 编辑过 {{count}} 条备忘录",
     "delete-confirm": "您确定要删除此条备忘录吗？",
     "delete-confirm-description": "此操作是不可逆的，附件、链接和引用也会被删除。",
     "direction": "排序方式",

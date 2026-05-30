@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pkg/errors"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -28,14 +27,6 @@ func (s *APIV1Service) ListAllUserStats(ctx context.Context, _ *v1pb.ListAllUser
 		return nil, status.Errorf(codes.Internal, "failed to get user: %v", err)
 	}
 	includeDetailedStats := currentUser != nil && isSuperUser(currentUser)
-	displayWithUpdateTime := false
-	if includeDetailedStats {
-		instanceMemoRelatedSetting, err := s.Store.GetInstanceMemoRelatedSetting(ctx)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to get instance memo related setting")
-		}
-		displayWithUpdateTime = instanceMemoRelatedSetting.DisplayWithUpdateTime
-	}
 	if currentUser == nil {
 		memoFind.VisibilityList = []store.Visibility{store.Public}
 	} else if isSuperUser(currentUser) {
@@ -91,12 +82,7 @@ func (s *APIV1Service) ListAllUserStats(ctx context.Context, _ *v1pb.ListAllUser
 			stats := userMemoStatMap[memo.CreatorID]
 
 			if includeDetailedStats {
-				// Add display timestamp
-				displayTs := memo.CreatedTs
-				if displayWithUpdateTime {
-					displayTs = memo.UpdatedTs
-				}
-				stats.MemoDisplayTimestamps = append(stats.MemoDisplayTimestamps, timestamppb.New(time.Unix(displayTs, 0)))
+				stats.MemoDisplayTimestamps = append(stats.MemoDisplayTimestamps, timestamppb.New(time.Unix(memo.UpdatedTs, 0)))
 				stats.TotalMemoCount++
 			}
 
@@ -199,15 +185,6 @@ func (s *APIV1Service) GetUserStats(ctx context.Context, request *v1pb.GetUserSt
 		memoFind.VisibilityList = []store.Visibility{store.Public, store.Protected}
 	}
 
-	displayWithUpdateTime := false
-	if includeDetailedStats {
-		instanceMemoRelatedSetting, err := s.Store.GetInstanceMemoRelatedSetting(ctx)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to get instance memo related setting")
-		}
-		displayWithUpdateTime = instanceMemoRelatedSetting.DisplayWithUpdateTime
-	}
-
 	displayTimestamps := []*timestamppb.Timestamp{}
 	tagCount := make(map[string]int32)
 	linkCount := int32(0)
@@ -237,11 +214,7 @@ func (s *APIV1Service) GetUserStats(ctx context.Context, request *v1pb.GetUserSt
 
 		for _, memo := range memos {
 			if includeDetailedStats {
-				displayTs := memo.CreatedTs
-				if displayWithUpdateTime {
-					displayTs = memo.UpdatedTs
-				}
-				displayTimestamps = append(displayTimestamps, timestamppb.New(time.Unix(displayTs, 0)))
+				displayTimestamps = append(displayTimestamps, timestamppb.New(time.Unix(memo.UpdatedTs, 0)))
 			}
 			// Count different memo types based on content.
 			if memo.Payload != nil {

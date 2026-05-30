@@ -36,6 +36,13 @@ const FILTER_CONFIGS: Record<FilterFactor, FilterConfig> = {
     icon: CalendarIcon,
     getLabel: (value) => value,
   },
+  updateTime: {
+    icon: CalendarIcon,
+    getLabel: (value, t) => {
+      const label = t("filters.edited-date");
+      return `${label === "filters.edited-date" ? "Edited" : label} ${value}`;
+    },
+  },
   pinned: {
     icon: BookmarkIcon,
     getLabel: (value) => value,

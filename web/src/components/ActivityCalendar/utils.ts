@@ -64,9 +64,15 @@ export const getTooltipText = (count: number, date: string, t: TranslateFunction
     return date;
   }
 
+  const memos = count === 1 ? t("common.memo") : t("common.memos");
+  const editedMessage = t("memo.count-edited-memos-in-date", { count, memos, date });
+  if (editedMessage !== "memo.count-edited-memos-in-date") {
+    return editedMessage.toLowerCase();
+  }
+
   return t("memo.count-memos-in-date", {
     count,
-    memos: count === 1 ? t("common.memo") : t("common.memos"),
+    memos,
     date,
   }).toLowerCase();
 };
