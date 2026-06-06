@@ -80,5 +80,10 @@ function Main() {
 }
 
 const container = document.getElementById("root");
-const root = createRoot(container as HTMLElement);
-root.render(<Main />);
+
+if (import.meta.env.DEV && window.location.pathname === "/__e2e__/blog-editor-table") {
+  import("@/components/BlogEditor/e2e/TableE2EPage");
+} else {
+  const root = createRoot(container as HTMLElement);
+  root.render(<Main />);
+}

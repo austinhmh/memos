@@ -1,6 +1,6 @@
 import { GapCursor } from "prosemirror-gapcursor";
 import type { Mark, Node as ProseMirrorNode } from "prosemirror-model";
-import { DOMParser as ProseMirrorDOMParser } from "prosemirror-model";
+import { Fragment, DOMParser as ProseMirrorDOMParser, Slice } from "prosemirror-model";
 import { EditorState, TextSelection, type Transaction } from "prosemirror-state";
 import { CellSelection, selectedRect } from "prosemirror-tables";
 import { EditorView } from "prosemirror-view";
@@ -676,6 +676,78 @@ describe("tableCommands", () => {
       view.destroy();
       host.remove();
     }
+  });
+
+  it("keeps non-editable bookmark UI text out of native table cell input fallback", () => {
+    const headerRow = blogEditorSchema.nodes.table_row.create(null, [createTableHeader("A")]);
+    const bodyCell = createTableCell("1");
+    const bodyRow = blogEditorSchema.nodes.table_row.create(null, [bodyCell]);
+    const table = blogEditorSchema.nodes.table.create(null, [headerRow, bodyRow]);
+    const doc = blogEditorSchema.nodes.doc.create(null, [table]);
+    const baseState = EditorState.create({ doc, schema: blogEditorSchema });
+    const cellPosition = getTableCellPosition(baseState, 0, 1, 0);
+    expect(cellPosition).toBeTypeOf("number");
+
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const state = EditorState.create({
+      doc,
+      schema: blogEditorSchema,
+      plugins: createTablePlugins({ isEditable: () => true }),
+      selection: TextSelection.create(doc, getCellTextEndPosition(cellPosition ?? 0, doc.nodeAt(cellPosition ?? 0))),
+    });
+    const view = new EditorView(host, { state });
+    try {
+      const paragraph = view.dom.querySelector("td p");
+      expect(paragraph).toBeInstanceOf(HTMLParagraphElement);
+      if (paragraph) paragraph.textContent = "1";
+      const bookmarkDom = document.createElement("div");
+      bookmarkDom.setAttribute("contenteditable", "false");
+      bookmarkDom.textContent = "DOCS.NVIDIA.COM编辑链接.pdf";
+      paragraph?.appendChild(bookmarkDom);
+      paragraph?.append("直输");
+      paragraph?.dispatchEvent(new InputEvent("input", { bubbles: true, cancelable: false, inputType: "insertText", data: "直输" }));
+
+      const targetCell = view.state.doc.nodeAt(cellPosition ?? 0);
+      expect(targetCell?.textContent).toBe("1直输");
+      expect(targetCell?.textContent).not.toContain("编辑链接");
+      expect(targetCell?.textContent).not.toContain("DOCS.NVIDIA.COM");
+    } finally {
+      view.destroy();
+      host.remove();
+    }
+  });
+
+  it("transforms copied single table cells into their cell content like Outline", () => {
+    const cell = createTableCell("copy me");
+    const row = blogEditorSchema.nodes.table_row.create(null, [cell]);
+    const table = blogEditorSchema.nodes.table.create(null, [row]);
+    const slice = new Slice(Fragment.from(table), 0, 0);
+    const plugin = createTablePlugins({ isEditable: () => true }).find((candidate) => candidate.spec.props?.transformCopied);
+    expect(plugin).toBeDefined();
+    const transformCopied = plugin?.spec.props?.transformCopied;
+    expect(transformCopied).toBeDefined();
+
+    const transformed = transformCopied?.call(plugin!, slice, null as never);
+
+    expect(transformed?.content.firstChild?.type.name).toBe("paragraph");
+    expect(transformed?.content.firstChild?.textContent).toBe("copy me");
+  });
+
+  it("keeps copied table headers as table slices like Outline", () => {
+    const cell = createTableHeader("Header");
+    const row = blogEditorSchema.nodes.table_row.create(null, [cell]);
+    const table = blogEditorSchema.nodes.table.create(null, [row]);
+    const slice = new Slice(Fragment.from(table), 0, 0);
+    const plugin = createTablePlugins({ isEditable: () => true }).find((candidate) => candidate.spec.props?.transformCopied);
+    expect(plugin).toBeDefined();
+    const transformCopied = plugin?.spec.props?.transformCopied;
+    expect(transformCopied).toBeDefined();
+
+    const transformed = transformCopied?.call(plugin!, slice, null as never);
+
+    expect(transformed).toBe(slice);
+    expect(transformed?.content.firstChild?.type.name).toBe("table");
   });
 
   it("parses ProseMirror table wrappers without flattening table text into a paragraph", () => {

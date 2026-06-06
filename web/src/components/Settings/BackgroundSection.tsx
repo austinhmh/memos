@@ -13,6 +13,14 @@ interface BackgroundImage {
   filename: string;
 }
 
+const isBackgroundImage = (value: unknown): value is BackgroundImage => {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const image = value as Record<string, unknown>;
+  return typeof image.url === "string" && typeof image.name === "string" && typeof image.filename === "string";
+};
+
 const BG_PREFIX = "_bg_";
 const STORAGE_KEY = "memos-background-images";
 const BACKGROUND_LIST_PAGE_SIZE = 1000;
@@ -55,6 +63,20 @@ async function fetchBgImagesFromServer(): Promise<BackgroundImage[]> {
   } while (pageToken);
 
   return bgImages;
+}
+
+async function fetchPublicBgImagesFromServer(): Promise<BackgroundImage[]> {
+  const response = await fetch("/file/backgrounds", {
+    credentials: "omit",
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch public background images: ${response.status}`);
+  }
+  const data: unknown = await response.json();
+  if (!Array.isArray(data)) {
+    return [];
+  }
+  return data.filter(isBackgroundImage);
 }
 
 const BackgroundSection = () => {
@@ -207,4 +229,4 @@ const BackgroundSection = () => {
 
 export default BackgroundSection;
 
-export { loadFromLocalStorage as loadBackgroundImages, fetchBgImagesFromServer, STORAGE_KEY, BG_PREFIX };
+export { loadFromLocalStorage as loadBackgroundImages, fetchBgImagesFromServer, fetchPublicBgImagesFromServer, STORAGE_KEY, BG_PREFIX };

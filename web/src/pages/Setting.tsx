@@ -157,7 +157,7 @@ const Setting = () => {
               <MyAccountSection />
             ) : state.selectedSection === "preference" ? (
               <PreferencesSection />
-            ) : state.selectedSection === "background" ? (
+            ) : state.selectedSection === "background" && user ? (
               <BackgroundSection />
             ) : state.selectedSection === "member" ? (
               <MemberSection />

@@ -1,7 +1,9 @@
 import { useEffect, useRef } from "react";
 import { Outlet } from "react-router-dom";
+import RandomBackground from "./components/RandomBackground";
 import { useInstance } from "./contexts/InstanceContext";
 import { MemoFilterProvider } from "./contexts/MemoFilterContext";
+import useCurrentUser from "./hooks/useCurrentUser";
 import useNavigateTo from "./hooks/useNavigateTo";
 import { useUserLocale } from "./hooks/useUserLocale";
 import { useUserTheme } from "./hooks/useUserTheme";
@@ -10,6 +12,7 @@ import { cleanupExpiredOAuthState } from "./utils/oauth";
 
 const App = () => {
   const navigateTo = useNavigateTo();
+  const currentUser = useCurrentUser();
   const { profile: instanceProfile, generalSetting: instanceGeneralSetting } = useInstance();
 
   const redirectCount = useRef(0);
@@ -67,6 +70,7 @@ const App = () => {
 
   return (
     <MemoFilterProvider>
+      <RandomBackground currentUser={currentUser} />
       <Outlet />
     </MemoFilterProvider>
   );

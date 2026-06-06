@@ -19,6 +19,148 @@ import (
 	teststore "github.com/usememos/memos/store/test"
 )
 
+func TestPublicBackgroundsExposeOnlyHostStandaloneImages(t *testing.T) {
+	ctx := context.Background()
+	testStore := teststore.NewTestingStore(ctx, t)
+	defer testStore.Close()
+
+	host, err := testStore.CreateUser(ctx, &store.User{Username: "background-host", Role: store.RoleHost, Email: "background-host@example.com"})
+	require.NoError(t, err)
+	regularUser, err := testStore.CreateUser(ctx, &store.User{Username: "background-user", Role: store.RoleUser, Email: "background-user@example.com"})
+	require.NoError(t, err)
+	privateMemo, err := testStore.CreateMemo(ctx, &store.Memo{
+		UID:        "background-private-memo",
+		CreatorID:  host.ID,
+		Content:    "private background source",
+		Visibility: store.Private,
+		RowStatus:  store.Normal,
+	})
+	require.NoError(t, err)
+
+	publicBackground, err := testStore.CreateAttachment(ctx, &store.Attachment{
+		UID:       "host-background",
+		CreatorID: host.ID,
+		Filename:  "_bg_wallpaper.png",
+		Type:      "image/png",
+		Size:      3,
+		Blob:      []byte("png"),
+	})
+	require.NoError(t, err)
+	_, err = testStore.CreateAttachment(ctx, &store.Attachment{
+		UID:       "host-regular-image",
+		CreatorID: host.ID,
+		Filename:  "regular.png",
+		Type:      "image/png",
+		Size:      3,
+		Blob:      []byte("img"),
+	})
+	require.NoError(t, err)
+	_, err = testStore.CreateAttachment(ctx, &store.Attachment{
+		UID:       "user-background",
+		CreatorID: regularUser.ID,
+		Filename:  "_bg_user.png",
+		Type:      "image/png",
+		Size:      3,
+		Blob:      []byte("usr"),
+	})
+	require.NoError(t, err)
+	_, err = testStore.CreateAttachment(ctx, &store.Attachment{
+		UID:       "host-background-text",
+		CreatorID: host.ID,
+		Filename:  "_bg_note.txt",
+		Type:      "text/plain",
+		Size:      4,
+		Blob:      []byte("note"),
+	})
+	require.NoError(t, err)
+	_, err = testStore.CreateAttachment(ctx, &store.Attachment{
+		UID:       "memo-bound-background",
+		CreatorID: host.ID,
+		Filename:  "_bg_private.png",
+		Type:      "image/png",
+		Size:      3,
+		Blob:      []byte("mem"),
+		MemoID:    &privateMemo.ID,
+	})
+	require.NoError(t, err)
+
+	service := NewFileServerService(&profile.Profile{Mode: "dev", Data: t.TempDir()}, testStore, "file-secret")
+	e := echo.New()
+	e.GET("/file/backgrounds", service.listPublicBackgrounds)
+	e.GET("/file/backgrounds/:uid/:filename", service.servePublicBackgroundFile)
+	e.GET("/file/attachments/:uid/:filename", service.serveAttachmentFile)
+
+	req := httptest.NewRequest(http.MethodGet, "/file/backgrounds", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "public, max-age=300", rec.Header().Get("Cache-Control"))
+	require.Contains(t, rec.Body.String(), "\"url\":\"/file/backgrounds/host-background/_bg_wallpaper.png\"")
+	require.Contains(t, rec.Body.String(), "\"name\":\"backgrounds/host-background\"")
+	require.Contains(t, rec.Body.String(), "\"filename\":\"wallpaper.png\"")
+	require.NotContains(t, rec.Body.String(), "regular.png")
+	require.NotContains(t, rec.Body.String(), "user.png")
+	require.NotContains(t, rec.Body.String(), "note.txt")
+	require.NotContains(t, rec.Body.String(), "private.png")
+	require.NotContains(t, rec.Body.String(), "creator")
+	require.NotContains(t, rec.Body.String(), "reference")
+	require.NotContains(t, rec.Body.String(), "blob")
+
+	bgReq := httptest.NewRequest(http.MethodGet, "/file/backgrounds/"+publicBackground.UID+"/"+publicBackground.Filename, nil)
+	bgRec := httptest.NewRecorder()
+	e.ServeHTTP(bgRec, bgReq)
+	require.Equal(t, http.StatusOK, bgRec.Code)
+	require.Equal(t, "image/png", bgRec.Header().Get("Content-Type"))
+	require.Equal(t, "public, max-age=3600", bgRec.Header().Get("Cache-Control"))
+	require.Equal(t, "nosniff", bgRec.Header().Get("X-Content-Type-Options"))
+	require.Equal(t, "png", bgRec.Body.String())
+
+	attachmentReq := httptest.NewRequest(http.MethodGet, "/file/attachments/"+publicBackground.UID+"/"+publicBackground.Filename, nil)
+	attachmentRec := httptest.NewRecorder()
+	e.ServeHTTP(attachmentRec, attachmentReq)
+	require.Equal(t, http.StatusForbidden, attachmentRec.Code)
+	require.Equal(t, "private, no-store", attachmentRec.Header().Get("Cache-Control"))
+	require.Equal(t, "Authorization, Cookie", attachmentRec.Header().Get("Vary"))
+}
+
+func TestPublicBackgroundFileRejectsNonPublicBackgrounds(t *testing.T) {
+	ctx := context.Background()
+	testStore := teststore.NewTestingStore(ctx, t)
+	defer testStore.Close()
+
+	host, err := testStore.CreateUser(ctx, &store.User{Username: "background-reject-host", Role: store.RoleHost, Email: "background-reject-host@example.com"})
+	require.NoError(t, err)
+	regularUser, err := testStore.CreateUser(ctx, &store.User{Username: "background-reject-user", Role: store.RoleUser, Email: "background-reject-user@example.com"})
+	require.NoError(t, err)
+	privateMemo, err := testStore.CreateMemo(ctx, &store.Memo{UID: "background-reject-memo", CreatorID: host.ID, Content: "private", Visibility: store.Private, RowStatus: store.Normal})
+	require.NoError(t, err)
+
+	attachments := []*store.Attachment{
+		{UID: "reject-host-regular", CreatorID: host.ID, Filename: "regular.png", Type: "image/png", Size: 3, Blob: []byte("one")},
+		{UID: "reject-user-bg", CreatorID: regularUser.ID, Filename: "_bg_user.png", Type: "image/png", Size: 3, Blob: []byte("two")},
+		{UID: "reject-host-text", CreatorID: host.ID, Filename: "_bg_note.txt", Type: "text/plain", Size: 5, Blob: []byte("three")},
+		{UID: "reject-host-svg", CreatorID: host.ID, Filename: "_bg_bad.svg", Type: "image/svg+xml", Size: 4, Blob: []byte("four")},
+		{UID: "reject-host-external", CreatorID: host.ID, Filename: "_bg_external.png", Type: "image/png", Size: 0, StorageType: storepb.AttachmentStorageType_EXTERNAL, Reference: "https://example.com/a.png"},
+		{UID: "reject-memo-bg", CreatorID: host.ID, Filename: "_bg_private.png", Type: "image/png", Size: 3, Blob: []byte("six"), MemoID: &privateMemo.ID},
+	}
+	for _, attachment := range attachments {
+		_, err = testStore.CreateAttachment(ctx, attachment)
+		require.NoError(t, err)
+	}
+
+	service := NewFileServerService(&profile.Profile{Mode: "dev", Data: t.TempDir()}, testStore, "file-secret")
+	e := echo.New()
+	e.GET("/file/backgrounds/:uid/:filename", service.servePublicBackgroundFile)
+
+	for _, attachment := range attachments {
+		req := httptest.NewRequest(http.MethodGet, "/file/backgrounds/"+attachment.UID+"/"+attachment.Filename, nil)
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusNotFound, rec.Code, attachment.UID)
+	}
+}
+
 func TestCheckAttachmentPermissionUsesMemoCreatorForPrivateMemo(t *testing.T) {
 	ctx := context.Background()
 	testStore := teststore.NewTestingStore(ctx, t)

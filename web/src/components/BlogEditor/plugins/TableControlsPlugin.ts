@@ -1,5 +1,6 @@
 import { chainCommands, splitBlock } from "prosemirror-commands";
 import type { Attrs, Node as ProseMirrorNode, ResolvedPos } from "prosemirror-model";
+import { Slice } from "prosemirror-model";
 import type { Command } from "prosemirror-state";
 import { EditorState, Plugin, PluginKey, TextSelection } from "prosemirror-state";
 import { columnResizing, goToNextCell, tableEditing } from "prosemirror-tables";
@@ -73,6 +74,68 @@ const getTextFromTextInputEvent = (event: InputEvent) => {
 
 const normalizePlainText = (text: string) => text.replace(/\s+/g, "");
 
+const getEditableDomText = (element: HTMLElement) => {
+  const clone = element.cloneNode(true) as HTMLElement;
+  clone
+    .querySelectorAll("[contenteditable='false'], [contenteditable=false], .ProseMirror-widget, button, input, textarea, select")
+    .forEach((node) => node.remove());
+  clone.querySelectorAll("*").forEach((node) => {
+    if (node instanceof HTMLElement && node.contentEditable === "false") {
+      node.remove();
+    }
+  });
+  return clone.textContent || "";
+};
+
+const getEditableNodeText = (node: ProseMirrorNode) => {
+  let text = "";
+  node.descendants((child) => {
+    if (child.isText) {
+      text += child.text || "";
+      return false;
+    }
+    if (child.isAtom || child.type.spec.tableRole === "table") {
+      return false;
+    }
+    return true;
+  });
+  return text;
+};
+
+const getSelectedTableCell = (state: Parameters<Command>[0]) => {
+  if (!selectionIsInsideSingleTableCell(state)) {
+    return null;
+  }
+
+  const depth = getTableCellDepth(state.selection.$from);
+  if (depth === null) {
+    return null;
+  }
+
+  const position = state.selection.$from.before(depth);
+  const node = state.selection.$from.node(depth);
+  return { position, node };
+};
+
+const getCellDom = (view: EditorView, position: number, eventTarget?: EventTarget | null) => {
+  const targetElement = eventTarget instanceof Element ? eventTarget : null;
+  const targetCell = targetElement?.closest("td, th");
+  if (targetCell instanceof HTMLElement && view.dom.contains(targetCell)) {
+    return targetCell;
+  }
+
+  const dom = view.nodeDOM(position);
+  if (dom instanceof HTMLElement && (dom.matches("td, th") || dom.closest("td, th"))) {
+    const cell = dom.matches("td, th") ? dom : dom.closest<HTMLElement>("td, th");
+    return cell && view.dom.contains(cell) ? cell : null;
+  }
+
+  const selectionDom = view.domAtPos(view.state.selection.from).node;
+  const selectionElement = selectionDom instanceof Element ? selectionDom : selectionDom.parentElement;
+  const selectionCell = selectionElement?.closest("td, th");
+  return selectionCell instanceof HTMLElement && view.dom.contains(selectionCell) ? selectionCell : null;
+};
+
 const inferNativeInsertedText = (previousText: string, currentText: string) => {
   const previous = normalizePlainText(previousText);
   const current = normalizePlainText(currentText);
@@ -98,8 +161,22 @@ const inferNativeInsertedText = (previousText: string, currentText: string) => {
   return current.slice(start, currentEnd);
 };
 
+const inferInsertedTextFromNativeInput = (
+  view: EditorView,
+  selectedCell: { position: number; node: ProseMirrorNode },
+  eventTarget?: EventTarget | null,
+) => {
+  const cellDom = getCellDom(view, selectedCell.position, eventTarget);
+  if (cellDom) {
+    return inferNativeInsertedText(getEditableNodeText(selectedCell.node), getEditableDomText(cellDom));
+  }
+
+  return inferNativeInsertedText(view.state.doc.textContent, view.dom.textContent || "");
+};
+
 const handleNativeInputInTableCell = (view: EditorView, event: Event) => {
-  if (!selectionIsInsideSingleTableCell(view.state)) {
+  const selectedCell = getSelectedTableCell(view.state);
+  if (!selectedCell) {
     return false;
   }
 
@@ -108,7 +185,7 @@ const handleNativeInputInTableCell = (view: EditorView, event: Event) => {
     return false;
   }
 
-  const text = inferNativeInsertedText(view.state.doc.textContent, view.dom.textContent || "");
+  const text = inferInsertedTextFromNativeInput(view, selectedCell, event.target);
   if (!text) {
     return false;
   }
@@ -368,8 +445,34 @@ class BlogEditorTableView {
   }
 }
 
+const createTableCellCopyTransformPlugin = () =>
+  new Plugin({
+    key: new PluginKey("table-cell-copy-transform"),
+    props: {
+      transformCopied: (slice) => {
+        const table = slice.content.childCount === 1 ? slice.content.firstChild : null;
+        if (table?.type.spec.tableRole !== "table" || table.childCount !== 1) {
+          return slice;
+        }
+
+        const row = table.firstChild;
+        if (row?.type.spec.tableRole !== "row" || row.childCount !== 1) {
+          return slice;
+        }
+
+        const cell = row.firstChild;
+        if (cell?.type.spec.tableRole !== "cell") {
+          return slice;
+        }
+
+        return new Slice(cell.content, slice.openStart, slice.openEnd);
+      },
+    },
+  });
+
 export const createTablePlugins = (_options: { isEditable: () => boolean }) => [
   createTableControlStatePlugin(),
+  createTableCellCopyTransformPlugin(),
   columnResizing({ View: BlogEditorTableView }),
   tableEditing(),
 ];

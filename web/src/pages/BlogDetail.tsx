@@ -1,5 +1,5 @@
 import { ArrowLeftIcon, CheckIcon, ChevronDownIcon, MessageCircleIcon } from "lucide-react";
-import { Suspense, useCallback, useRef, useState } from "react";
+import { Suspense, useCallback, useMemo as useReactMemo, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import MemoActionMenu from "@/components/MemoActionMenu";
@@ -8,6 +8,7 @@ import MemoEditor from "@/components/MemoEditor";
 import MemoTableOfContents from "@/components/MemoTableOfContents";
 import MemoView from "@/components/MemoView";
 import { AttachmentList } from "@/components/MemoView/components/metadata";
+import { MemoViewContext } from "@/components/MemoView/MemoViewContext";
 import MobileHeader from "@/components/MobileHeader";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -16,8 +17,10 @@ import { memoNamePrefix } from "@/helpers/resource-names";
 import useCurrentUser from "@/hooks/useCurrentUser";
 import useMediaQuery from "@/hooks/useMediaQuery";
 import { useMemoComments, useMemo as useMemoQuery, useUpdateMemo } from "@/hooks/useMemoQueries";
+import { useUser } from "@/hooks/useUserQueries";
 import { MarkdownRenderer } from "@/lib/markdown/MarkdownRenderer";
 import { lazyWithRetry } from "@/router/lazyWithRetry";
+import { State } from "@/types/proto/api/v1/common_pb";
 import { Visibility } from "@/types/proto/api/v1/memo_service_pb";
 import { useTranslate } from "@/utils/i18n";
 import { isSuperUser } from "@/utils/user";
@@ -71,11 +74,29 @@ const BlogDetail = () => {
   const { data: memo, isLoading, error } = useMemoQuery(memoName, { enabled: !!memoName });
   const { data: commentsResponse } = useMemoComments(memoName, { enabled: !!memo });
   const comments = commentsResponse?.memos || [];
+  const creator = useUser(memo?.creator || "").data;
 
+  const isArchived = memo?.state === State.ARCHIVED;
   const isOwner = !!currentUser && memo?.creator === currentUser?.name;
   const canEdit = isOwner || (!!currentUser && isSuperUser(currentUser));
   const readonly = !canEdit;
   const showCreateCommentButton = currentUser && !showCommentEditor;
+  const memoViewContextValue = useReactMemo(
+    () =>
+      memo
+        ? {
+            memo,
+            creator,
+            currentUser,
+            parentPage: locationState?.from || "/writing",
+            isArchived,
+            readonly,
+            showNSFWContent: true,
+            nsfw: false,
+          }
+        : null,
+    [memo, creator, currentUser, locationState?.from, isArchived, readonly],
+  );
 
   const handleBack = useCallback(() => {
     if (locationState?.from) {
@@ -212,19 +233,21 @@ const BlogDetail = () => {
 
         {/* Center: main content */}
         <div className={md ? "flex-1 min-w-0 h-full overflow-y-auto hide-scrollbar px-4 sm:px-6 pb-8" : "flex-1 min-w-0 px-4 sm:px-6 pb-8"}>
-          <h1 className="text-2xl font-bold mb-4">{titleLine}</h1>
+          <MemoViewContext.Provider value={memoViewContextValue}>
+            <h1 className="text-2xl font-bold mb-4">{titleLine}</h1>
 
-          {canEdit ? (
-            <Suspense fallback={<div style={{ padding: "2rem", color: "#888" }}>正在加载文档…</div>}>
-              <BlogEditor memo={memo} readonly={false} onSaveStatusChange={setBlogEditorSaveStatus} />
-            </Suspense>
-          ) : (
-            <div className="blog-editor">
-              <div className="blog-editor-content ProseMirror">
-                <MarkdownRenderer content={memo.content} />
+            {canEdit ? (
+              <Suspense fallback={<div style={{ padding: "2rem", color: "#888" }}>正在加载文档…</div>}>
+                <BlogEditor memo={memo} readonly={false} onSaveStatusChange={setBlogEditorSaveStatus} />
+              </Suspense>
+            ) : (
+              <div className="blog-editor">
+                <div className="blog-editor-content ProseMirror">
+                  <MarkdownRenderer content={memo.content} />
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </MemoViewContext.Provider>
 
           {/* Mobile: sidebar + attachments + comments */}
           {!md && (

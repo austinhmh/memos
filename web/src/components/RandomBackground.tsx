@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { fetchBgImagesFromServer, STORAGE_KEY } from "@/components/Settings/BackgroundSection";
+import { fetchBgImagesFromServer, fetchPublicBgImagesFromServer, STORAGE_KEY } from "@/components/Settings/BackgroundSection";
 import type { User } from "@/types/proto/api/v1/user_service_pb";
 
 interface BackgroundImage {
@@ -27,9 +27,12 @@ const applyBgClass = (url: string | null) => {
 
 const RandomBackground = ({ currentUser }: Props) => {
   const [bgUrl, setBgUrl] = useState<string | null>(null);
-  const initializedRef = useRef(false);
+  const initializedUserRef = useRef(false);
+  const initializedPublicRef = useRef(false);
 
   useEffect(() => {
+    let cancelled = false;
+
     const loadFromCache = (): BackgroundImage[] => {
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
@@ -40,26 +43,40 @@ const RandomBackground = ({ currentUser }: Props) => {
     };
 
     const apply = (images: BackgroundImage[]) => {
+      if (cancelled) return;
       const url = pickRandom(images);
       setBgUrl(url);
       applyBgClass(url);
     };
 
     if (!currentUser) {
+      initializedUserRef.current = false;
       setBgUrl(null);
       applyBgClass(null);
-      initializedRef.current = false;
-      return;
+      if (!initializedPublicRef.current) {
+        initializedPublicRef.current = true;
+        fetchPublicBgImagesFromServer()
+          .then(apply)
+          .catch((error) => {
+            console.error("Failed to fetch public background images:", error);
+            apply([]);
+          });
+      }
+      return () => {
+        cancelled = true;
+      };
     }
 
-    if (!initializedRef.current) {
-      initializedRef.current = true;
+    initializedPublicRef.current = false;
+    if (!initializedUserRef.current) {
+      initializedUserRef.current = true;
       const cached = loadFromCache();
       if (cached.length > 0) {
         apply(cached);
       }
       fetchBgImagesFromServer()
         .then((serverImages) => {
+          if (cancelled) return;
           localStorage.setItem(STORAGE_KEY, JSON.stringify(serverImages));
           apply(serverImages);
         })
@@ -72,7 +89,10 @@ const RandomBackground = ({ currentUser }: Props) => {
       apply(loadFromCache());
     };
     window.addEventListener("background-images-changed", onSettingsChanged);
-    return () => window.removeEventListener("background-images-changed", onSettingsChanged);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("background-images-changed", onSettingsChanged);
+    };
   }, [currentUser]);
 
   if (!bgUrl) return null;

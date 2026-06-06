@@ -1,5 +1,12 @@
+import { create } from "@bufbuild/protobuf";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { MemoViewContext } from "@/components/MemoView/MemoViewContext";
+import { MemoFilterProvider } from "@/contexts/MemoFilterContext";
+import { State } from "@/types/proto/api/v1/common_pb";
+import { MemoSchema, Visibility } from "@/types/proto/api/v1/memo_service_pb";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 
 const { renderMermaidMock } = vi.hoisted(() => ({
@@ -77,6 +84,45 @@ const mermaidSvgWithForeignObject = `<svg xmlns="http://www.w3.org/2000/svg" rol
   </g>
 </svg>`;
 
+const renderReadonlyMemoMarkdown = (content: string) => {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+  const memo = create(MemoSchema, {
+    name: "memos/test",
+    creator: "users/test",
+    state: State.NORMAL,
+    content,
+    visibility: Visibility.PUBLIC,
+  });
+
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={["/blog/test"]}>
+        <MemoFilterProvider>
+          <MemoViewContext.Provider
+            value={{
+              memo,
+              creator: undefined,
+              currentUser: undefined,
+              parentPage: "/writing",
+              isArchived: false,
+              readonly: true,
+              showNSFWContent: true,
+              nsfw: false,
+            }}
+          >
+            <MarkdownRenderer content={content} />
+          </MemoViewContext.Provider>
+        </MemoFilterProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+};
+
 afterEach(() => {
   renderMermaidMock.mockReset();
 });
@@ -86,6 +132,18 @@ describe("MarkdownRenderer", () => {
     render(<MarkdownRenderer content="[bad hash](#%E0%A4%A)" />);
 
     expect(() => fireEvent.click(screen.getByRole("link", { name: "bad hash" }))).not.toThrow();
+  });
+
+  it("renders readonly blog markdown tables with tag and checkbox renderers inside MemoViewContext", () => {
+    const { container } = renderReadonlyMemoMarkdown(
+      "#blog\n\n- [ ] todo\n\n| File | Note |\n|---|---|\n| [edit-link.pdf 123](/file/attachments/test/edit-link.pdf) | ok |",
+    );
+
+    expect(screen.getByText("#blog")).toBeTruthy();
+    expect(screen.getByText("todo")).toBeTruthy();
+    expect(container.querySelector("table")).not.toBeNull();
+    expect(container.textContent).toContain("edit-link.pdf 123");
+    expect(container.textContent).not.toContain("编辑链接");
   });
 
   it("keeps Mermaid foreignObject labels for C++ callchain flowcharts", async () => {

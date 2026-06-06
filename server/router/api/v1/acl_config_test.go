@@ -51,8 +51,11 @@ func TestProtectedMethodsRequireAuth(t *testing.T) {
 		"/memos.api.v1.MemoService/CreateMemo",
 		"/memos.api.v1.MemoService/UpdateMemo",
 		"/memos.api.v1.MemoService/DeleteMemo",
-		// Attachment Service - write operations
+		// Attachment Service - attachment operations require auth
 		"/memos.api.v1.AttachmentService/CreateAttachment",
+		"/memos.api.v1.AttachmentService/ListAttachments",
+		"/memos.api.v1.AttachmentService/GetAttachment",
+		"/memos.api.v1.AttachmentService/UpdateAttachment",
 		"/memos.api.v1.AttachmentService/DeleteAttachment",
 		// Shortcut Service
 		"/memos.api.v1.ShortcutService/CreateShortcut",

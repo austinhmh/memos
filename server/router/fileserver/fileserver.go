@@ -12,6 +12,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -37,9 +38,10 @@ const (
 	// thumbnailMaxSize is the maximum size in pixels for the largest dimension of the thumbnail image.
 	thumbnailMaxSize = 600
 	// thumbnailMaxPixels limits decoded image dimensions before thumbnail generation.
-	thumbnailMaxPixels int64 = 25_000_000
-	mebiByte                 = 1024 * 1024
-	maxAvatarBytes           = 2 * mebiByte
+	thumbnailMaxPixels       int64 = 25_000_000
+	mebiByte                       = 1024 * 1024
+	maxAvatarBytes                 = 2 * mebiByte
+	backgroundFilenamePrefix       = "_bg_"
 )
 
 var SupportedThumbnailMimeTypes = []string{
@@ -88,11 +90,175 @@ func NewFileServerService(profile *profile.Profile, store *store.Store, secret s
 func (s *FileServerService) RegisterRoutes(echoServer *echo.Echo) {
 	fileGroup := echoServer.Group("/file")
 
+	// Serve public background image metadata without exposing the general attachment list.
+	fileGroup.GET("/backgrounds", s.listPublicBackgrounds)
+	fileGroup.GET("/backgrounds/:uid/:filename", s.servePublicBackgroundFile)
+
 	// Serve attachment binary files
 	fileGroup.GET("/attachments/:uid/:filename", s.serveAttachmentFile)
 
 	// Serve user avatar images
 	fileGroup.GET("/users/:identifier/avatar", s.serveUserAvatar)
+}
+
+// publicBackgroundImage is the minimal metadata needed by anonymous clients to render instance backgrounds.
+type publicBackgroundImage struct {
+	URL      string `json:"url"`
+	Name     string `json:"name"`
+	Filename string `json:"filename"`
+}
+
+// listPublicBackgrounds lists public instance background images without exposing the general attachment list.
+func (s *FileServerService) listPublicBackgrounds(c echo.Context) error {
+	ctx := c.Request().Context()
+	attachments, err := s.findPublicBackgroundAttachments(ctx)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list backgrounds").SetInternal(err)
+	}
+
+	images := make([]publicBackgroundImage, 0, len(attachments))
+	for _, attachment := range attachments {
+		images = append(images, publicBackgroundImage{
+			URL:      publicBackgroundURL(attachment),
+			Name:     "backgrounds/" + attachment.UID,
+			Filename: strings.TrimPrefix(attachment.Filename, backgroundFilenamePrefix),
+		})
+	}
+
+	c.Response().Header().Set("Cache-Control", "public, max-age=300")
+	c.Response().Header().Set("X-Content-Type-Options", "nosniff")
+	return c.JSON(http.StatusOK, images)
+}
+
+// servePublicBackgroundFile serves only Host-owned standalone background images.
+func (s *FileServerService) servePublicBackgroundFile(c echo.Context) error {
+	ctx := c.Request().Context()
+	uid := c.Param("uid")
+	attachment, err := s.findPublicBackgroundAttachment(ctx, uid)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get background").SetInternal(err)
+	}
+	if attachment == nil {
+		return echo.NewHTTPError(http.StatusNotFound, "background not found")
+	}
+	if requestedFilename := c.Param("filename"); requestedFilename != attachment.Filename {
+		return echo.NewHTTPError(http.StatusNotFound, "background not found")
+	}
+
+	contentType := safeAttachmentContentType(attachment.Type)
+	if !isPublicBackgroundContentType(contentType) {
+		return echo.NewHTTPError(http.StatusNotFound, "background not found")
+	}
+
+	c.Response().Header().Set("Content-Type", contentType)
+	c.Response().Header().Set("Cache-Control", "public, max-age=3600")
+	c.Response().Header().Set("X-Content-Type-Options", "nosniff")
+	c.Response().Header().Set("X-Frame-Options", "DENY")
+	c.Response().Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline';")
+	c.Response().Header().Set("Color-Gamut", "srgb, p3, rec2020")
+
+	if attachment.StorageType == storepb.AttachmentStorageType_LOCAL {
+		file, err := s.openLocalAttachmentFile(attachment)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to open background").SetInternal(err)
+		}
+		defer file.Close()
+		modTime := time.Unix(attachment.UpdatedTs, 0)
+		if fileInfo, err := file.Stat(); err == nil {
+			modTime = fileInfo.ModTime()
+		}
+		http.ServeContent(c.Response(), c.Request(), attachment.Filename, modTime, file)
+		return nil
+	}
+
+	blob, err := s.getAttachmentBlob(ctx, attachment)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get background").SetInternal(err)
+	}
+	return c.Blob(http.StatusOK, contentType, blob)
+}
+
+func (s *FileServerService) findPublicBackgroundAttachments(ctx context.Context) ([]*store.Attachment, error) {
+	host, err := s.getHostUser(ctx)
+	if err != nil || host == nil {
+		return nil, err
+	}
+	limit := 1000
+	filenameSearch := backgroundFilenamePrefix
+	attachments, err := s.Store.ListAttachments(ctx, &store.FindAttachment{
+		CreatorID:      &host.ID,
+		FilenameSearch: &filenameSearch,
+		Limit:          &limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	publicAttachments := make([]*store.Attachment, 0, len(attachments))
+	for _, attachment := range attachments {
+		if isPublicBackgroundAttachment(attachment, host.ID) {
+			publicAttachments = append(publicAttachments, attachment)
+		}
+	}
+	return publicAttachments, nil
+}
+
+func (s *FileServerService) findPublicBackgroundAttachment(ctx context.Context, uid string) (*store.Attachment, error) {
+	if uid == "" || strings.ContainsAny(uid, `/\\`) || strings.Contains(uid, "..") {
+		return nil, nil
+	}
+	host, err := s.getHostUser(ctx)
+	if err != nil || host == nil {
+		return nil, err
+	}
+	attachment, err := s.Store.GetAttachment(ctx, &store.FindAttachment{UID: &uid})
+	if err != nil {
+		return nil, err
+	}
+	if !isPublicBackgroundAttachment(attachment, host.ID) {
+		return nil, nil
+	}
+	return attachment, nil
+}
+
+func (s *FileServerService) getHostUser(ctx context.Context) (*store.User, error) {
+	hostRole := store.RoleHost
+	normalStatus := store.Normal
+	host, err := s.Store.GetUser(ctx, &store.FindUser{Role: &hostRole, RowStatus: &normalStatus})
+	if err != nil {
+		return nil, err
+	}
+	return host, nil
+}
+
+func isPublicBackgroundAttachment(attachment *store.Attachment, hostID int32) bool {
+	if attachment == nil || attachment.CreatorID != hostID || attachment.MemoID != nil {
+		return false
+	}
+	if attachment.StorageType == storepb.AttachmentStorageType_EXTERNAL {
+		return false
+	}
+	if !strings.HasPrefix(attachment.Filename, backgroundFilenamePrefix) {
+		return false
+	}
+	return isPublicBackgroundContentType(safeAttachmentContentType(attachment.Type))
+}
+
+func isPublicBackgroundContentType(contentType string) bool {
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return false
+	}
+	switch mediaType {
+	case "image/png", "image/jpeg", "image/gif", "image/webp", "image/heic", "image/heif":
+		return true
+	default:
+		return false
+	}
+}
+
+func publicBackgroundURL(attachment *store.Attachment) string {
+	return "/file/backgrounds/" + url.PathEscape(attachment.UID) + "/" + url.PathEscape(attachment.Filename)
 }
 
 // serveAttachmentFile serves attachment binary content using native HTTP.

@@ -103,4 +103,40 @@ describe("BlogEditor table schema", () => {
     expect(firstBodyCell?.firstChild?.firstChild?.marks.some((mark) => mark.type.name === "strong")).toBe(true);
     expect(secondBodyCell?.firstChild?.firstChild?.marks.some((mark) => mark.type.name === "link")).toBe(true);
   });
+
+  it("keeps bookmark node view UI text out of table markdown serialization", () => {
+    const headerRow = blogEditorSchema.nodes.table_row.create(null, [createTableHeader("File")]);
+    const bodyCell = blogEditorSchema.nodes.table_cell.create(null, [
+      blogEditorSchema.nodes.paragraph.create(null, blogEditorSchema.text("before")),
+      blogEditorSchema.nodes.bookmark.create({ url: "https://docs.nvidia.com/example.pdf" }),
+      blogEditorSchema.nodes.paragraph.create(null, blogEditorSchema.text("after")),
+    ]);
+    const bodyRow = blogEditorSchema.nodes.table_row.create(null, [bodyCell]);
+    const doc = blogEditorSchema.nodes.doc.create(null, [blogEditorSchema.nodes.table.create(null, [headerRow, bodyRow])]);
+
+    const serialized = serializer.serialize(doc);
+
+    expect(serialized).toContain("https://docs.nvidia.com/example.pdf");
+    expect(serialized).not.toContain("编辑链接");
+    expect(serialized).not.toContain("DOCS.NVIDIA.COM");
+  });
+
+  it("keeps attachment text stable inside table markdown serialization", () => {
+    const headerRow = blogEditorSchema.nodes.table_row.create(null, [createTableHeader("Attachment")]);
+    const bodyCell = blogEditorSchema.nodes.table_cell.create(null, [
+      blogEditorSchema.nodes.attachment.create({
+        href: "/file/attachments/test/edit-link.pdf",
+        title: "edit-link.pdf",
+        size: 123,
+        contentType: "application/pdf",
+      }),
+    ]);
+    const bodyRow = blogEditorSchema.nodes.table_row.create(null, [bodyCell]);
+    const doc = blogEditorSchema.nodes.doc.create(null, [blogEditorSchema.nodes.table.create(null, [headerRow, bodyRow])]);
+
+    const serialized = serializer.serialize(doc);
+
+    expect(serialized).toContain("[edit-link.pdf 123](http://localhost:3000/file/attachments/test/edit-link.pdf)");
+    expect(serialized).not.toContain("编辑链接");
+  });
 });

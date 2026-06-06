@@ -2,7 +2,7 @@ import { create } from "@bufbuild/protobuf";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { attachmentServiceClient } from "@/connect";
 import { AttachmentSchema, ListAttachmentsResponseSchema } from "@/types/proto/api/v1/attachment_service_pb";
-import { fetchBgImagesFromServer, STORAGE_KEY } from "./BackgroundSection";
+import { fetchBgImagesFromServer, fetchPublicBgImagesFromServer, STORAGE_KEY } from "./BackgroundSection";
 
 vi.mock("@/connect", () => ({
   attachmentServiceClient: {
@@ -18,10 +18,53 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
 describe("BackgroundSection background image loading", () => {
+  it("loads public background images without using the attachment list", async () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([{ url: "/private.png", name: "attachments/private", filename: "private.png" }]));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => [
+          { url: "/file/backgrounds/bg/_bg_wallpaper.png", name: "backgrounds/bg", filename: "wallpaper.png" },
+          { url: "/invalid.png", name: "missing-filename" },
+        ],
+      }),
+    );
+
+    await expect(fetchPublicBgImagesFromServer()).resolves.toEqual([
+      { url: "/file/backgrounds/bg/_bg_wallpaper.png", name: "backgrounds/bg", filename: "wallpaper.png" },
+    ]);
+
+    expect(fetch).toHaveBeenCalledWith("/file/backgrounds", { credentials: "omit" });
+    expect(listAttachments).not.toHaveBeenCalled();
+    expect(localStorage.getItem(STORAGE_KEY)).toBe(
+      JSON.stringify([{ url: "/private.png", name: "attachments/private", filename: "private.png" }]),
+    );
+  });
+
+  it("keeps private background cache untouched when public loading fails", async () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([{ url: "/private.png", name: "attachments/private", filename: "private.png" }]));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+      }),
+    );
+
+    await expect(fetchPublicBgImagesFromServer()).rejects.toThrow("Failed to fetch public background images: 500");
+
+    expect(listAttachments).not.toHaveBeenCalled();
+    expect(localStorage.getItem(STORAGE_KEY)).toBe(
+      JSON.stringify([{ url: "/private.png", name: "attachments/private", filename: "private.png" }]),
+    );
+  });
+
   it("loads background attachments across every attachment page", async () => {
     listAttachments
       .mockResolvedValueOnce(
