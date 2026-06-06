@@ -287,11 +287,22 @@ sequenceDiagram
 
 | 组件 | 路径 | 职责 |
 |------|------|------|
-| `BlogLayout` | `web/src/layouts/BlogLayout.tsx` | Blog 区域布局（侧边栏 + 内容区） |
+| `BlogLayout` | `web/src/layouts/BlogLayout.tsx` | Blog 区域布局（列表态显示侧边栏 + 内容区；编辑态隐藏文档侧栏） |
 | `BlogExplorer` | `web/src/components/BlogExplorer.tsx` | 左侧文档列表 + 标签区域 |
 | `BlogHome` | `web/src/pages/BlogHome.tsx` | Blog 首页，展示所有 Blog 文档卡片 |
 | `BlogDetail` | `web/src/pages/BlogDetail.tsx` | Blog 编辑页，加载 BlogEditor |
 | `BlogEditor` | `web/src/components/BlogEditor/index.tsx` | ProseMirror 富文本编辑器（核心） |
+
+### Writing 编辑态布局约束
+
+Writing/Blog 布局必须区分“列表态”和“写作态”：
+
+| 路由 | 布局要求 | 目的 |
+|------|----------|------|
+| `/writing`、`/blog` | 可常驻显示 `DOCUMENTS` 侧栏（`BlogExplorer`） | 方便浏览和切换文档列表 |
+| `/writing/:uid`、`/blog/:uid` | 不常驻显示 `DOCUMENTS` 侧栏，也不保留侧栏左侧占位 padding | 保证文章编辑区有足够宽度，避免写作时可视区域被压缩 |
+
+`/writing/:uid` 与兼容路由 `/blog/:uid` 都属于写文章编辑态，应遵守同一布局约束。若未来需要在编辑态访问文档列表，应使用临时抽屉、返回列表、快捷入口或响应式折叠方式提供，禁止重新引入固定常驻的 `DOCUMENTS` 侧栏。
 
 ### BlogEditor 内部架构
 
