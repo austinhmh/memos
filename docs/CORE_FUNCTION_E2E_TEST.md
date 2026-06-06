@@ -2,18 +2,20 @@
 
 > 用途：每次修改后，用本文件在全新的本地测试环境中执行核心端到端回归，确认 Memos 的主流程没有被破坏。
 >
-> 最后更新：2026-05-30
+> 最后更新：2026-06-06
 >
-> 最近一次实测环境：`http://localhost:18186`，镜像 tag `test`，全新临时数据目录。
+> 最近一次实测环境：`http://localhost:18327`，容器 `memos-test-1780745106`，镜像 tag 固定为 `test`，全新临时数据目录 `/tmp/tmp.9pQgLUyY8U`。
 
 ## 0. 强制测试原则
 
 1. 每轮端到端测试都必须使用全新的本地环境，不复用旧容器或旧数据目录。
-2. 构建只能使用项目根目录的 `./build-push.sh`，镜像 tag 固定为 `test`。
-3. 启动测试环境只能使用项目根目录的 `./pull.sh`，镜像 tag 固定为 `test`。
-4. 浏览器测试必须覆盖真实页面交互：注册、登录、创建、编辑、跳转、上传、刷新持久化、权限可见性。
-5. 修改编辑器、Markdown、Mermaid、表格、附件、Writing 相关逻辑后，必须额外执行对应专项章节。
-6. 测试发现失败时，先记录失败现象、页面 URL、控制台错误、网络请求状态，再修复并重新从失败用例开始复测。
+2. 所有测试在执行前都必须先完成真实端到端构建与启动：使用项目根目录的 `./build-push.sh` 构建镜像，再用 `./pull.sh` 启动测试环境，镜像 tag 固定为 `test`。
+3. 测试判定必须基于构建后的真实网页：打开本地测试环境 URL，在浏览器页面中完成交互并观察结果。
+4. 禁止用脚本、接口调用、数据库写入、localStorage 修改、控制台注入或单元测试结果替代网页端到端测试；这些只能作为辅助诊断，不能作为通过依据。
+5. 除固定构建/启动命令 `./build-push.sh` 和 `./pull.sh` 外，不得编写或运行批量脚本来模拟用户操作、构造数据或直接判定用例通过。
+6. 浏览器测试必须覆盖真实页面交互：注册、登录、创建、编辑、跳转、上传、刷新持久化、权限可见性。
+7. 修改编辑器、Markdown、Mermaid、表格、附件、Writing 相关逻辑后，必须额外执行对应专项章节。
+8. 测试发现失败时，先记录失败现象、页面 URL、控制台错误、网络请求状态，再修复并重新从失败用例开始复测。
 
 ## 1. 测试环境准备
 
@@ -25,6 +27,8 @@
 ./build-push.sh --local test
 MEMOS_DATA_DIR="$(mktemp -d)" ./pull.sh --local --name "memos-test-$(date +%s)" test
 ```
+
+构建和启动成功只表示环境就绪，不代表 E2E 通过；必须继续打开 `http://localhost:<端口>`，按第 3 节在真实网页中逐项操作验证。
 
 如果容器内 SQLite 因权限无法创建数据库，先创建数据目录并放宽权限：
 
@@ -205,6 +209,24 @@ MEMOS_DATA_DIR="$TEST_DATA_DIR" ./pull.sh --local --name "memos-test-$(date +%s)
 - 新建文档不自动填充 `Untitled`。
 - 自动保存与刷新持久化正常。
 
+### E2E-06A Writing 保存状态红点专项
+
+**步骤**：
+
+1. 进入 `/writing` 并新建或打开一篇 Writing 文档。
+2. 在右侧详情栏确认初始保存状态为绿色已保存。
+3. 点击正文并输入 `save status e2e unsaved marker`。
+4. 输入后立刻观察右侧详情栏保存状态。
+5. 等待自动保存完成。
+6. 刷新当前 `/writing/:uid` 页面。
+
+**通过标准**：
+
+- 输入后的自动保存防抖期间，右侧详情栏必须显示红色未保存状态，不能一直保持绿色已保存。
+- 自动保存完成后，右侧详情栏恢复绿色已保存状态。
+- 刷新后新增文本仍存在，且初始状态为绿色已保存。
+- 该用例必须在真实构建后的网页中手动交互验证，不允许仅用单元测试或接口调用替代。
+
 ### E2E-07 表格交互专项
 
 **测试数据**：创建包含 3x3 表格的 Writing 或 Memo 详情文档。
@@ -221,7 +243,9 @@ MEMOS_DATA_DIR="$TEST_DATA_DIR" ./pull.sh --local --name "memos-test-$(date +%s)
 8. 多选连续行或列后删除。
 9. 选择整张表，按 Delete 或 Backspace 删除整表。
 10. 在单元格中使用 ArrowUp / ArrowDown / ArrowLeft / ArrowRight。
-11. 在表格后输入文字，保存并刷新。
+11. 在任意表格单元格输入英文前缀后切换中文输入法，输入中文候选词，并在首次从英文切换到中文确认时按 Enter。
+12. 在同一单元格普通按 Enter。
+13. 在表格后输入文字，保存并刷新。
 
 **通过标准**：
 
@@ -230,6 +254,8 @@ MEMOS_DATA_DIR="$TEST_DATA_DIR" ./pull.sh --local --name "memos-test-$(date +%s)
 - 新增行列位置正确。
 - 行、列、多选、整表删除稳定。
 - 方向键直接跳到相邻单元格，不出现先进入当前格文本光标的中间状态。
+- 中文输入法 composition/候选确认期间的首次 Enter 不会拆分表格、移动行列、把单元格内容提升为普通段落，表格行列数量保持不变。
+- 普通 Enter 在单元格内只新增单元格内部段落，表格整体行列结构保持不变。
 - 表格后的输入不会导致表格被 DOMParser 合并成普通段落或消失。
 
 ### E2E-08 Mermaid、Markdown 与 WYSIWYG
@@ -240,6 +266,20 @@ MEMOS_DATA_DIR="$TEST_DATA_DIR" ./pull.sh --local --name "memos-test-$(date +%s)
 
 ````markdown
 # Mermaid E2E
+
+```mermaid
+flowchart TD
+ ByteExpressContext_Init["ByteExpressContext::Init()
+ byte_express_context.cpp:95"] --> RdmaEventDispatcher_ctor["RdmaEventDispatcher::RdmaEventDispatcher()
+ rdma_event_dispatcher.cpp:26"]
+ RdmaEventDispatcher_ctor --> RdmaListener_BindListen["RdmaListener::Bind()/Listen()
+ rdma_listener.cpp:29"]
+ RdmaListener_BindListen --> RdmaListener_OnConnectRequestEvent["RdmaListener::OnConnectRequestEvent()
+ rdma_listener.cpp:96"]
+ Engine_CreateQP["Engine::CreateQP()
+ engine.cpp:737"] --> ReceiveQueue_DoReload["Shared/UniqueRdmaReceiveQueue::DoReload()
+ rdma_receive_queue.cpp:73/183"]
+```
 
 ```mermaid
 flowchart LR
@@ -421,8 +461,8 @@ flowchart LR
 |---|---|
 | 认证、用户、权限 | E2E-01、E2E-02、E2E-10、E2E-15 |
 | Memo 列表或详情 | E2E-03、E2E-04、E2E-11、E2E-16 |
-| BlogEditor / Writing | E2E-04、E2E-05B、E2E-06、E2E-07、E2E-08、E2E-16 |
-| 表格 | E2E-07，并刷新验证持久化 |
+| BlogEditor / Writing | E2E-04、E2E-05B、E2E-06、E2E-06A、E2E-07、E2E-08、E2E-16 |
+| 表格 | E2E-07，并刷新验证持久化；涉及 IME/Enter 时必须执行中文输入法首次 Enter 专项 |
 | Markdown / Mermaid | E2E-08，并参考 `docs/TEST_CHECKLIST.md` |
 | 附件 | E2E-05、E2E-13 |
 | Todo | E2E-09 |
@@ -432,7 +472,22 @@ flowchart LR
 
 ## 5. 最近一次执行记录
 
-执行日期：2026-05-30
+执行日期：2026-06-06
+
+测试环境：`http://localhost:18327`；容器 `memos-test-1780745106`；镜像 `memos:test`；端口映射 `127.0.0.1:18327->5230/tcp`；全新临时数据目录 `/tmp/tmp.9pQgLUyY8U`。
+
+| 项目 | 结果 | 记录 |
+|---|---|---|
+| 代码级测试 | 通过 | `pnpm --dir web exec vitest run src/components/BlogEditor/plugins/TableControlsPlugin.test.ts` 通过（39 个表格测试）；`pnpm --dir web lint` 通过；`pnpm --dir web test` 通过（20 个测试文件，165 个测试）；`CGO_CFLAGS= CGO_CPPFLAGS= CGO_CXXFLAGS= CGO_LDFLAGS= go test ./server/router/api/v1/test/...` 通过 |
+| 构建镜像 | 通过 | 按 `./build-push.sh --local test` 执行，重新生成本地镜像 `memos:test` |
+| 全新环境启动 | 通过 | 使用 `TEST_DATA_DIR="$(mktemp -d)" && chmod 777 "$TEST_DATA_DIR" && MEMOS_DATA_DIR="$TEST_DATA_DIR" MEMOS_HOST_PORT=18327 ./pull.sh --local --name "memos-test-$(date +%s)" test` 启动；实际数据目录 `/tmp/tmp.9pQgLUyY8U` |
+| 首用户注册与 Writing 初始化 | 通过 | 在真实网页注册 `austin / Austin123`，进入 `/writing` 点击 `New Article` 创建包含 `#blog` 的 Writing 文档 `/writing/fmws8yxWNoXkZ5RbWje7Lt` |
+| Writing 保存状态红点专项 | 通过 | E2E-06A：新建文档初始右侧详情栏为 `已保存/bg-emerald-500`；真实输入 `save status e2e final marker` 后观察到 `未保存/bg-red-500`；自动保存完成后恢复 `已保存/bg-emerald-500` |
+| 表格中文输入首次 Enter 专项 | 通过 | E2E-07 步骤 11-12：通过真实 `/table` 菜单插入 3x3 表格；点击第一个正文单元格后使用真实浏览器输入 `测试中文`，单元格显示为精确的 `测试中文`，没有重复插入；首次按 Enter 后仍为 1 张表、3 行、9 个单元格，Enter 只在当前单元格内新增段落 |
+| 表格保存与刷新持久化 | 通过 | 刷新 `/writing/fmws8yxWNoXkZ5RbWje7Lt` 后仍为 1 张表、3 行、9 个单元格，第一个正文单元格保留 `测试中文`，保存状态为绿色已保存 |
+| 是否使用脚本替代网页测试 | 否 | 构建/启动使用固定脚本；注册、Writing 新建、`/table` 插入、单元格点击、中文输入、Enter、刷新均在真实浏览器页面完成；CDP 仅用于读取 DOM 状态、记录红点变化和诊断事件，不替代网页端到端验证 |
+
+### 2026-05-30 历史执行记录
 
 测试环境：`http://localhost:18186`
 
@@ -459,13 +514,16 @@ flowchart LR
 ```markdown
 ### YYYY-MM-DD E2E-编号 简短标题
 
+- 构建命令：`./build-push.sh --local test`
+- 启动命令：`MEMOS_DATA_DIR="$(mktemp -d)" ./pull.sh --local --name "memos-test-$(date +%s)" test`
 - 环境：
 - 页面：
-- 操作步骤：
+- 浏览器操作步骤：
 - 预期结果：
 - 实际结果：
 - 控制台错误：
 - 网络请求状态：
+- 是否使用脚本替代网页测试：否
 - 初步判断：
 - 修复提交：
 - 复测结果：

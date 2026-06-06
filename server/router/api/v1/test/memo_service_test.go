@@ -360,6 +360,61 @@ func requireMemoNotListed(t *testing.T, memos []*apiv1.Memo, memoName string) {
 	}
 }
 
+func TestCreateMemoWithAttachmentOnlyContent(t *testing.T) {
+	ctx := context.Background()
+	ts := NewTestService(t)
+	defer ts.Cleanup()
+
+	user, err := ts.CreateRegularUser(ctx, "attachment-only-owner")
+	require.NoError(t, err)
+	userCtx := ts.CreateUserContext(ctx, user.ID)
+
+	attachment, err := ts.Service.CreateAttachment(userCtx, &apiv1.CreateAttachmentRequest{
+		Attachment: &apiv1.Attachment{
+			Filename: "attachment-only.txt",
+			Size:     5,
+			Type:     "text/plain",
+			Content:  []byte("hello"),
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, attachment)
+
+	memo, err := ts.Service.CreateMemo(userCtx, &apiv1.CreateMemoRequest{
+		Memo: &apiv1.Memo{
+			Content:    "  ",
+			Visibility: apiv1.Visibility_PRIVATE,
+			Attachments: []*apiv1.Attachment{
+				{Name: attachment.Name},
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, memo)
+	require.Equal(t, "  ", memo.Content)
+	require.Len(t, memo.Attachments, 1)
+	require.Equal(t, attachment.Name, memo.Attachments[0].Name)
+}
+
+func TestCreateMemoRejectsEmptyContentWithoutAttachments(t *testing.T) {
+	ctx := context.Background()
+	ts := NewTestService(t)
+	defer ts.Cleanup()
+
+	user, err := ts.CreateRegularUser(ctx, "empty-content-owner")
+	require.NoError(t, err)
+	userCtx := ts.CreateUserContext(ctx, user.ID)
+
+	_, err = ts.Service.CreateMemo(userCtx, &apiv1.CreateMemoRequest{
+		Memo: &apiv1.Memo{
+			Content:    "  ",
+			Visibility: apiv1.Visibility_PRIVATE,
+		},
+	})
+	require.Error(t, err)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+}
+
 // TestCreateMemoWithCustomTimestamps tests that custom timestamps can be set when creating memos and comments.
 // This addresses issue #5483: https://github.com/usememos/memos/issues/5483
 func TestCreateMemoWithCustomTimestamps(t *testing.T) {

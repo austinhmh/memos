@@ -24,14 +24,56 @@ const colorToMarkdownValue = (color: string) => color.slice(1).toUpperCase();
  * code_block uses `language` attr (outputs ```language\n...\n```).
  */
 export function createMdSerializer(): MarkdownSerializer {
-  const escapeTableCellText = (text: string) => text.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\r?\n/g, "<br>");
+  type TableSerializationState = MarkdownSerializerState & {
+    out: string;
+    closed: Node | null;
+    atBlockStart: boolean;
+    inTable?: boolean;
+    esc: (str?: string, startOfLine?: boolean) => string;
+  };
+
+  const renderTableCellMarkdown = (state: MarkdownSerializerState, cell: Node | null) => {
+    if (!cell) return "";
+
+    const tableState = state as TableSerializationState;
+    const previousOut = tableState.out;
+    const previousClosed = tableState.closed;
+    const previousAtBlockStart = tableState.atBlockStart;
+    const previousInTable = tableState.inTable;
+    const previousEsc = tableState.esc;
+
+    tableState.out = "";
+    tableState.closed = null;
+    tableState.atBlockStart = true;
+    tableState.inTable = true;
+    tableState.esc = (str = "", startOfLine) => previousEsc.call(tableState, str, startOfLine).replace(/\|/g, "\\|");
+
+    cell.forEach((cellNode) => {
+      if (cellNode.type.name === "paragraph" && cellNode.textContent === "" && cellNode.content.size === 0) {
+        return;
+      }
+      tableState.closed = null;
+      tableState.atBlockStart = true;
+      state.render(cellNode, cell, 0);
+    });
+    const text = tableState.out.trimEnd().replace(/\r?\n/g, "<br>");
+
+    tableState.out = previousOut;
+    tableState.closed = previousClosed;
+    tableState.atBlockStart = previousAtBlockStart;
+    tableState.inTable = previousInTable;
+    tableState.esc = previousEsc;
+
+    return text;
+  };
 
   const createEmptyHeaderRow = (node: Node, colCount: number) => {
+    const paragraphType = node.type.schema.nodes.paragraph;
     const headerType = node.type.schema.nodes.table_header;
     const rowType = node.type.schema.nodes.table_row;
     return rowType.create(
       null,
-      Array.from({ length: colCount }, () => headerType.create(null)),
+      Array.from({ length: colCount }, () => headerType.create(null, paragraphType.create())),
     );
   };
 
@@ -111,7 +153,7 @@ export function createMdSerializer(): MarkdownSerializer {
       for (const row of rowsToSerialize) {
         for (let c = 0; c < colCount; c++) {
           const cell = c < row.childCount ? row.child(c) : null;
-          const text = escapeTableCellText(cell?.textContent ?? "");
+          const text = renderTableCellMarkdown(state, cell);
           if (text.length + 2 > colWidths[c]) colWidths[c] = text.length + 2;
           if (cell?.attrs.alignment) alignments[c] = cell.attrs.alignment as string;
         }
@@ -121,7 +163,7 @@ export function createMdSerializer(): MarkdownSerializer {
         let line = "|";
         for (let c = 0; c < colCount; c++) {
           const cell = row && c < row.childCount ? row.child(c) : null;
-          const text = escapeTableCellText(cell?.textContent ?? "");
+          const text = renderTableCellMarkdown(state, cell);
           const pad = colWidths[c] - text.length;
           line += " " + text + " ".repeat(pad > 0 ? pad : 0) + " |";
         }
@@ -153,10 +195,10 @@ export function createMdSerializer(): MarkdownSerializer {
       // handled by table
     },
     table_header(state, node) {
-      state.renderInline(node);
+      state.renderContent(node);
     },
     table_cell(state, node) {
-      state.renderInline(node);
+      state.renderContent(node);
     },
     text(state, node) {
       state.text(node.text!, true);

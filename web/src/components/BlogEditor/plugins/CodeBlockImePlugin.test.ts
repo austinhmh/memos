@@ -202,7 +202,10 @@ describe("code block IME composition handling", () => {
   });
 
   it("maps table control decorations instead of rebuilding them during composition", () => {
-    const cell = blogEditorSchema.nodes.table_cell.create(null, blogEditorSchema.text("chuang"));
+    const cell = blogEditorSchema.nodes.table_cell.create(
+      null,
+      blogEditorSchema.nodes.paragraph.create(null, blogEditorSchema.text("chuang")),
+    );
     const row = blogEditorSchema.nodes.table_row.create(null, [cell]);
     const table = blogEditorSchema.nodes.table.create(null, [row]);
     const doc = blogEditorSchema.nodes.doc.create(null, [table]);
@@ -210,7 +213,7 @@ describe("code block IME composition handling", () => {
       doc,
       schema: blogEditorSchema,
       plugins: createTablePlugins({ isEditable: () => true }),
-      selection: TextSelection.create(doc, 3),
+      selection: TextSelection.create(doc, 3 + "chuang".length),
     });
     const before = state.plugins[0].getState(state) as DecorationSet;
 

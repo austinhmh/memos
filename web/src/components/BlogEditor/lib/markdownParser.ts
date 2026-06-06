@@ -1,3 +1,4 @@
+import type { StateCore } from "markdown-it";
 import MarkdownIt from "markdown-it";
 import type Token from "markdown-it/lib/token.mjs";
 import markdownItContainer from "markdown-it-container";
@@ -26,6 +27,31 @@ const getAlign = (tok: Token) => {
   const style = tok.attrGet("style");
   const match = style?.match(/text-align:\s*(left|center|right)/);
   return { alignment: match ? match[1] : null };
+};
+
+const ensureTableCellParagraphs = (state: StateCore) => {
+  const tokens = state.tokens;
+  for (let i = tokens.length - 1; i >= 0; i -= 1) {
+    if (tokens[i].type !== "th_open" && tokens[i].type !== "td_open") {
+      continue;
+    }
+
+    const closeType = tokens[i].type === "th_open" ? "th_close" : "td_close";
+    let closeIndex = i + 1;
+    while (closeIndex < tokens.length && tokens[closeIndex].type !== closeType) {
+      closeIndex += 1;
+    }
+    if (closeIndex >= tokens.length) {
+      continue;
+    }
+
+    if (tokens[i + 1]?.type === "paragraph_open") {
+      continue;
+    }
+
+    tokens.splice(closeIndex, 0, new state.Token("paragraph_close", "p", -1));
+    tokens.splice(i + 1, 0, new state.Token("paragraph_open", "p", 1));
+  }
 };
 
 const sanitizeHighlightColor = (color: string | null | undefined) => {
@@ -173,6 +199,8 @@ function getProseMirrorTokenizer(): MarkdownIt {
   md.core.ruler.push("prosemirror_table_sections", (state) => {
     state.tokens = state.tokens.filter((token) => !["thead_open", "thead_close", "tbody_open", "tbody_close"].includes(token.type));
   });
+
+  md.core.ruler.push("prosemirror_table_cells", ensureTableCellParagraphs);
 
   cachedTokenizer = md;
   return md;

@@ -1,7 +1,6 @@
 import { create } from "@bufbuild/protobuf";
 import { FieldMaskSchema, timestampDate } from "@bufbuild/protobuf/wkt";
 import { useQueryClient } from "@tanstack/react-query";
-import { isEqual } from "lodash-es";
 import { CheckCircleIcon, Code2Icon, HashIcon, LinkIcon, PlusIcon, XIcon } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
@@ -120,19 +119,17 @@ const MemoDetailSidebar = ({ memo, className, parentPage, saveStatus = "saved" }
           </p>
           <p className="text-sm text-muted-foreground">{memo.createTime && timestampDate(memo.createTime).toLocaleString()}</p>
         </div>
-        {!isEqual(memo.createTime, memo.updateTime) && (
-          <div className="w-full flex flex-col">
-            <p className="flex flex-row justify-start items-center w-full gap-1 mb-1 text-sm leading-6 text-muted-foreground select-none">
-              <span>{t("common.last-updated-at")}</span>
-              <span
-                className={cn("inline-block h-2 w-2 rounded-full", saveStatus === "unsaved" ? "bg-red-500" : "bg-emerald-500")}
-                title={saveStatusText}
-                aria-label={saveStatusText}
-              />
-            </p>
-            <p className="text-sm text-muted-foreground">{memo.updateTime && timestampDate(memo.updateTime).toLocaleString()}</p>
-          </div>
-        )}
+        <div className="w-full flex flex-col">
+          <p className="flex flex-row justify-start items-center w-full gap-1 mb-1 text-sm leading-6 text-muted-foreground select-none">
+            <span>{t("common.last-updated-at")}</span>
+            <span
+              className={cn("inline-block h-2 w-2 rounded-full", saveStatus === "unsaved" ? "bg-red-500" : "bg-emerald-500")}
+              title={saveStatusText}
+              aria-label={saveStatusText}
+            />
+          </p>
+          <p className="text-sm text-muted-foreground">{memo.updateTime && timestampDate(memo.updateTime).toLocaleString()}</p>
+        </div>
         {hasSpecialProperty && (
           <div className="w-full flex flex-col">
             <p className="flex flex-row justify-start items-center w-full gap-1 mb-1 text-sm leading-6 text-muted-foreground select-none">

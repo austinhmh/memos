@@ -348,8 +348,11 @@ export const moveOutOfTable = (direction: 1 | -1): Command => {
     }
 
     const map = rect.map.map;
-    const $start = state.doc.resolve(rect.tableStart + map[0] - 1);
-    const $end = state.doc.resolve(rect.tableStart + map[map.length - 1] + 2);
+    const firstCellPos = rect.tableStart + map[0];
+    const lastCellPos = rect.tableStart + map[map.length - 1];
+    const lastCell = state.doc.nodeAt(lastCellPos);
+    const $start = state.doc.resolve(firstCellPos - 1);
+    const $end = state.doc.resolve(lastCellPos + (lastCell?.nodeSize ?? 2));
     const gapCursor = GapCursor as typeof GapCursor & {
       findGapCursorFrom?: ($pos: ResolvedPos, dir: number, mustMove?: boolean) => ResolvedPos | null;
     };

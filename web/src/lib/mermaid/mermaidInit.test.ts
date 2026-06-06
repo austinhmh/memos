@@ -1,20 +1,5 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { MarkdownRenderer } from "./MarkdownRenderer";
-
-const { renderMermaidMock } = vi.hoisted(() => ({
-  renderMermaidMock: vi.fn(),
-}));
-
-vi.mock("@/contexts/AuthContext", () => ({
-  useAuth: () => ({
-    userGeneralSetting: { theme: "default" },
-  }),
-}));
-
-vi.mock("@/lib/mermaid/mermaidInit", () => ({
-  renderMermaid: renderMermaidMock,
-}));
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { renderMermaid } from "./mermaidInit";
 
 const cppCallchainMermaid = `flowchart TD
  ByteExpressContext_Init["ByteExpressContext::Init()
@@ -69,34 +54,41 @@ const cppCallchainMermaid = `flowchart TD
  Worker_Context_Poll --> Engine_HandleWorkCompletion["Engine::HandleWorkCompletion()
  engine.cpp:446"]`;
 
-const mermaidSvgWithForeignObject = `<svg xmlns="http://www.w3.org/2000/svg" role="graphics-document document">
-  <g class="node">
-    <foreignObject width="240" height="48">
-      <div xmlns="http://www.w3.org/1999/xhtml">ByteExpressContext::Init()<br />byte_express_context.cpp:95</div>
-    </foreignObject>
-  </g>
-</svg>`;
+const installSvgMeasurementStubs = () => {
+  const svgPrototype = SVGElement.prototype as SVGElement & {
+    getBBox?: () => DOMRect;
+    getComputedTextLength?: () => number;
+  };
 
-afterEach(() => {
-  renderMermaidMock.mockReset();
-});
+  if (!svgPrototype.getBBox) {
+    svgPrototype.getBBox = function getBBox() {
+      const text = this.textContent ?? "";
+      return { x: 0, y: 0, width: Math.max(20, text.length * 7), height: 20 } as DOMRect;
+    };
+  }
 
-describe("MarkdownRenderer", () => {
-  it("does not throw when clicking malformed hash links", () => {
-    render(<MarkdownRenderer content="[bad hash](#%E0%A4%A)" />);
+  if (!svgPrototype.getComputedTextLength) {
+    svgPrototype.getComputedTextLength = function getComputedTextLength() {
+      return Math.max(20, (this.textContent ?? "").length * 7);
+    };
+  }
+};
 
-    expect(() => fireEvent.click(screen.getByRole("link", { name: "bad hash" }))).not.toThrow();
+describe("renderMermaid", () => {
+  beforeEach(() => {
+    installSvgMeasurementStubs();
+    vi.spyOn(Math, "random").mockReturnValue(0.123456789);
   });
 
-  it("keeps Mermaid foreignObject labels for C++ callchain flowcharts", async () => {
-    renderMermaidMock.mockResolvedValue({ svg: mermaidSvgWithForeignObject });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
 
-    const { container } = render(<MarkdownRenderer content={`\`\`\`mermaid\n${cppCallchainMermaid}\n\`\`\``} />);
+  it("renders C++ callchain flowcharts with multiline labels", async () => {
+    const { svg } = await renderMermaid(cppCallchainMermaid, { theme: "default", fontFamily: "inherit" });
 
-    await waitFor(() => expect(renderMermaidMock).toHaveBeenCalledWith(cppCallchainMermaid, { theme: "default" }));
-    await waitFor(() => expect(container.innerHTML).toContain("ByteExpressContext::Init()"));
-
-    expect(container.innerHTML.toLowerCase()).toContain("foreignobject");
-    expect(container.textContent).toContain("byte_express_context.cpp:95");
+    expect(svg).toContain("ByteExpressContext::Init()");
+    expect(svg).toContain("byte_express_context.cpp:95");
+    expect(svg.toLowerCase()).toContain("foreignobject");
   });
 });

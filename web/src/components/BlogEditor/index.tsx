@@ -442,6 +442,8 @@ const selectEntireDocument: Command = (state, dispatch) => {
 
 const selectEditorContent = chainCommands(selectAll(schema.nodes.code_block), selectAll(schema.nodes.blockquote), selectEntireDocument);
 
+const ignoreEnterDuringComposition: Command = (_state, _dispatch, view) => (view ? isViewComposing(view) : false);
+
 const buildBlogEditorKeymap = (manualSave: Command): Record<string, Command> => ({
   "Mod-a": selectEditorContent,
   "Mod-s": manualSave,
@@ -489,6 +491,7 @@ const buildBlogEditorKeymap = (manualSave: Command): Record<string, Command> => 
   "Shift-Ctrl-\\": toggleBlockType(schema.nodes.code_block, schema.nodes.paragraph, { language: "" }),
   "Ctrl->": toggleWrap(schema.nodes.blockquote),
   Enter: chainCommands(
+    ignoreEnterDuringComposition,
     codeBlockOnEnter(schema),
     enterInCode,
     createParagraphNear,

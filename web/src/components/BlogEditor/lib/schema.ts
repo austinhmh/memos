@@ -178,7 +178,7 @@ export const blogEditorSchema = new Schema({
       toDOM: () => ["tr", 0],
     },
     table_header: {
-      content: "inline*",
+      content: "block+",
       attrs: {
         colspan: { default: 1 },
         rowspan: { default: 1 },
@@ -191,7 +191,7 @@ export const blogEditorSchema = new Schema({
       toDOM: (node) => ["th", setCellAttrs(node), 0],
     },
     table_cell: {
-      content: "inline*",
+      content: "block+",
       attrs: {
         colspan: { default: 1 },
         rowspan: { default: 1 },

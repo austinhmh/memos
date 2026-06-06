@@ -1,9 +1,12 @@
 import { GapCursor } from "prosemirror-gapcursor";
+import type { Mark, Node as ProseMirrorNode } from "prosemirror-model";
 import { DOMParser as ProseMirrorDOMParser } from "prosemirror-model";
 import { EditorState, TextSelection, type Transaction } from "prosemirror-state";
 import { CellSelection, selectedRect } from "prosemirror-tables";
-import { describe, expect, it } from "vitest";
+import { EditorView } from "prosemirror-view";
+import { describe, expect, it, vi } from "vitest";
 import { blogEditorSchema } from "../lib/schema";
+import { createTablePlugins, tableKeymap } from "./TableControlsPlugin";
 import {
   addColumnBeforeIndex,
   addRowBeforeIndex,
@@ -25,11 +28,36 @@ import {
   typeTextNearTableGapCursor,
 } from "./tableCommands";
 
+const createCellContent = (text?: string, marks?: readonly Mark[]) => {
+  return text
+    ? blogEditorSchema.nodes.paragraph.create(null, blogEditorSchema.text(text, marks))
+    : blogEditorSchema.nodes.paragraph.create();
+};
+
+const createTableHeader = (text?: string, marks?: readonly Mark[]) =>
+  blogEditorSchema.nodes.table_header.create(null, createCellContent(text, marks));
+
+const createTableCell = (text?: string, marks?: readonly Mark[]) =>
+  blogEditorSchema.nodes.table_cell.create(null, createCellContent(text, marks));
+
+const getCellParagraph = (cell: ProseMirrorNode | null | undefined) => cell?.firstChild;
+
+const getCellTextEndPosition = (cellPosition: number, cell: ProseMirrorNode | null | undefined) => {
+  const paragraph = getCellParagraph(cell);
+  return cellPosition + 2 + (paragraph?.textContent.length ?? 0);
+};
+
+const getBodyLastCellTextEndPosition = (state: EditorState) => {
+  const cellPosition = getTableCellPosition(state, 0, 1, 1);
+  const cell = cellPosition === null ? null : state.doc.nodeAt(cellPosition);
+  return getCellTextEndPosition(cellPosition ?? 0, cell);
+};
+
 const createTableNode = () => {
-  const headerCellA = blogEditorSchema.nodes.table_header.create(null, blogEditorSchema.text("A"));
-  const headerCellB = blogEditorSchema.nodes.table_header.create(null, blogEditorSchema.text("B"));
-  const cellA = blogEditorSchema.nodes.table_cell.create(null, blogEditorSchema.text("1"));
-  const cellB = blogEditorSchema.nodes.table_cell.create(null, blogEditorSchema.text("2"));
+  const headerCellA = createTableHeader("A");
+  const headerCellB = createTableHeader("B");
+  const cellA = createTableCell("1");
+  const cellB = createTableCell("2");
   const headerRow = blogEditorSchema.nodes.table_row.create(null, [headerCellA, headerCellB]);
   const bodyRow = blogEditorSchema.nodes.table_row.create(null, [cellA, cellB]);
   return blogEditorSchema.nodes.table.create(null, [headerRow, bodyRow]);
@@ -40,7 +68,9 @@ const createTableState = () => {
   const doc = blogEditorSchema.nodes.doc.create(null, [table]);
   const state = EditorState.create({ doc, schema: blogEditorSchema });
 
-  return state.apply(state.tr.setSelection(TextSelection.near(doc.resolve(3))));
+  const firstCellPosition = getTableCellPosition(state, 0, 0, 0);
+  const firstCell = firstCellPosition === null ? null : doc.nodeAt(firstCellPosition);
+  return state.apply(state.tr.setSelection(TextSelection.near(doc.resolve(getCellTextEndPosition(firstCellPosition ?? 0, firstCell)))));
 };
 
 const applyCommand = (state: EditorState, command: (state: EditorState, dispatch: (tr: Transaction) => void) => boolean) => {
@@ -214,7 +244,7 @@ describe("tableCommands", () => {
     };
 
     expect(selectTable()(state, dispatch)).toBe(true);
-    expect(state.selection.empty).toBe(true);
+    expect(state.selection).toBeInstanceOf(CellSelection);
     expect(deleteTableIfSelected()(state, dispatch)).toBe(true);
     expect(state.doc.firstChild?.type.name).not.toBe("table");
   });
@@ -388,15 +418,15 @@ describe("tableCommands", () => {
     expect(state.selection.from).toBe(0);
 
     state = createTableState();
-    state = state.apply(state.tr.setSelection(TextSelection.near(state.doc.resolve(state.doc.content.size - 2), -1)));
+    state = state.apply(state.tr.setSelection(TextSelection.near(state.doc.resolve(getBodyLastCellTextEndPosition(state)), -1)));
     expect(moveOutOfTable(1)(state, dispatch)).toBe(true);
     expect(state.selection).toBeInstanceOf(GapCursor);
-    expect(state.selection.from).toBe(16);
+    expect(state.selection.from).toBe(state.doc.content.size);
   });
 
   it("creates a paragraph from a table gap cursor so typing can continue after the table", () => {
     let state = createTableState();
-    state = state.apply(state.tr.setSelection(TextSelection.near(state.doc.resolve(state.doc.content.size - 2), -1)));
+    state = state.apply(state.tr.setSelection(TextSelection.near(state.doc.resolve(getBodyLastCellTextEndPosition(state)), -1)));
     const dispatch = (tr: Transaction) => {
       state = state.apply(tr);
     };
@@ -406,6 +436,246 @@ describe("tableCommands", () => {
     expect(state.doc.childCount).toBe(2);
     expect(state.doc.lastChild?.type.name).toBe("paragraph");
     expect(state.selection).toBeInstanceOf(TextSelection);
+  });
+
+  it("handles Enter inside a table cell before browser native DOM mutation", () => {
+    let state = createTableState();
+    const cellPosition = getTableCellPosition(state, 0, 1, 0);
+    expect(cellPosition).toBeTypeOf("number");
+    const paragraph = getCellParagraph(state.doc.nodeAt(cellPosition ?? 0));
+    expect(paragraph).toBeTruthy();
+    state = state.apply(
+      state.tr.setSelection(
+        TextSelection.create(state.doc, getCellTextEndPosition(cellPosition ?? 0, state.doc.nodeAt(cellPosition ?? 0))),
+      ),
+    );
+
+    expect(
+      tableKeymap.Enter(state, (tr) => {
+        state = state.apply(tr);
+      }),
+    ).toBe(true);
+    const targetCell = state.doc.nodeAt(cellPosition ?? 0);
+
+    expect(state.doc.firstChild?.childCount).toBe(2);
+    expect(state.doc.firstChild?.firstChild?.childCount).toBe(2);
+    expect(targetCell?.childCount).toBe(2);
+    expect(targetCell?.firstChild?.textContent).toBe("1");
+  });
+
+  it("places selection inside a clicked block table cell", () => {
+    const table = createTableNode();
+    const doc = blogEditorSchema.nodes.doc.create(null, [table]);
+    const cellPosition = getTableCellPosition(EditorState.create({ doc, schema: blogEditorSchema }), 0, 1, 0);
+    expect(cellPosition).toBeTypeOf("number");
+    const cell = doc.nodeAt(cellPosition ?? 0);
+    expect(cell).toBeTruthy();
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const view = new EditorView(host, {
+      state: EditorState.create({
+        doc,
+        schema: blogEditorSchema,
+        plugins: createTablePlugins({ isEditable: () => true }),
+      }),
+    });
+    view.dom.classList.add("blog-editor-content");
+    const tableCell = view.dom.querySelector("td");
+    expect(tableCell).toBeInstanceOf(HTMLTableCellElement);
+    const originalElementFromPoint = document.elementFromPoint;
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: vi.fn(() => tableCell),
+    });
+    Object.defineProperty(view, "posAtCoords", {
+      value: () => ({ pos: 1, inside: -1 }),
+    });
+
+    try {
+      const mouseDown = new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0, clientX: 10, clientY: 10 });
+      view.dom.dispatchEvent(mouseDown);
+      const click = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0, clientX: 10, clientY: 10 });
+      view.dom.dispatchEvent(click);
+
+      expect(mouseDown.defaultPrevented).toBe(true);
+      expect(click.defaultPrevented).toBe(true);
+      expect(view.state.selection).toBeInstanceOf(TextSelection);
+      expect(view.state.selection.$from.node(view.state.selection.$from.depth - 1).type.spec.tableRole).toBe("cell");
+    } finally {
+      Object.defineProperty(document, "elementFromPoint", {
+        configurable: true,
+        value: originalElementFromPoint,
+      });
+      view.destroy();
+      host.remove();
+    }
+  });
+
+  it("blocks composition paragraph insertion inside a table cell", () => {
+    const table = createTableNode();
+    const doc = blogEditorSchema.nodes.doc.create(null, [table]);
+    const cellPosition = getTableCellPosition(EditorState.create({ doc, schema: blogEditorSchema }), 0, 1, 0);
+    expect(cellPosition).toBeTypeOf("number");
+    const cell = doc.nodeAt(cellPosition ?? 0);
+    const paragraph = getCellParagraph(cell);
+    expect(paragraph).toBeTruthy();
+
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const state = EditorState.create({
+      doc,
+      schema: blogEditorSchema,
+      plugins: createTablePlugins({ isEditable: () => true }),
+      selection: TextSelection.create(doc, getCellTextEndPosition(cellPosition ?? 0, cell)),
+    });
+    const view = new EditorView(host, { state });
+    const before = view.state.doc.toJSON();
+    try {
+      view.dom.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+      const input = new InputEvent("beforeinput", { bubbles: true, cancelable: true, inputType: "insertParagraph" });
+      view.dom.dispatchEvent(input);
+
+      expect(input.defaultPrevented).toBe(true);
+      expect(view.state.doc.toJSON()).toEqual(before);
+    } finally {
+      view.dom.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+      view.destroy();
+      host.remove();
+    }
+  });
+
+  it("handles non-composition beforeinput paragraph insertion inside a table cell", () => {
+    const table = createTableNode();
+    const doc = blogEditorSchema.nodes.doc.create(null, [table]);
+    const cellPosition = getTableCellPosition(EditorState.create({ doc, schema: blogEditorSchema }), 0, 1, 0);
+    expect(cellPosition).toBeTypeOf("number");
+    const cell = doc.nodeAt(cellPosition ?? 0);
+    const paragraph = getCellParagraph(cell);
+    expect(paragraph).toBeTruthy();
+
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const state = EditorState.create({
+      doc,
+      schema: blogEditorSchema,
+      plugins: createTablePlugins({ isEditable: () => true }),
+      selection: TextSelection.create(doc, getCellTextEndPosition(cellPosition ?? 0, cell)),
+    });
+    const view = new EditorView(host, { state });
+    try {
+      const input = new InputEvent("beforeinput", { bubbles: true, cancelable: true, inputType: "insertParagraph" });
+      view.dom.dispatchEvent(input);
+      const targetCell = view.state.doc.nodeAt(cellPosition ?? 0);
+
+      expect(input.defaultPrevented).toBe(true);
+      expect(view.state.doc.firstChild?.type.name).toBe("table");
+      expect(targetCell?.childCount).toBe(2);
+      expect(targetCell?.firstChild?.textContent).toBe("1");
+    } finally {
+      view.destroy();
+      host.remove();
+    }
+  });
+
+  it("lets text beforeinput inside a table cell use the native ProseMirror input path", () => {
+    const table = createTableNode();
+    const doc = blogEditorSchema.nodes.doc.create(null, [table]);
+    const cellPosition = getTableCellPosition(EditorState.create({ doc, schema: blogEditorSchema }), 0, 1, 0);
+    expect(cellPosition).toBeTypeOf("number");
+    const cell = doc.nodeAt(cellPosition ?? 0);
+
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const state = EditorState.create({
+      doc,
+      schema: blogEditorSchema,
+      plugins: createTablePlugins({ isEditable: () => true }),
+      selection: TextSelection.create(doc, getCellTextEndPosition(cellPosition ?? 0, cell)),
+    });
+    const view = new EditorView(host, { state });
+    try {
+      const input = new InputEvent("beforeinput", { bubbles: true, cancelable: true, inputType: "insertText", data: "中文" });
+      view.dom.dispatchEvent(input);
+      const targetCell = view.state.doc.nodeAt(cellPosition ?? 0);
+
+      expect(input.defaultPrevented).toBe(false);
+      expect(view.state.doc.firstChild?.type.name).toBe("table");
+      expect(view.state.doc.firstChild?.childCount).toBe(2);
+      expect(targetCell?.textContent).toBe("1");
+    } finally {
+      view.destroy();
+      host.remove();
+    }
+  });
+
+  it("restores native input fallback inside a table cell before DOM parsing flattens the table", () => {
+    const table = createTableNode();
+    const doc = blogEditorSchema.nodes.doc.create(null, [table]);
+    const cellPosition = getTableCellPosition(EditorState.create({ doc, schema: blogEditorSchema }), 0, 1, 0);
+    expect(cellPosition).toBeTypeOf("number");
+    const cell = doc.nodeAt(cellPosition ?? 0);
+
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const state = EditorState.create({
+      doc,
+      schema: blogEditorSchema,
+      plugins: createTablePlugins({ isEditable: () => true }),
+      selection: TextSelection.create(doc, getCellTextEndPosition(cellPosition ?? 0, cell)),
+    });
+    const view = new EditorView(host, { state });
+    try {
+      view.dom.textContent = `${view.state.doc.textContent}直输`;
+      const input = new Event("input", { bubbles: true, cancelable: false });
+      view.dom.dispatchEvent(input);
+      const targetCell = view.state.doc.nodeAt(cellPosition ?? 0);
+
+      expect(view.state.doc.firstChild?.type.name).toBe("table");
+      expect(view.state.doc.firstChild?.childCount).toBe(2);
+      expect(view.state.doc.firstChild?.firstChild?.childCount).toBe(2);
+      expect(targetCell?.textContent).toBe("1直输");
+      expect(view.dom.querySelectorAll("table")).toHaveLength(1);
+    } finally {
+      view.destroy();
+      host.remove();
+    }
+  });
+
+  it("deduplicates repeated native input events inside a table cell by reading the DOM diff", () => {
+    const table = createTableNode();
+    const doc = blogEditorSchema.nodes.doc.create(null, [table]);
+    const cellPosition = getTableCellPosition(EditorState.create({ doc, schema: blogEditorSchema }), 0, 1, 0);
+    expect(cellPosition).toBeTypeOf("number");
+    const cell = doc.nodeAt(cellPosition ?? 0);
+
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const state = EditorState.create({
+      doc,
+      schema: blogEditorSchema,
+      plugins: createTablePlugins({ isEditable: () => true }),
+      selection: TextSelection.create(doc, getCellTextEndPosition(cellPosition ?? 0, cell)),
+    });
+    const view = new EditorView(host, { state });
+    try {
+      let typed = "";
+      for (const char of ["测", "试", "中", "文"]) {
+        typed += char;
+        const paragraph = view.dom.querySelector("td p");
+        expect(paragraph).toBeInstanceOf(HTMLParagraphElement);
+        if (paragraph) paragraph.textContent = `1${typed}`;
+        view.dom.dispatchEvent(new InputEvent("input", { bubbles: true, cancelable: false, inputType: "insertText", data: char }));
+        view.dom.dispatchEvent(new InputEvent("input", { bubbles: true, cancelable: false, inputType: "insertText", data: "测试中文" }));
+      }
+      const targetCell = view.state.doc.nodeAt(cellPosition ?? 0);
+
+      expect(view.state.doc.firstChild?.type.name).toBe("table");
+      expect(targetCell?.textContent).toBe("1测试中文");
+      expect(view.dom.querySelectorAll("table")).toHaveLength(1);
+    } finally {
+      view.destroy();
+      host.remove();
+    }
   });
 
   it("parses ProseMirror table wrappers without flattening table text into a paragraph", () => {
@@ -518,7 +788,7 @@ describe("tableCommands", () => {
 
   it("inserts typed text into a new paragraph from a table gap cursor", () => {
     let state = createTableState();
-    state = state.apply(state.tr.setSelection(TextSelection.near(state.doc.resolve(state.doc.content.size - 2), -1)));
+    state = state.apply(state.tr.setSelection(TextSelection.near(state.doc.resolve(getBodyLastCellTextEndPosition(state)), -1)));
     const dispatch = (tr: Transaction) => {
       state = state.apply(tr);
     };

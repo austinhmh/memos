@@ -1,9 +1,10 @@
-import type { Attrs, Node as ProseMirrorNode } from "prosemirror-model";
+import { chainCommands, splitBlock } from "prosemirror-commands";
+import type { Attrs, Node as ProseMirrorNode, ResolvedPos } from "prosemirror-model";
 import type { Command } from "prosemirror-state";
-import { Plugin, PluginKey, TextSelection } from "prosemirror-state";
+import { EditorState, Plugin, PluginKey, TextSelection } from "prosemirror-state";
 import { columnResizing, goToNextCell, tableEditing } from "prosemirror-tables";
 import { DecorationSet, type EditorView, type ViewMutationRecord } from "prosemirror-view";
-import { isCompositionTransaction } from "./CompositionGuardPlugin";
+import { isCompositionTransaction, isViewComposing } from "./CompositionGuardPlugin";
 import {
   deleteSelectedTablePart,
   enterNearTableGapCursor,
@@ -17,32 +18,171 @@ type MutableAttrs = Record<string, unknown>;
 
 const tableControlStatePluginKey = new PluginKey<DecorationSet>("tableControlsState");
 
+export const isInTableCell = (state: Parameters<Command>[0]) => {
+  const { $from } = state.selection;
+  for (let depth = $from.depth; depth > 0; depth -= 1) {
+    const role = $from.node(depth).type.spec.tableRole;
+    if (role === "cell" || role === "header_cell") {
+      return true;
+    }
+    if (role === "table") {
+      return false;
+    }
+  }
+  return false;
+};
+
+const getTableCellDepth = ($pos: ResolvedPos) => {
+  for (let depth = $pos.depth; depth > 0; depth -= 1) {
+    const role = $pos.node(depth).type.spec.tableRole;
+    if (role === "cell" || role === "header_cell") {
+      return depth;
+    }
+    if (role === "table") {
+      return null;
+    }
+  }
+  return null;
+};
+
+const selectionIsInsideSingleTableCell = (state: Parameters<Command>[0]) => {
+  const { $from, $to } = state.selection;
+  const fromCellDepth = getTableCellDepth($from);
+  const toCellDepth = getTableCellDepth($to);
+  return fromCellDepth !== null && toCellDepth !== null && $from.before(fromCellDepth) === $to.before(toCellDepth);
+};
+
+const splitBlockInTableCell: Command = (state, dispatch) => {
+  if (!isInTableCell(state)) {
+    return false;
+  }
+  return splitBlock(state, dispatch);
+};
+
+const isCompositionTextInputType = (inputType: string) => inputType === "insertCompositionText" || inputType === "insertFromComposition";
+
+const shouldLetCompositionInputPassThrough = (view: EditorView, event: InputEvent) =>
+  event.isComposing || isViewComposing(view) || isCompositionTextInputType(event.inputType);
+
+const getTextFromTextInputEvent = (event: InputEvent) => {
+  if (event.inputType === "insertText" || event.inputType === "insertReplacementText") {
+    return event.data || "";
+  }
+  return "";
+};
+
+const normalizePlainText = (text: string) => text.replace(/\s+/g, "");
+
+const inferNativeInsertedText = (previousText: string, currentText: string) => {
+  const previous = normalizePlainText(previousText);
+  const current = normalizePlainText(currentText);
+  if (!current || current === previous) {
+    return "";
+  }
+  if (current.startsWith(previous)) {
+    return current.slice(previous.length);
+  }
+
+  let start = 0;
+  while (start < previous.length && start < current.length && previous[start] === current[start]) {
+    start += 1;
+  }
+
+  let previousEnd = previous.length;
+  let currentEnd = current.length;
+  while (previousEnd > start && currentEnd > start && previous[previousEnd - 1] === current[currentEnd - 1]) {
+    previousEnd -= 1;
+    currentEnd -= 1;
+  }
+
+  return current.slice(start, currentEnd);
+};
+
+const handleNativeInputInTableCell = (view: EditorView, event: Event) => {
+  if (!selectionIsInsideSingleTableCell(view.state)) {
+    return false;
+  }
+
+  const inputEvent = event as InputEvent;
+  if (shouldLetCompositionInputPassThrough(view, inputEvent)) {
+    return false;
+  }
+
+  const text = inferNativeInsertedText(view.state.doc.textContent, view.dom.textContent || "");
+  if (!text) {
+    return false;
+  }
+
+  const tr = view.state.tr.insertText(text).scrollIntoView();
+  const nextState = view.state.apply(tr);
+  const resetState = EditorState.create({
+    doc: nextState.doc,
+    selection: nextState.selection,
+    schema: nextState.schema,
+    plugins: nextState.plugins,
+  });
+  view.updateState(resetState);
+
+  event.stopPropagation();
+  event.stopImmediatePropagation();
+  return true;
+};
+
+const positionIsInTableCell = ($pos: ResolvedPos) => {
+  for (let depth = $pos.depth; depth > 0; depth -= 1) {
+    const role = $pos.node(depth).type.spec.tableRole;
+    if (role === "cell" || role === "header_cell") {
+      return true;
+    }
+    if (role === "table") {
+      return false;
+    }
+  }
+  return false;
+};
+
+const getTextSelectionInsideClickedCell = (view: EditorView, event: MouseEvent, cell: HTMLElement) => {
+  const posAtPointer = view.posAtCoords({ left: event.clientX, top: event.clientY });
+  if (posAtPointer) {
+    const $pointer = view.state.doc.resolve(posAtPointer.pos);
+    if (positionIsInTableCell($pointer)) {
+      return TextSelection.near($pointer, posAtPointer.inside === -1 ? 1 : -1);
+    }
+  }
+
+  const target = event.target instanceof Element ? event.target : document.elementFromPoint(event.clientX, event.clientY);
+  const textBlock = target?.closest("p, h1, h2, h3, h4, h5, h6, pre") ?? cell.querySelector("p, h1, h2, h3, h4, h5, h6, pre");
+  const positionTarget = textBlock instanceof Element ? textBlock : cell;
+  const pos = view.posAtDOM(positionTarget, positionTarget.childNodes.length);
+  const $dom = view.state.doc.resolve(pos);
+  if (!positionIsInTableCell($dom)) {
+    return null;
+  }
+  return TextSelection.near($dom, -1);
+};
+
 const selectTextInsideClickedTableCell = (view: EditorView, event: MouseEvent) => {
   if (event.button !== 0 || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) {
     return false;
   }
 
-  const target = event.target instanceof Element ? event.target : document.elementFromPoint(event.clientX, event.clientY);
-  const cell = target?.closest(".blog-editor-content th, .blog-editor-content td");
-  if (!(cell instanceof HTMLElement) || !view.dom.contains(cell)) {
+  const target = event.target instanceof Element ? event.target : null;
+  const pointerTarget = document.elementFromPoint(event.clientX, event.clientY);
+  const cell = [pointerTarget, target]
+    .map((element) => element?.closest(".blog-editor-content th, .blog-editor-content td"))
+    .find((element): element is HTMLElement => element instanceof HTMLElement && view.dom.contains(element));
+  if (!cell) {
     return false;
   }
 
-  const cellContentStart = view.posAtDOM(cell, 0);
-  const cellPosition = cellContentStart - 1;
-  const cellNode = view.state.doc.nodeAt(cellPosition);
-  const role = cellNode?.type.spec.tableRole;
-  if (!cellNode || (role !== "cell" && role !== "header_cell")) {
+  const selection = getTextSelectionInsideClickedCell(view, event, cell);
+  if (!selection) {
     return false;
   }
 
   event.preventDefault();
   event.stopPropagation();
-  const posAtPointer = view.posAtCoords({ left: event.clientX, top: event.clientY });
-  const rawTextOffset = posAtPointer ? posAtPointer.pos - cellContentStart : 0;
-  const textOffset = Math.max(0, Math.min(rawTextOffset, cellNode.content.size));
-  const selection = TextSelection.near(view.state.doc.resolve(cellContentStart + textOffset), 1);
-  view.dispatch(view.state.tr.setSelection(selection).scrollIntoView());
+  view.dispatch(view.state.tr.setSelection(selection));
   view.focus();
   return true;
 };
@@ -64,16 +204,29 @@ const createTableControlStatePlugin = () =>
       handleDOMEvents: {
         beforeinput(view, event) {
           const inputEvent = event as InputEvent;
-          const text =
-            inputEvent.inputType === "insertText" || inputEvent.inputType === "insertCompositionText" ? inputEvent.data || "" : "";
-          if (!insertTextNearTableBoundary(text)(view.state, view.dispatch, view)) {
-            return false;
+          if ((inputEvent.inputType === "insertParagraph" || inputEvent.inputType === "insertLineBreak") && isInTableCell(view.state)) {
+            event.preventDefault();
+            if (inputEvent.isComposing || isViewComposing(view)) {
+              return true;
+            }
+            return splitBlockInTableCell(view.state, view.dispatch, view);
           }
 
-          event.preventDefault();
-          return true;
+          const text = shouldLetCompositionInputPassThrough(view, inputEvent) ? "" : getTextFromTextInputEvent(inputEvent);
+          if (insertTextNearTableBoundary(text)(view.state, view.dispatch, view)) {
+            event.preventDefault();
+            return true;
+          }
+
+          return false;
+        },
+        input(view, event) {
+          return handleNativeInputInTableCell(view, event);
         },
         mousedown(view, event) {
+          return selectTextInsideClickedTableCell(view, event);
+        },
+        click(view, event) {
           return selectTextInsideClickedTableCell(view, event);
         },
       },
@@ -100,10 +253,16 @@ const createTableControlStatePlugin = () =>
         return true;
       },
       handleKeyPress(view, event) {
+        if (event.isComposing || isViewComposing(view)) {
+          return false;
+        }
         const text = event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey ? event.key : "";
         return insertTextNearTableBoundary(text)(view.state, view.dispatch, view);
       },
       handleTextInput(view, _from, _to, text) {
+        if (isViewComposing(view)) {
+          return false;
+        }
         return typeTextNearTableGapCursor(text)(view.state, view.dispatch, view);
       },
     },
@@ -224,7 +383,7 @@ export const tableKeymap: Record<string, Command> = {
   ArrowUp: moveToAdjacentSelectedCell("vert", -1),
   ArrowLeft: moveToAdjacentSelectedCell("horiz", -1),
   ArrowRight: moveToAdjacentSelectedCell("horiz", 1),
-  Enter: enterNearTableGapCursor,
+  Enter: chainCommands(enterNearTableGapCursor, splitBlockInTableCell),
 };
 
 export const getCellAttrs = (dom: HTMLElement | string): Attrs => {

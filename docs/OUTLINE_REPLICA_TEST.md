@@ -115,6 +115,74 @@
 | T8.5 | 点击「编辑」按钮 | ProseMirror 编辑器懒加载，切换为可编辑模式 |
 | T8.6 | 检查渐进式渲染（>50k） | 首屏内容立即可见，向下滚动时后续 block 自动加载 |
 
+### T9. Mermaid C++ 调用链复现用例（必须通过）
+
+| 步骤 | 操作 | 通过标准 |
+|------|------|----------|
+| T9.1 | 创建或打开一条含下方 Mermaid 代码块的 memo | 保存成功，详情页无前端报错 |
+| T9.2 | 在 memo 详情页查看 Mermaid 图表 | 渲染为 SVG 图形，无 `Mermaid Error`，节点 label 显示 `ByteExpressContext::Init()` 与 `byte_express_context.cpp:95` |
+| T9.3 | 检查 SVG label 形态 | Mermaid 输出中的 `foreignObject` label 未被前端清洗删除，C++ 函数名、斜杠、括号和多行 label 均可见 |
+| T9.4 | 在 Blog/Writing 编辑页打开同一内容 | 图表同样渲染为 SVG；点击「显示代码」后源码可编辑，点击「隐藏代码」后图表仍可见 |
+
+复现内容：
+
+````markdown
+```mermaid
+flowchart TD
+ ByteExpressContext_Init["ByteExpressContext::Init()
+ byte_express_context.cpp:95"] --> RdmaEventDispatcher_ctor["RdmaEventDispatcher::RdmaEventDispatcher()
+ rdma_event_dispatcher.cpp:26"]
+
+ RdmaEventDispatcher_ctor --> RdmaEventDispatcher_CreateIdentifier["RdmaEventDispatcher::CreateIdentifier()
+ rdma_event_dispatcher.cpp:64"]
+ RdmaEventDispatcher_ctor --> RdmaContext_GetContexts["RdmaContext::GetContexts()
+ rdma_context.cpp:13"]
+
+ RdmaContext_GetContexts --> RdmaContext_ctor["RdmaContext::RdmaContext()
+ rdma_context.cpp:41"]
+ RdmaContext_ctor --> Worker_Context_ctor["Worker::Context::Context()
+ worker.cpp:178"]
+ Worker_Context_ctor --> Worker_EventContext_ctor["Worker::EventContext::EventContext()
+ worker.cpp:327"]
+
+ RdmaEventDispatcher_CreateIdentifier --> ClientEngine_DoResolveAddress["ClientEngine::DoResolveAddress()
+ client_engine.cpp:70"]
+ ClientEngine_DoResolveAddress --> ClientEngine_OnAddrResolvedEvent["ClientEngine::OnAddrResolvedEvent()
+ client_engine.cpp:133"]
+ ClientEngine_OnAddrResolvedEvent --> Engine_CreateResources["Engine::CreateResources()
+ engine.cpp:714"]
+
+ RdmaEventDispatcher_CreateIdentifier --> RdmaListener_BindListen["RdmaListener::Bind()/Listen()
+ rdma_listener.cpp:29"]
+ RdmaListener_BindListen --> RdmaListener_OnConnectRequestEvent["RdmaListener::OnConnectRequestEvent()
+ rdma_listener.cpp:96"]
+
+ Engine_CreateResources --> Engine_CreateQP["Engine::CreateQP()
+ engine.cpp:737"]
+ Engine_CreateQP --> ReceiveQueue_DoReload["Shared/UniqueRdmaReceiveQueue::DoReload()
+ rdma_receive_queue.cpp:73/183"]
+
+ Engine_CreateQP --> ClientEngine_DoConnect["ClientEngine::DoConnect()
+ client_engine.cpp:217"]
+ ClientEngine_DoConnect --> ServerEngine_DoAccept["ServerEngine::DoAccept()
+ server_engine.cpp:72"]
+ ServerEngine_DoAccept --> Engine_ActivateQP["Engine::ActivateQP()
+ engine.cpp:633"]
+ ServerEngine_DoAccept --> ClientEngine_OnConnectResponseEvent["ClientEngine::OnConnectResponseEvent()
+ client_engine.cpp:182"]
+ ClientEngine_OnConnectResponseEvent --> Engine_ActivateQP
+
+ Engine_ActivateQP --> Engine_DoSend["Engine::DoSend()
+ engine.cpp:1188"]
+ Engine_DoSend --> Engine_Transmit["Engine::Transmit()
+ engine.cpp:383"]
+ Engine_Transmit --> Worker_Context_Poll["Worker::Context::Poll()
+ worker.cpp:246"]
+ Worker_Context_Poll --> Engine_HandleWorkCompletion["Engine::HandleWorkCompletion()
+ engine.cpp:446"]
+```
+````
+
 ---
 
 ## 三、执行记录表
@@ -160,6 +228,10 @@
 | T8.4 大文档只读模式 | ✅ | 使用 MarkdownRenderer（非 ProseMirror），有「编辑」按钮 |
 | T8.5 大文档编辑切换 | ✅ | 有「编辑」按钮，BlogEditor 通过 lazy() 懒加载 |
 | T8.6 大文档渐进式渲染 | ✅ | IntersectionObserver + startTransition，首屏立即可见 |
+| T9.1 C++ 调用链复现数据 | ✅ | 2026-06-04 本轮全新环境 `http://localhost:18195` 创建复现 memo 成功 |
+| T9.2 详情页 C++ 调用链 Mermaid 渲染 | ✅ | 真实浏览器验证：详情页 1 个 Mermaid SVG，无 `Mermaid Error` / `No diagram type detected` |
+| T9.3 foreignObject label 保留 | ✅ | 真实浏览器 DOM：`foreignObjectCount=44`，包含 `ByteExpressContext::Init()` 与 `byte_express_context.cpp:95`；单元回归也覆盖 |
+| T9.4 Blog/Writing 编辑页渲染 | ✅ | 真实浏览器验证：点击「显示代码」后 `code-active=1` 且 SVG/label 保留；点击「隐藏代码」后 `code-active=0` 且 SVG/label 仍保留 |
 
 ---
 

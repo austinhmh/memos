@@ -321,7 +321,12 @@ const BlogDetail = () => {
               onMouseDown={() => handleMouseDown("right")}
             />
             <div className="shrink-0 self-stretch h-full overflow-y-auto hide-scrollbar pt-4 px-3 pb-8" style={{ width: `${rightWidth}%` }}>
-              <MemoDetailSidebar className="py-2" memo={memo} parentPage={locationState?.from || "/writing"} />
+              <MemoDetailSidebar
+                className="py-2"
+                memo={memo}
+                parentPage={locationState?.from || "/writing"}
+                saveStatus={blogEditorSaveStatus}
+              />
 
               {memo.attachments.length > 0 && (
                 <div className="mt-4">

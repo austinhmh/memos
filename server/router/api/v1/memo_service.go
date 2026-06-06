@@ -51,7 +51,7 @@ func (s *APIV1Service) CreateMemo(ctx context.Context, request *v1pb.CreateMemoR
 		Content:    request.Memo.Content,
 		Visibility: convertVisibilityToStore(request.Memo.Visibility),
 	}
-	if strings.TrimSpace(create.Content) == "" {
+	if strings.TrimSpace(create.Content) == "" && len(request.Memo.Attachments) == 0 {
 		return nil, status.Errorf(codes.InvalidArgument, "content cannot be empty")
 	}
 

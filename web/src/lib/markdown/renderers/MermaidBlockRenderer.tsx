@@ -3,7 +3,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { getRenderFallbackText, getRenderLimitMessage, MERMAID_RENDER_LIMIT } from "@/lib/markdown/renderLimits";
 import { renderMermaid } from "@/lib/mermaid/mermaidInit";
 import { normalizeMermaidCode } from "@/lib/mermaid/normalizeMermaidCode";
-import { sanitizeSvg } from "@/lib/sanitize-svg";
 import { cn } from "@/lib/utils";
 import { getThemeWithFallback, resolveTheme, setupSystemThemeListener } from "@/utils/theme";
 
@@ -51,11 +50,7 @@ export const MermaidBlockRenderer: React.FC<MermaidBlockRendererProps> = ({ code
         const { svg: renderedSvg } = await renderMermaid(normalizedCode, {
           theme: getMermaidTheme(currentTheme),
         });
-        const safeSvg = sanitizeSvg(renderedSvg);
-        if (!safeSvg) {
-          throw new Error("Unsafe Mermaid SVG output");
-        }
-        setSvg(safeSvg);
+        setSvg(renderedSvg);
         setError("");
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to render diagram");
