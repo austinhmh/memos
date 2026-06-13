@@ -64,7 +64,7 @@ import { createCompositionGuardPlugin, isViewComposing, runAfterCompositionSettl
 import { createHeadingIdPlugin } from "./plugins/HeadingIdPlugin";
 import { createMermaidPlugin } from "./plugins/MermaidPlugin";
 import { createSlashMenuPlugin, type SlashMenuState } from "./plugins/SlashMenuPlugin";
-import { createTablePlugins, tableKeymap } from "./plugins/TableControlsPlugin";
+import { createTablePlugins, pastePlainTextIntoTableCell, tableKeymap } from "./plugins/TableControlsPlugin";
 
 export type BlogEditorSaveStatus = "saved" | "unsaved";
 
@@ -975,6 +975,12 @@ const BlogEditor = ({ memo, readonly = false, onReady, onSaveStatusChange, norma
         const { $from } = v.state.selection;
         for (let d = $from.depth; d >= 0; d--) {
           if ($from.node(d).type.spec.code) return;
+        }
+
+        if (pastePlainTextIntoTableCell(v, text)) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          return;
         }
 
         if (html?.includes("data-pm-slice")) return;

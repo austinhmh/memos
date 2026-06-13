@@ -83,6 +83,8 @@ const container = document.getElementById("root");
 
 if (import.meta.env.DEV && window.location.pathname === "/__e2e__/blog-editor-table") {
   import("@/components/BlogEditor/e2e/TableE2EPage");
+} else if (import.meta.env.DEV && window.location.pathname === "/__e2e__/resizable-sidebars") {
+  import("@/components/BlogEditor/e2e/ResizableSidebarsE2EPage");
 } else {
   const root = createRoot(container as HTMLElement);
   root.render(<Main />);

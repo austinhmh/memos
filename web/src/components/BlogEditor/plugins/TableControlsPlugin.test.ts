@@ -6,7 +6,7 @@ import { CellSelection, selectedRect } from "prosemirror-tables";
 import { EditorView } from "prosemirror-view";
 import { describe, expect, it, vi } from "vitest";
 import { blogEditorSchema } from "../lib/schema";
-import { createTablePlugins, tableKeymap } from "./TableControlsPlugin";
+import { createTablePlugins, pastePlainTextIntoTableCell, tableKeymap } from "./TableControlsPlugin";
 import {
   addColumnBeforeIndex,
   addRowBeforeIndex,
@@ -712,6 +712,45 @@ describe("tableCommands", () => {
       expect(targetCell?.textContent).toBe("1直输");
       expect(targetCell?.textContent).not.toContain("编辑链接");
       expect(targetCell?.textContent).not.toContain("DOCS.NVIDIA.COM");
+    } finally {
+      view.destroy();
+      host.remove();
+    }
+  });
+
+  it("pastes structured content into a table cell as plain text only", () => {
+    const headerRow = blogEditorSchema.nodes.table_row.create(null, [createTableHeader("A")]);
+    const bodyCell = createTableCell("Seed");
+    const bodyRow = blogEditorSchema.nodes.table_row.create(null, [bodyCell]);
+    const table = blogEditorSchema.nodes.table.create(null, [headerRow, bodyRow]);
+    const doc = blogEditorSchema.nodes.doc.create(null, [table]);
+    const baseState = EditorState.create({ doc, schema: blogEditorSchema });
+    const cellPosition = getTableCellPosition(baseState, 0, 1, 0);
+    expect(cellPosition).toBeTypeOf("number");
+
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const state = EditorState.create({
+      doc,
+      schema: blogEditorSchema,
+      plugins: createTablePlugins({ isEditable: () => true }),
+      selection: TextSelection.create(doc, getCellTextEndPosition(cellPosition ?? 0, bodyCell)),
+    });
+    const view = new EditorView(host, { state });
+    try {
+      const handled = pastePlainTextIntoTableCell(view, "| Nested | Table |\n|---|---|\n| A | B |");
+
+      expect(handled).toBe(true);
+      expect(view.state.doc.firstChild?.type.name).toBe("table");
+      expect(view.state.doc.textContent).toContain("Seed| Nested | Table |");
+      expect(view.state.doc.textContent).toContain("|---|---|");
+      let tableCount = 0;
+      view.state.doc.descendants((node) => {
+        if (node.type.spec.tableRole === "table") {
+          tableCount += 1;
+        }
+      });
+      expect(tableCount).toBe(1);
     } finally {
       view.destroy();
       host.remove();

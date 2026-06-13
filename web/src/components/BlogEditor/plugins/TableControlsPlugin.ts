@@ -53,6 +53,15 @@ const selectionIsInsideSingleTableCell = (state: Parameters<Command>[0]) => {
   return fromCellDepth !== null && toCellDepth !== null && $from.before(fromCellDepth) === $to.before(toCellDepth);
 };
 
+export const pastePlainTextIntoTableCell = (view: EditorView, text: string) => {
+  if (!text || !selectionIsInsideSingleTableCell(view.state)) {
+    return false;
+  }
+
+  view.dispatch(view.state.tr.insertText(text).scrollIntoView().setMeta("paste", true).setMeta("uiEvent", "paste"));
+  return true;
+};
+
 const splitBlockInTableCell: Command = (state, dispatch) => {
   if (!isInTableCell(state)) {
     return false;
@@ -278,6 +287,14 @@ const createTableControlStatePlugin = () =>
     },
     props: {
       decorations: (state) => tableControlStatePluginKey.getState(state) ?? null,
+      handlePaste(view, event) {
+        const text = event.clipboardData?.getData("text/plain") ?? "";
+        if (!pastePlainTextIntoTableCell(view, text)) {
+          return false;
+        }
+        event.preventDefault();
+        return true;
+      },
       handleDOMEvents: {
         beforeinput(view, event) {
           const inputEvent = event as InputEvent;

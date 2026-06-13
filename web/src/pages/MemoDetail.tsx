@@ -17,6 +17,7 @@ import useCurrentUser from "@/hooks/useCurrentUser";
 import useMediaQuery from "@/hooks/useMediaQuery";
 import { useMemo, useMemoComments } from "@/hooks/useMemoQueries";
 import useNavigateTo from "@/hooks/useNavigateTo";
+import { useResizableSidebars } from "@/hooks/useResizableSidebars";
 import { useUser } from "@/hooks/useUserQueries";
 import i18n from "@/i18n";
 import { MarkdownRenderer } from "@/lib/markdown/MarkdownRenderer";
@@ -39,36 +40,9 @@ const MemoDetail = () => {
   const [showCommentEditor, setShowCommentEditor] = useState(false);
   const [blogEditorSaveStatus, setBlogEditorSaveStatus] = useState<"saved" | "unsaved">("saved");
 
-  // Resizable panels
-  const [leftWidth, setLeftWidth] = useState(20);
-  const [rightWidth, setRightWidth] = useState(20);
-  const draggingRef = useRef<"left" | "right" | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const handleMouseDown = useCallback((side: "left" | "right") => {
-    draggingRef.current = side;
-    const onMouseMove = (e: MouseEvent) => {
-      if (!containerRef.current || !draggingRef.current) return;
-      const rect = containerRef.current.getBoundingClientRect();
-      const pct = ((e.clientX - rect.left) / rect.width) * 100;
-      if (draggingRef.current === "left") {
-        setLeftWidth(Math.max(10, Math.min(35, pct)));
-      } else {
-        setRightWidth(Math.max(10, Math.min(35, 100 - pct)));
-      }
-    };
-    const onMouseUp = () => {
-      draggingRef.current = null;
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    };
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
-  }, []);
+  const { containerRef, leftWidth, rightWidth, leftResizeHandleProps, rightResizeHandleProps } = useResizableSidebars({
+    storageKey: "memo-detail-sidebar-width",
+  });
 
   const { data: memo, error, isLoading } = useMemo(memoName, { enabled: !!memoName });
 
@@ -205,9 +179,11 @@ const MemoDetail = () => {
               <MemoTableOfContents content={memo.content} />
             </div>
             <div
-              className="shrink-0 w-1 cursor-col-resize hover:bg-primary/30 transition-colors"
-              onMouseDown={() => handleMouseDown("left")}
-            />
+              className="group relative z-10 -mx-2 w-4 shrink-0 cursor-col-resize self-stretch touch-none select-none"
+              {...leftResizeHandleProps}
+            >
+              <div className="mx-auto h-full w-px bg-border/60 transition-colors group-hover:bg-primary/60 group-active:bg-primary" />
+            </div>
           </>
         )}
 
@@ -240,9 +216,11 @@ const MemoDetail = () => {
         {md && (
           <>
             <div
-              className="shrink-0 w-1 cursor-col-resize hover:bg-primary/30 transition-colors"
-              onMouseDown={() => handleMouseDown("right")}
-            />
+              className="group relative z-10 -mx-2 w-4 shrink-0 cursor-col-resize self-stretch touch-none select-none"
+              {...rightResizeHandleProps}
+            >
+              <div className="mx-auto h-full w-px bg-border/60 transition-colors group-hover:bg-primary/60 group-active:bg-primary" />
+            </div>
             <div className="shrink-0 self-stretch h-full overflow-y-auto hide-scrollbar pt-4 px-3 pb-8" style={{ width: `${rightWidth}%` }}>
               <MemoDetailSidebar className="py-2" memo={memo} parentPage={locationState?.from} saveStatus={blogEditorSaveStatus} />
 

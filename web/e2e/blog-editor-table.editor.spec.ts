@@ -56,6 +56,32 @@ test.describe("BlogEditor table end-to-end behavior", () => {
     await expect(readonlyOutput.locator("td").first()).toHaveText("粘贴");
   });
 
+  test("pastes structured clipboard content into a table cell as plain text only", async ({ page }) => {
+    const firstCell = page.locator(tableCellSelector);
+    const savedMarkdown = page.getByTestId("saved-markdown");
+    const readonlyOutput = page.getByTestId("readonly-output");
+
+    await firstCell.click();
+    await selectNodeContents(page, `${tableCellSelector} p`);
+    await page.evaluate(async () => {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "text/plain": new Blob(["Nested Table A B"], { type: "text/plain" }),
+          "text/html": new Blob(["<table><tbody><tr><td>Nested</td><td>Table</td></tr><tr><td>A</td><td>B</td></tr></tbody></table>"], {
+            type: "text/html",
+          }),
+        }),
+      ]);
+    });
+    await page.keyboard.press(`${modifierKey}+V`);
+    await saveEditor(page);
+
+    await expect(savedMarkdown).toContainText("Nested Table A B");
+    await expect(savedMarkdown).not.toContainText("| Nested | Table |");
+    await expect(readonlyOutput.locator("table")).toHaveCount(1);
+    await expect(readonlyOutput.locator("td").first()).toHaveText("Nested Table A B");
+  });
+
   test("copies a single table body cell as plain cell content instead of a 1x1 table", async ({ page }) => {
     const firstCell = page.locator(tableCellSelector);
 
