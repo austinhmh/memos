@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 const editorSelector = ".blog-editor .ProseMirror[contenteditable='true']";
 const tableCellSelector = `${editorSelector} table tbody tr:nth-child(2) td:first-child`;
+const headingSelector = `${editorSelector} h1`;
 const modifierKey = process.platform === "darwin" ? "Meta" : "Control";
 
 const saveEditor = async (page: import("@playwright/test").Page) => {
@@ -18,11 +19,38 @@ const selectNodeContents = async (page: import("@playwright/test").Page, selecto
   });
 };
 
+const placeCaretAtStart = async (page: import("@playwright/test").Page, selector: string) => {
+  await page.locator(selector).evaluate((node) => {
+    const selection = window.getSelection();
+    const range = document.createRange();
+    const target = node.firstChild ?? node;
+    range.setStart(target, 0);
+    range.collapse(true);
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+  });
+};
+
 test.describe("BlogEditor table end-to-end behavior", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/__e2e__/blog-editor-table");
     await expect(page.locator(editorSelector)).toBeVisible();
     await expect(page.locator(tableCellSelector)).toBeVisible();
+  });
+
+  test("inserts spaces on Tab inside heading text instead of moving focus away", async ({ page }) => {
+    const editor = page.locator(editorSelector);
+    const heading = page.locator(headingSelector);
+    const savedMarkdown = page.getByTestId("saved-markdown");
+
+    await heading.click();
+    await placeCaretAtStart(page, headingSelector);
+    await page.keyboard.press("Tab");
+    await page.keyboard.type("缩进");
+    await saveEditor(page);
+
+    await expect(editor).toBeFocused();
+    await expect(savedMarkdown).toContainText("#   缩进gcache整体介绍");
   });
 
   test("keeps non-editable bookmark UI out of table input, saved markdown, and readonly output", async ({ page }) => {

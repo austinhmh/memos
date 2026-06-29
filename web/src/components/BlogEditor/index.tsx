@@ -64,7 +64,7 @@ import { createCompositionGuardPlugin, isViewComposing, runAfterCompositionSettl
 import { createHeadingIdPlugin } from "./plugins/HeadingIdPlugin";
 import { createMermaidPlugin } from "./plugins/MermaidPlugin";
 import { createSlashMenuPlugin, type SlashMenuState } from "./plugins/SlashMenuPlugin";
-import { createTablePlugins, pastePlainTextIntoTableCell, tableKeymap } from "./plugins/TableControlsPlugin";
+import { createTablePlugins, isInTableCell, pastePlainTextIntoTableCell, tableKeymap } from "./plugins/TableControlsPlugin";
 
 export type BlogEditorSaveStatus = "saved" | "unsaved";
 
@@ -442,6 +442,27 @@ const selectEntireDocument: Command = (state, dispatch) => {
 
 const selectEditorContent = chainCommands(selectAll(schema.nodes.code_block), selectAll(schema.nodes.blockquote), selectEntireDocument);
 
+const indentWithSpaces: Command = (state, dispatch) => {
+  const { selection } = state;
+  if (isInTableCell(state) || !selection.$from.parent.type.isTextblock) {
+    return false;
+  }
+
+  if (dispatch) {
+    const spaces = "  ";
+    const { tr } = state;
+    dispatch(
+      tr
+        .insertText(spaces, selection.from, selection.to)
+        .setSelection(TextSelection.create(tr.doc, selection.from + spaces.length))
+        .scrollIntoView(),
+    );
+  }
+  return true;
+};
+
+const preventTabEscape: Command = (state) => !isInTableCell(state);
+
 const ignoreEnterDuringComposition: Command = (_state, _dispatch, view) => (view ? isViewComposing(view) : false);
 
 const buildBlogEditorKeymap = (manualSave: Command): Record<string, Command> => ({
@@ -500,8 +521,19 @@ const buildBlogEditorKeymap = (manualSave: Command): Record<string, Command> => 
     splitHeading(schema.nodes.heading),
   ),
   Backspace: chainCommands(backspaceToParagraph(schema.nodes.heading), backspaceToParagraph(schema.nodes.code_block)),
-  Tab: chainCommands(indentInCode, sinkListItem(schema.nodes.checkbox_item), sinkListItem(schema.nodes.list_item)),
-  "Shift-Tab": chainCommands(outdentInCode, liftListItem(schema.nodes.checkbox_item), liftListItem(schema.nodes.list_item)),
+  Tab: chainCommands(
+    indentInCode,
+    sinkListItem(schema.nodes.checkbox_item),
+    sinkListItem(schema.nodes.list_item),
+    indentWithSpaces,
+    preventTabEscape,
+  ),
+  "Shift-Tab": chainCommands(
+    outdentInCode,
+    liftListItem(schema.nodes.checkbox_item),
+    liftListItem(schema.nodes.list_item),
+    preventTabEscape,
+  ),
   "Shift-Enter": chainCommands(newlineInCode, toggleWrap(schema.nodes.blockquote)),
   "Mod-]": chainCommands(
     indentInCode,

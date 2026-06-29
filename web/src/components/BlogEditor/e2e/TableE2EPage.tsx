@@ -13,7 +13,11 @@ import { User_Role, UserSchema } from "@/types/proto/api/v1/user_service_pb";
 import BlogEditor from "../index";
 import "@/index.css";
 
-const initialContent = `| File | Note |
+const initialContent = `# gcache整体介绍
+
+主要
+
+| File | Note |
 |---|---|
 | Seed | Ready |
 
