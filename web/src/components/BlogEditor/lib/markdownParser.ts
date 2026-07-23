@@ -74,6 +74,10 @@ function getProseMirrorTokenizer(): MarkdownIt {
   if (cachedTokenizer) return cachedTokenizer;
 
   const md = new MarkdownIt("default", { html: true, breaks: false, linkify: false });
+  // Literal leading NBSP is stripped by markdown-it; encode as entities first.
+  md.core.ruler.before("block", "preserve_leading_nbsp", (state) => {
+    state.src = state.src.replace(/(^|\n)(\u00a0+)/g, (_m, br: string, nbsps: string) => br + "&nbsp;".repeat(nbsps.length));
+  });
   md.use(emojiPlugin);
   md.use(markdownMath);
   md.use(markdownCheckboxes);

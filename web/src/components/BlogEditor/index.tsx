@@ -442,6 +442,11 @@ const selectEntireDocument: Command = (state, dispatch) => {
 
 const selectEditorContent = chainCommands(selectAll(schema.nodes.code_block), selectAll(schema.nodes.blockquote), selectEntireDocument);
 
+// Use NBSP so paragraph indent survives Markdown round-trip.
+// CommonMark strips leading ASCII spaces (or turns 4+ into a code block).
+const PARAGRAPH_INDENT_UNIT = "\u00a0\u00a0";
+const isIndentWhitespace = (ch: string) => ch === " " || ch === "\u00a0" || ch === "\t";
+
 const indentWithSpaces: Command = (state, dispatch) => {
   const { selection } = state;
   if (isInTableCell(state) || !selection.$from.parent.type.isTextblock) {
@@ -449,7 +454,7 @@ const indentWithSpaces: Command = (state, dispatch) => {
   }
 
   if (dispatch) {
-    const spaces = "  ";
+    const spaces = PARAGRAPH_INDENT_UNIT;
     const { tr } = state;
     dispatch(
       tr
@@ -457,6 +462,30 @@ const indentWithSpaces: Command = (state, dispatch) => {
         .setSelection(TextSelection.create(tr.doc, selection.from + spaces.length))
         .scrollIntoView(),
     );
+  }
+  return true;
+};
+
+const outdentWithSpaces: Command = (state, dispatch) => {
+  const { selection } = state;
+  if (isInTableCell(state) || !selection.$from.parent.type.isTextblock) {
+    return false;
+  }
+
+  const { $from } = selection;
+  const parentStart = $from.start();
+  const parentText = $from.parent.textContent;
+  let remove = 0;
+  const maxRemove = PARAGRAPH_INDENT_UNIT.length;
+  while (remove < maxRemove && remove < parentText.length && isIndentWhitespace(parentText[remove]!)) {
+    remove += 1;
+  }
+  if (remove === 0) {
+    return false;
+  }
+
+  if (dispatch) {
+    dispatch(state.tr.delete(parentStart, parentStart + remove).scrollIntoView());
   }
   return true;
 };
@@ -532,6 +561,7 @@ const buildBlogEditorKeymap = (manualSave: Command): Record<string, Command> => 
     outdentInCode,
     liftListItem(schema.nodes.checkbox_item),
     liftListItem(schema.nodes.list_item),
+    outdentWithSpaces,
     preventTabEscape,
   ),
   "Shift-Enter": chainCommands(newlineInCode, toggleWrap(schema.nodes.blockquote)),
@@ -539,9 +569,10 @@ const buildBlogEditorKeymap = (manualSave: Command): Record<string, Command> => 
     indentInCode,
     sinkListItem(schema.nodes.checkbox_item),
     sinkListItem(schema.nodes.list_item),
+    indentWithSpaces,
     toggleWrap(schema.nodes.blockquote),
   ),
-  "Mod-[": chainCommands(outdentInCode, liftListItem(schema.nodes.checkbox_item), liftListItem(schema.nodes.list_item)),
+  "Mod-[": chainCommands(outdentInCode, liftListItem(schema.nodes.checkbox_item), liftListItem(schema.nodes.list_item), outdentWithSpaces),
   ...(isMac
     ? {
         "Ctrl-a": moveToPreviousNewline,

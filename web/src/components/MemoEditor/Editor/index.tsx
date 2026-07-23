@@ -10,7 +10,7 @@ import { handleMarkdownShortcuts } from "./shortcuts";
 import TagSuggestions from "./TagSuggestions";
 import { useListCompletion } from "./useListCompletion";
 
-const TAB_INDENT = "  ";
+const TAB_INDENT = "\u00a0\u00a0"; // NBSP so indent survives Markdown parse/render
 
 export interface EditorRefActions {
   getEditor: () => HTMLTextAreaElement | null;

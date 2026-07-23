@@ -201,7 +201,21 @@ export function createMdSerializer(): MarkdownSerializer {
       state.renderContent(node);
     },
     text(state, node) {
-      state.text(node.text!, true);
+      let text = node.text!;
+      // CommonMark strips leading spaces/NBSP (and 4+ spaces become a code block).
+      // Emit HTML entities so indent survives markdown-it parse/render.
+      const tableState = state as TableSerializationState;
+      const atLineStart = tableState.atBlockStart || /(^|\n)$/.test(tableState.out);
+      if (atLineStart) {
+        const match = text.match(/^[ \t\u00a0]+/);
+        if (match) {
+          state.write("&nbsp;".repeat(match[0].length));
+          text = text.slice(match[0].length);
+        }
+      }
+      if (text.length > 0) {
+        state.text(text, true);
+      }
     },
     bookmark(state, node) {
       state.write(sanitizeUrl(node.attrs.url as string) || "");
