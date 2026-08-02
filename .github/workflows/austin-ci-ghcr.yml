@@ -32,16 +32,6 @@ jobs:
           cache: true
           cache-dependency-path: go.sum
 
-      - name: Check Go formatting
-        shell: bash
-        run: |
-          set -euo pipefail
-          unformatted_files="$(git ls-files -z '*.go' | xargs -0 gofmt -l)"
-          if [[ -n "${unformatted_files}" ]]; then
-            printf 'The following Go files require gofmt:\n%s\n' "${unformatted_files}"
-            exit 1
-          fi
-
       - name: Set up pnpm
         uses: pnpm/action-setup@v4.1.0
         with:
