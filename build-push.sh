@@ -1,26 +1,12 @@
 #!/usr/bin/env bash
 
-# build-push.sh - Build frontend + Docker image and optionally push to GHCR.
+# Push the current commit, wait for GitHub Actions, and print the immutable GHCR image.
 
 set -Eeuo pipefail
 IFS=$'\n\t'
 
-cd "$(dirname "$0")"
-
-usage() {
-    cat <<'EOF'
-Usage:
-  ./build-push.sh [--local] [--proxy|--no-proxy] [--image IMAGE] [tag]
-  ./build-push.sh true|false [tag]   # backwards-compatible proxy toggle
-
-Environment (.env is supported for the allowlisted variables below):
-  GITHUB_USERNAME       GHCR username for push
-  GITHUB_TOKEN          GHCR token with write:packages for push
-  IMAGE_NAME            Image name, default ghcr.io/austinhmh/memos
-  MEMOS_BUILD_PROXY     Explicit build proxy URL, e.g. http://host.docker.internal:7897
-  MEMOS_PROXY_PORT      Proxy port used when --proxy is set, default 7897
-EOF
-}
+SCRIPT_DIRECTORY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "${SCRIPT_DIRECTORY}"
 
 die() {
     echo "错误: $*" >&2
@@ -32,7 +18,7 @@ load_env_file() {
     local line key value
 
     [ -f "$env_file" ] || return 0
-    echo "加载 .env 配置文件（仅导入脚本允许的变量）..."
+    echo "加载 .env 配置文件（仅导入脚本允许的变量）..." >&2
 
     while IFS= read -r line || [ -n "$line" ]; do
         line="${line%$'\r'}"
@@ -54,268 +40,150 @@ load_env_file() {
 
         [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die ".env 中存在非法变量名: $key"
         case "$key" in
-            GITHUB_USERNAME|GITHUB_TOKEN|IMAGE_NAME|MEMOS_BUILD_PROXY|MEMOS_PROXY_PORT)
+            GITHUB_USERNAME|GITHUB_TOKEN|MEMOS_BUILD_REMOTE|MEMOS_BUILD_WORKFLOW|MEMOS_BUILD_REPOSITORY|MEMOS_BUILD_IMAGE|MEMOS_BUILD_RUN_DISCOVERY_TIMEOUT_SECONDS|MEMOS_BUILD_RUN_DISCOVERY_POLL_SECONDS|MEMOS_BUILD_RUN_STATUS_TIMEOUT_SECONDS|MEMOS_BUILD_RUN_STATUS_POLL_SECONDS|MEMOS_BUILD_GITHUB_API_BASE)
                 if [ -z "${!key+x}" ]; then
                     export "$key=$value"
                 fi
                 ;;
             *)
-                echo "  忽略 .env 中未允许的变量: $key"
                 ;;
         esac
     done < "$env_file"
 }
 
-validate_tag() {
-    local tag="$1"
-    [[ "$tag" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || die "非法镜像标签: $tag"
-}
+validate_positive_integer() {
+    local variable_name="$1"
+    local variable_value="$2"
 
-validate_image_name() {
-    local image="$1"
-    [ -n "$image" ] || die "IMAGE_NAME 不能为空"
-    [[ "$image" != -* ]] || die "IMAGE_NAME 不能以 '-' 开头"
-    [[ ! "$image" =~ [[:space:][:cntrl:]\;\`\'\"\|\&\<\>\$] ]] || die "IMAGE_NAME 包含非法字符"
-}
-
-validate_port() {
-    local port="$1"
-    [[ "$port" =~ ^[0-9]+$ ]] || die "非法代理端口: $port"
-    [ "$port" -ge 1 ] && [ "$port" -le 65535 ] || die "代理端口超出范围: $port"
-}
-
-validate_proxy_url() {
-    local proxy_url="$1"
-    [[ "$proxy_url" =~ ^https?://[^[:space:]@/]+(:[0-9]+)?/?$ || "$proxy_url" =~ ^https?://\[[0-9A-Fa-f:]+\](:[0-9]+)?/?$ ]] || die "非法代理 URL: $proxy_url"
-    [[ ! "$proxy_url" =~ ^https?://[^/]*@ ]] || die "代理 URL 不能包含用户名或密码"
-}
-
-require_dockerignore_rule() {
-    local rule="$1"
-    if ! grep -Fxq -- "$rule" .dockerignore; then
-        die ".dockerignore 缺少必要规则: $rule"
-    fi
-}
-
-verify_build_context_guards() {
-    local required_rules=(
-        ".env"
-        ".env.*"
-        ".npmrc"
-        ".yarnrc*"
-        ".netrc"
-        ".aws/"
-        ".ssh/"
-        ".kube/"
-        "credentials.json"
-        "secrets.json"
-        "service-account*.json"
-        "*.secret"
-        "*.token"
-        "*.pem"
-        "*.key"
-        "*.db"
-        ".pnpm-store"
-        "data/"
-    )
-    local rule
-
-    [ -f .dockerignore ] || die "缺少 .dockerignore，拒绝构建以避免打包敏感文件"
-    for rule in "${required_rules[@]}"; do
-        require_dockerignore_rule "$rule"
-    done
+    [[ "${variable_value}" =~ ^[1-9][0-9]*$ ]] || die "${variable_name} 必须是正整数: ${variable_value}"
 }
 
 load_env_file ".env"
 
-IMAGE_NAME="${IMAGE_NAME:-ghcr.io/austinhmh/memos}"
-DOCKERFILE="scripts/Dockerfile"
-LOCAL_ONLY=false
-USE_PROXY=false
-VERSION_TAG="latest"
-TAG_SET=false
+REMOTE_NAME="${MEMOS_BUILD_REMOTE:-origin}"
+WORKFLOW_FILE="${MEMOS_BUILD_WORKFLOW:-austin-ci-ghcr.yml}"
+REPOSITORY="${MEMOS_BUILD_REPOSITORY:-austinhmh/memos}"
+IMAGE_NAME="${MEMOS_BUILD_IMAGE:-ghcr.io/austinhmh/memos}"
+RUN_DISCOVERY_TIMEOUT_SECONDS="${MEMOS_BUILD_RUN_DISCOVERY_TIMEOUT_SECONDS:-300}"
+RUN_DISCOVERY_POLL_SECONDS="${MEMOS_BUILD_RUN_DISCOVERY_POLL_SECONDS:-15}"
+RUN_STATUS_TIMEOUT_SECONDS="${MEMOS_BUILD_RUN_STATUS_TIMEOUT_SECONDS:-7200}"
+RUN_STATUS_POLL_SECONDS="${MEMOS_BUILD_RUN_STATUS_POLL_SECONDS:-60}"
+GITHUB_API_BASE="${MEMOS_BUILD_GITHUB_API_BASE:-https://api.github.com}"
 
-while [ "$#" -gt 0 ]; do
-    case "$1" in
-        --help|-h)
-            usage
-            exit 0
-            ;;
-        --local)
-            LOCAL_ONLY=true
-            ;;
-        --proxy|true)
-            USE_PROXY=true
-            ;;
-        --no-proxy|false)
-            USE_PROXY=false
-            ;;
-        --image)
-            shift
-            [ "$#" -gt 0 ] || die "--image 需要参数"
-            IMAGE_NAME="$1"
-            ;;
-        --image=*)
-            IMAGE_NAME="${1#--image=}"
-            ;;
-        --*)
-            die "未知参数: $1"
-            ;;
-        *)
-            if [ "$TAG_SET" = true ]; then
-                die "只能指定一个镜像标签"
-            fi
-            VERSION_TAG="$1"
-            TAG_SET=true
-            ;;
-    esac
+validate_positive_integer "MEMOS_BUILD_RUN_DISCOVERY_TIMEOUT_SECONDS" "${RUN_DISCOVERY_TIMEOUT_SECONDS}"
+validate_positive_integer "MEMOS_BUILD_RUN_DISCOVERY_POLL_SECONDS" "${RUN_DISCOVERY_POLL_SECONDS}"
+validate_positive_integer "MEMOS_BUILD_RUN_STATUS_TIMEOUT_SECONDS" "${RUN_STATUS_TIMEOUT_SECONDS}"
+validate_positive_integer "MEMOS_BUILD_RUN_STATUS_POLL_SECONDS" "${RUN_STATUS_POLL_SECONDS}"
+
+command -v git >/dev/null 2>&1 || die "未找到 git"
+command -v curl >/dev/null 2>&1 || die "未找到 curl"
+command -v jq >/dev/null 2>&1 || die "未找到 jq"
+git rev-parse --is-inside-work-tree >/dev/null 2>&1 || die "当前目录不是 Git 仓库"
+
+BRANCH_NAME="$(git branch --show-current)"
+[ -n "${BRANCH_NAME}" ] || die "不支持 detached HEAD"
+if [[ "${BRANCH_NAME}" != "main" && "${BRANCH_NAME}" != feat/* ]]; then
+    die "分支 ${BRANCH_NAME} 不会触发 ${WORKFLOW_FILE}；请使用 main 或 feat/**"
+fi
+
+git remote get-url "${REMOTE_NAME}" >/dev/null 2>&1 || die "Git remote ${REMOTE_NAME} 不存在"
+[ -z "$(git status --porcelain --untracked-files=all)" ] || die "工作区不干净，请先提交准备构建的改动"
+
+COMMIT_SHA="$(git rev-parse HEAD)"
+[[ "${COMMIT_SHA}" =~ ^[0-9a-f]{40}$ ]] || die "无法取得完整提交 SHA"
+
+GITHUB_API_TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+[ -n "${GITHUB_API_TOKEN}" ] || die "请在 .env 中设置 GITHUB_TOKEN"
+[[ "${GITHUB_API_TOKEN}" != ghp_replace* ]] || die "GITHUB_TOKEN 仍是示例占位值"
+
+github_api_get() {
+    local request_url="$1"
     shift
-done
 
-validate_tag "$VERSION_TAG"
-validate_image_name "$IMAGE_NAME"
-verify_build_context_guards
-
-if [ "$LOCAL_ONLY" = false ]; then
-    [ -n "${GITHUB_USERNAME:-}" ] || die "请通过环境变量或 .env 设置 GITHUB_USERNAME"
-    [ -n "${GITHUB_TOKEN:-}" ] || die "请通过环境变量或 .env 设置 GITHUB_TOKEN（需要 write:packages 权限）"
-    [[ "${GITHUB_TOKEN}" != ghp_replace* ]] || die "GITHUB_TOKEN 仍是示例占位值"
-fi
-
-HOST_ARCH=$(uname -m)
-case "$HOST_ARCH" in
-    x86_64) TARGET_ARCH="amd64" ;;
-    aarch64|arm64) TARGET_ARCH="arm64" ;;
-    *) TARGET_ARCH="amd64" ;;
-esac
-
-DOCKER_BUILD_ARGS=()
-DOCKER_EXTRA_ARGS=()
-CONTAINER_PROXY=""
-if [ "$USE_PROXY" = true ] || [ -n "${MEMOS_BUILD_PROXY:-}" ]; then
-    PROXY_PORT="${MEMOS_PROXY_PORT:-7897}"
-    validate_port "$PROXY_PORT"
-    if [ -n "${MEMOS_BUILD_PROXY:-}" ]; then
-        CONTAINER_PROXY="$MEMOS_BUILD_PROXY"
-    elif [[ "${OSTYPE:-}" == linux-gnu* ]]; then
-        CONTAINER_PROXY="http://172.17.0.1:${PROXY_PORT}"
-        DOCKER_EXTRA_ARGS+=(--add-host=host.docker.internal:host-gateway)
-    else
-        CONTAINER_PROXY="http://host.docker.internal:${PROXY_PORT}"
-        DOCKER_EXTRA_ARGS+=(--add-host=host.docker.internal:host-gateway)
-    fi
-    validate_proxy_url "$CONTAINER_PROXY"
-    DOCKER_BUILD_ARGS+=(--build-arg "HTTP_PROXY=$CONTAINER_PROXY" --build-arg "HTTPS_PROXY=$CONTAINER_PROXY")
-fi
-
-cat <<EOF
-==========================================
-Memos 构建$([ "$LOCAL_ONLY" = true ] && echo "" || echo "并推送")
-==========================================
-镜像名称:   $IMAGE_NAME
-版本标签:   $VERSION_TAG
-目标架构:   linux/$TARGET_ARCH
-仅本地构建: $LOCAL_ONLY
-使用代理:   $([ -n "$CONTAINER_PROXY" ] && echo "是" || echo "否")
-==========================================
-EOF
-
-if [ ! -f "$DOCKERFILE" ]; then
-    die "找不到 $DOCKERFILE，请在 memos 项目根目录执行"
-fi
-
-echo ""
-echo "[ 1/5 ] 构建前端 (pnpm release → server/router/frontend/dist/) ..."
-if command -v pnpm >/dev/null 2>&1; then
-    PNPM_CMD=(pnpm)
-elif command -v npx >/dev/null 2>&1; then
-    echo "  pnpm 未安装，尝试使用 npx pnpm ..."
-    PNPM_CMD=(npx pnpm)
-else
-    die "未找到 pnpm 或 npx"
-fi
-
-(
-    cd web
-    "${PNPM_CMD[@]}" install --frozen-lockfile
-    "${PNPM_CMD[@]}" release
-)
-
-echo ""
-echo "[ 2/5 ] 验证前端构建产物 ..."
-FRONTEND_DIST="server/router/frontend/dist"
-[ -f "$FRONTEND_DIST/index.html" ] || die "前端构建失败，未找到 $FRONTEND_DIST/index.html"
-DIST_SIZE=$(du -sh "$FRONTEND_DIST" | cut -f1)
-FILE_COUNT=$(find "$FRONTEND_DIST" -type f | wc -l | tr -d ' ')
-echo "  产物目录: $FRONTEND_DIST"
-echo "  总大小:   $DIST_SIZE ($FILE_COUNT 个文件)"
-
-echo ""
-echo "[ 3/5 ] 构建 Docker 镜像 (--no-cache, linux/$TARGET_ARCH) ..."
-env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy \
-    docker build \
-    --no-cache \
-    -f "$DOCKERFILE" \
-    --platform "linux/$TARGET_ARCH" \
-    --build-arg "VERSION=$VERSION_TAG" \
-    "${DOCKER_BUILD_ARGS[@]}" \
-    "${DOCKER_EXTRA_ARGS[@]}" \
-    -t "memos:$VERSION_TAG" \
-    --progress=plain \
-    .
-
-echo ""
-echo "[ 4/5 ] 打标签 ..."
-if docker image inspect "$IMAGE_NAME:$VERSION_TAG" >/dev/null 2>&1; then
-    docker rmi -f "$IMAGE_NAME:$VERSION_TAG" >/dev/null
-fi
-docker tag "memos:$VERSION_TAG" "$IMAGE_NAME:$VERSION_TAG"
-if [ "$VERSION_TAG" != "latest" ]; then
-    if docker image inspect "$IMAGE_NAME:latest" >/dev/null 2>&1; then
-        docker rmi -f "$IMAGE_NAME:latest" >/dev/null
-    fi
-    docker tag "memos:$VERSION_TAG" "$IMAGE_NAME:latest"
-fi
-echo "  memos:$VERSION_TAG"
-echo "  $IMAGE_NAME:$VERSION_TAG"
-
-if [ "$LOCAL_ONLY" = true ]; then
-    echo ""
-    echo "[ 5/5 ] 跳过推送 (--local 模式)"
-else
-    echo ""
-    echo "[ 5/5 ] 使用临时 Docker 凭据推送镜像到 GHCR ..."
-    DOCKER_CONFIG_DIR="$(mktemp -d)"
-    cleanup_docker_config() {
-        rm -rf "$DOCKER_CONFIG_DIR"
-    }
-    trap cleanup_docker_config EXIT
-    AUTH_TOKEN="$(printf '%s:%s' "$GITHUB_USERNAME" "$GITHUB_TOKEN" | base64 | tr -d '\n')"
-    mkdir -p "$DOCKER_CONFIG_DIR"
-    cat >"$DOCKER_CONFIG_DIR/config.json" <<EOF
-{
-  "auths": {
-    "ghcr.io": {
-      "auth": "$AUTH_TOKEN"
-    }
-  }
+    curl \
+        --connect-timeout 10 \
+        --fail \
+        --location \
+        --max-time 60 \
+        --silent \
+        --show-error \
+        --header "Accept: application/vnd.github+json" \
+        --header "X-GitHub-Api-Version: 2022-11-28" \
+        --header "Authorization: Bearer ${GITHUB_API_TOKEN}" \
+        "$@" \
+        "${request_url}"
 }
+
+push_current_branch() {
+    local askpass_script
+    askpass_script="$(mktemp)"
+    trap 'rm -f "${askpass_script}"' RETURN
+    chmod 700 "${askpass_script}"
+    cat > "${askpass_script}" <<'EOF'
+#!/usr/bin/env sh
+case "$1" in
+  *Username*) printf '%s\n' 'x-access-token' ;;
+  *Password*) printf '%s\n' "${MEMOS_GIT_PUSH_TOKEN}" ;;
+  *) printf '\n' ;;
+esac
 EOF
-    DOCKER_CONFIG="$DOCKER_CONFIG_DIR" docker push "$IMAGE_NAME:$VERSION_TAG"
-    if [ "$VERSION_TAG" != "latest" ]; then
-        DOCKER_CONFIG="$DOCKER_CONFIG_DIR" docker push "$IMAGE_NAME:latest"
-    fi
-fi
 
-cat <<EOF
+    MEMOS_GIT_PUSH_TOKEN="${GITHUB_API_TOKEN}" \
+        GIT_ASKPASS="${askpass_script}" \
+        GIT_TERMINAL_PROMPT=0 \
+        git -c credential.helper= push "${REMOTE_NAME}" "HEAD:refs/heads/${BRANCH_NAME}"
+}
 
-==========================================
-构建完成！
-==========================================
-本地镜像:  memos:$VERSION_TAG
-远程镜像:  $IMAGE_NAME:$VERSION_TAG
+find_workflow_run_id() {
+    github_api_get \
+        "${GITHUB_API_BASE}/repos/${REPOSITORY}/actions/workflows/${WORKFLOW_FILE}/runs" \
+        --get \
+        --data-urlencode "branch=${BRANCH_NAME}" \
+        --data-urlencode "event=push" \
+        --data-urlencode "head_sha=${COMMIT_SHA}" \
+        --data-urlencode "per_page=30" \
+        | jq --raw-output --arg commit_sha "${COMMIT_SHA}" \
+            '[.workflow_runs[] | select(.head_sha == $commit_sha)][0].id // empty'
+}
 
-本地部署:  ./pull.sh --local
-远程部署:  ./pull.sh
-==========================================
-EOF
+wait_for_workflow_run() {
+    local run_id="$1"
+    local run_json run_status
+    local status_deadline=$((SECONDS + RUN_STATUS_TIMEOUT_SECONDS))
+
+    while (( SECONDS < status_deadline )); do
+        run_json="$(github_api_get "${GITHUB_API_BASE}/repos/${REPOSITORY}/actions/runs/${run_id}")"
+        run_status="$(jq --exit-status --raw-output '.status | select(type == "string" and length > 0)' <<< "${run_json}")"
+        printf 'GitHub Actions run %s status: %s\n' "${run_id}" "${run_status}" >&2
+        if [ "${run_status}" = "completed" ]; then
+            printf '%s\n' "${run_json}"
+            return
+        fi
+        sleep "${RUN_STATUS_POLL_SECONDS}"
+    done
+
+    die "等待 GitHub Actions run ${run_id} 超时"
+}
+
+printf 'Pushing %s at %s to %s...\n' "${BRANCH_NAME}" "${COMMIT_SHA}" "${REMOTE_NAME}" >&2
+push_current_branch >&2
+
+RUN_ID=""
+DISCOVERY_DEADLINE=$((SECONDS + RUN_DISCOVERY_TIMEOUT_SECONDS))
+while (( SECONDS < DISCOVERY_DEADLINE )); do
+    RUN_ID="$(find_workflow_run_id || true)"
+    [ -z "${RUN_ID}" ] || break
+    sleep "${RUN_DISCOVERY_POLL_SECONDS}"
+done
+[ -n "${RUN_ID}" ] || die "未找到 ${COMMIT_SHA} 对应的 ${WORKFLOW_FILE} run"
+
+RUN_JSON="$(wait_for_workflow_run "${RUN_ID}")"
+RUN_SHA="$(jq --raw-output '.head_sha' <<< "${RUN_JSON}")"
+RUN_EVENT="$(jq --raw-output '.event' <<< "${RUN_JSON}")"
+RUN_CONCLUSION="$(jq --raw-output '.conclusion' <<< "${RUN_JSON}")"
+
+[ "${RUN_SHA}" = "${COMMIT_SHA}" ] || die "workflow SHA ${RUN_SHA} 与 ${COMMIT_SHA} 不一致"
+[ "${RUN_EVENT}" = "push" ] || die "workflow event ${RUN_EVENT} 不是 push"
+[ "${RUN_CONCLUSION}" = "success" ] || die "GitHub Actions run ${RUN_ID} 未成功: ${RUN_CONCLUSION}"
+
+printf '%s:sha-%s\n' "${IMAGE_NAME}" "${COMMIT_SHA}"

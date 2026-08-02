@@ -3,6 +3,7 @@ tmp
 
 # Frontend asset
 web/dist
+.pnpm-store/
 
 # Build artifacts
 build/

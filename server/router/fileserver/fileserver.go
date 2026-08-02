@@ -41,7 +41,7 @@ const (
 	thumbnailMaxPixels       int64 = 25_000_000
 	mebiByte                       = 1024 * 1024
 	maxAvatarBytes                 = 2 * mebiByte
-	backgroundFilenamePrefix       = "_bg_"
+	backgroundFilenamePrefix       = "bg_"
 )
 
 var SupportedThumbnailMimeTypes = []string{

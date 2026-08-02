@@ -1,3 +1,7 @@
+ARG VERSION=development
+ARG COMMIT=unknown
+ARG BUILD_DATE=unknown
+
 FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS backend
 WORKDIR /backend-build
 
@@ -15,7 +19,7 @@ RUN go mod download
 
 COPY . .
 
-ARG TARGETOS TARGETARCH VERSION COMMIT
+ARG TARGETOS TARGETARCH
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build \
       -trimpath \
@@ -26,6 +30,16 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
 
 FROM alpine:3.21 AS monolithic
 WORKDIR /usr/local/memos
+
+ARG VERSION
+ARG COMMIT
+ARG BUILD_DATE
+
+LABEL org.opencontainers.image.title="Memos" \
+      org.opencontainers.image.source="https://github.com/austinhmh/memos" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${COMMIT}" \
+      org.opencontainers.image.created="${BUILD_DATE}"
 
 ARG HTTP_PROXY
 ARG HTTPS_PROXY

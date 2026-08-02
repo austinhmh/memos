@@ -13,6 +13,7 @@ permissions:
 
 jobs:
   build-frontend:
+    if: github.repository == 'usememos/memos'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

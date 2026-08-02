@@ -21,7 +21,7 @@ const isBackgroundImage = (value: unknown): value is BackgroundImage => {
   return typeof image.url === "string" && typeof image.name === "string" && typeof image.filename === "string";
 };
 
-const BG_PREFIX = "_bg_";
+const BG_PREFIX = "bg_";
 const STORAGE_KEY = "memos-background-images";
 const BACKGROUND_LIST_PAGE_SIZE = 1000;
 

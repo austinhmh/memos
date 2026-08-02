@@ -1,0 +1,197 @@
+name: Austin CI GHCR
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "feat/**"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: ghcr.io/austinhmh/memos
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Check Go formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          unformatted_files="$(git ls-files -z '*.go' | xargs -0 gofmt -l)"
+          if [[ -n "${unformatted_files}" ]]; then
+            printf 'The following Go files require gofmt:\n%s\n' "${unformatted_files}"
+            exit 1
+          fi
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4.1.0
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+
+      - name: Run frontend checks
+        working-directory: web
+        run: pnpm lint
+
+      - name: Run frontend tests
+        working-directory: web
+        run: pnpm test
+
+      - name: Build frontend release
+        working-directory: web
+        run: pnpm release
+
+      - name: Run Go tests
+        env:
+          DRIVER: sqlite
+        run: go test -p "$(nproc)" ./...
+
+      - name: Upload frontend artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: server/router/frontend/dist
+          if-no-files-found: error
+          retention-days: 1
+
+  image:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Download frontend artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: server/router/frontend/dist
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Generate image metadata
+        id: metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,format=long,prefix=sha-
+
+      - name: Generate build metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "VERSION=sha-${GITHUB_SHA}" >> "${GITHUB_ENV}"
+          echo "COMMIT=${GITHUB_SHA}" >> "${GITHUB_ENV}"
+          echo "BUILD_DATE=$(git show -s --format=%cI "${GITHUB_SHA}")" >> "${GITHUB_ENV}"
+
+      - name: Build Docker image for verification
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./scripts/Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          build-args: |
+            VERSION=${{ env.VERSION }}
+            COMMIT=${{ env.COMMIT }}
+            BUILD_DATE=${{ env.BUILD_DATE }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify Docker image startup and metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          image_reference="${IMAGE_NAME}:sha-${GITHUB_SHA}"
+          container_name="memos-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          trap 'docker rm -f "${container_name}" >/dev/null 2>&1 || true' EXIT
+
+          image_revision="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "${image_reference}")"
+          if [[ "${image_revision}" != "${GITHUB_SHA}" ]]; then
+            printf 'Image revision mismatch: %s != %s\n' "${image_revision:-missing}" "${GITHUB_SHA}"
+            exit 1
+          fi
+
+          docker run --detach \
+            --name "${container_name}" \
+            --publish 127.0.0.1:15230:5230 \
+            "${image_reference}"
+
+          healthy=false
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --show-error --max-time 2 http://127.0.0.1:15230/healthz >/dev/null; then
+              healthy=true
+              break
+            fi
+            sleep 2
+          done
+
+          if [[ "${healthy}" != "true" ]]; then
+            docker logs "${container_name}"
+            exit 1
+          fi
+
+      - name: Login to GitHub Container Registry
+        if: github.event_name != 'pull_request' && github.repository == 'austinhmh/memos'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_PAT }}
+
+      - name: Publish verified Docker image
+        if: github.event_name != 'pull_request' && github.repository == 'austinhmh/memos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker push "${IMAGE_NAME}:sha-${GITHUB_SHA}"
+
+      - name: Publish image coordinates
+        if: github.event_name != 'pull_request' && github.repository == 'austinhmh/memos'
+        shell: bash
+        run: |
+          image_reference="${IMAGE_NAME}:sha-${GITHUB_SHA}"
+          image_id="$(docker image inspect --format '{{.Id}}' "${image_reference}")"
+          {
+            echo "## GHCR image"
+            echo
+            echo "- Image: \`${image_reference}\`"
+            echo "- Image ID: \`${image_id}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"

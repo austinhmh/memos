@@ -1,28 +1,12 @@
 #!/usr/bin/env bash
 
-# pull.sh - Pull (or use local) image and deploy a Memos container.
+# Pull an immutable CI-built image and deploy it with health-checked rollback.
 
 set -Eeuo pipefail
 IFS=$'\n\t'
 
-cd "$(dirname "$0")"
-
-usage() {
-    cat <<'EOF'
-Usage:
-  ./pull.sh [--local] [--no-login] [--image IMAGE] [--name NAME] [tag]
-  ./pull.sh true|false [tag]   # backwards-compatible proxy toggle; proxy is not used by this script
-
-Environment (.env is supported for the allowlisted variables below):
-  GITHUB_USERNAME       GHCR username when pulling a private image
-  GITHUB_TOKEN          GHCR token with read:packages when pulling a private image
-  IMAGE_NAME            Image name, default ghcr.io/austinhmh/memos
-  MEMOS_DATA_DIR        Host data directory, default $HOME/.memos
-  MEMOS_HOST_ADDR       Host bind address, default 127.0.0.1
-  MEMOS_HOST_PORT       Host bind port, default 8081
-  MEMOS_INSTANCE_URL    Optional public instance URL
-EOF
-}
+SCRIPT_DIRECTORY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "${SCRIPT_DIRECTORY}"
 
 die() {
     echo "错误: $*" >&2
@@ -56,229 +40,228 @@ load_env_file() {
 
         [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die ".env 中存在非法变量名: $key"
         case "$key" in
-            GITHUB_USERNAME|GITHUB_TOKEN|IMAGE_NAME|MEMOS_DATA_DIR|MEMOS_HOST_ADDR|MEMOS_HOST_PORT|MEMOS_INSTANCE_URL)
+            GITHUB_USERNAME|GITHUB_TOKEN|MEMOS_BUILD_IMAGE|MEMOS_DATA_DIR|MEMOS_HOST_ADDR|MEMOS_HOST_PORT|MEMOS_INSTANCE_URL|MEMOS_HEALTH_ATTEMPTS|MEMOS_HEALTH_INTERVAL_SECONDS|MEMOS_DEPLOY_LOCK_DIRECTORY)
                 if [ -z "${!key+x}" ]; then
                     export "$key=$value"
                 fi
                 ;;
             *)
-                echo "  忽略 .env 中未允许的变量: $key"
                 ;;
         esac
     done < "$env_file"
 }
 
-validate_tag() {
-    local tag="$1"
-    [[ "$tag" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || die "非法镜像标签: $tag"
-}
+validate_positive_integer() {
+    local variable_name="$1"
+    local variable_value="$2"
 
-validate_image_name() {
-    local image="$1"
-    [ -n "$image" ] || die "IMAGE_NAME 不能为空"
-    [[ "$image" != -* ]] || die "IMAGE_NAME 不能以 '-' 开头"
-    [[ ! "$image" =~ [[:space:][:cntrl:]\;\`\'\"\|\&\<\>\$] ]] || die "IMAGE_NAME 包含非法字符"
-}
-
-validate_container_name() {
-    local name="$1"
-    [[ "$name" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$ ]] || die "非法容器名称: $name"
-}
-
-validate_port() {
-    local port="$1"
-    [[ "$port" =~ ^[0-9]+$ ]] || die "非法端口: $port"
-    [ "$port" -ge 1 ] && [ "$port" -le 65535 ] || die "端口超出范围: $port"
+    [[ "${variable_value}" =~ ^[1-9][0-9]*$ ]] || die "${variable_name} 必须是正整数: ${variable_value}"
 }
 
 validate_host_addr() {
-    local addr="$1"
-    [[ "$addr" =~ ^[A-Za-z0-9_.:-]+$ ]] || die "非法监听地址: $addr"
+    local host_addr="$1"
+    [[ "${host_addr}" =~ ^[A-Za-z0-9_.:-]+$ ]] || die "非法监听地址: ${host_addr}"
 }
 
-validate_data_dir() {
-    local dir="$1"
-    [ -n "$dir" ] || die "MEMOS_DATA_DIR 不能为空"
-    [[ "$dir" = /* ]] || die "MEMOS_DATA_DIR 必须是绝对路径: $dir"
-    case "$dir" in
+validate_data_directory() {
+    local data_directory="$1"
+    [ -n "${data_directory}" ] || die "MEMOS_DATA_DIR 不能为空"
+    [[ "${data_directory}" = /* ]] || die "MEMOS_DATA_DIR 必须是绝对路径: ${data_directory}"
+    case "${data_directory}" in
         /|/bin|/boot|/dev|/etc|/home|/lib|/lib64|/proc|/root|/run|/sbin|/sys|/usr|/var|/var/opt)
-            die "拒绝将高风险系统目录挂载为数据目录: $dir"
+            die "拒绝使用高风险系统目录: ${data_directory}"
             ;;
     esac
 }
 
 load_env_file ".env"
 
-IMAGE_NAME="${IMAGE_NAME:-ghcr.io/austinhmh/memos}"
-CONTAINER_NAME="memos"
-LOCAL_ONLY=false
-SKIP_LOGIN=false
-VERSION_TAG="latest"
-TAG_SET=false
-
-while [ "$#" -gt 0 ]; do
-    case "$1" in
-        --help|-h)
-            usage
-            exit 0
-            ;;
-        --local)
-            LOCAL_ONLY=true
-            ;;
-        --no-login)
-            SKIP_LOGIN=true
-            ;;
-        --no-proxy|false|--proxy|true)
-            echo "提示: pull.sh 不再使用代理参数，已忽略 $1"
-            ;;
-        --image)
-            shift
-            [ "$#" -gt 0 ] || die "--image 需要参数"
-            IMAGE_NAME="$1"
-            ;;
-        --image=*)
-            IMAGE_NAME="${1#--image=}"
-            ;;
-        --name)
-            shift
-            [ "$#" -gt 0 ] || die "--name 需要参数"
-            CONTAINER_NAME="$1"
-            ;;
-        --name=*)
-            CONTAINER_NAME="${1#--name=}"
-            ;;
-        --*)
-            die "未知参数: $1"
-            ;;
-        *)
-            if [ "$TAG_SET" = true ]; then
-                die "只能指定一个镜像标签"
-            fi
-            VERSION_TAG="$1"
-            TAG_SET=true
-            ;;
-    esac
-    shift
-done
-
-validate_tag "$VERSION_TAG"
-validate_image_name "$IMAGE_NAME"
-validate_container_name "$CONTAINER_NAME"
-
-DATA_DIR="${MEMOS_DATA_DIR:-$HOME/.memos}"
-HOST_ADDR="${MEMOS_HOST_ADDR:-127.0.0.1}"
-HOST_PORT="${MEMOS_HOST_PORT:-8081}"
-validate_data_dir "$DATA_DIR"
-validate_host_addr "$HOST_ADDR"
-validate_port "$HOST_PORT"
-
-if [ "$LOCAL_ONLY" = true ]; then
-    RUN_IMAGE="memos:$VERSION_TAG"
-else
-    RUN_IMAGE="$IMAGE_NAME:$VERSION_TAG"
-fi
-
-cat <<EOF
-==========================================
-Memos 部署
-==========================================
-镜像来源: $([ "$LOCAL_ONLY" = true ] && echo "本地" || echo "远程仓库")
-运行镜像: $RUN_IMAGE
-容器名称: $CONTAINER_NAME
-数据目录: $DATA_DIR
-端口映射: $HOST_ADDR:$HOST_PORT:5230
-==========================================
-EOF
-
-echo ""
-echo "[ 1/4 ] 检查数据目录 ..."
-if [ ! -d "$DATA_DIR" ]; then
-    install -d -m 700 "$DATA_DIR"
-    echo "  已创建: $DATA_DIR"
-else
-    echo "  已存在: $DATA_DIR"
-fi
-
-echo ""
-if [ "$LOCAL_ONLY" = true ]; then
-    echo "[ 2/4 ] 使用本地镜像 ..."
-    if ! docker image inspect "$RUN_IMAGE" >/dev/null 2>&1; then
-        die "本地镜像 $RUN_IMAGE 不存在，请先运行: ./build-push.sh --local $VERSION_TAG"
-    fi
-    echo "  本地镜像已确认: $RUN_IMAGE"
-else
-    echo "[ 2/4 ] 拉取远程镜像 ..."
-    if [ "$SKIP_LOGIN" = false ] && [ -n "${GITHUB_USERNAME:-}" ] && [ -n "${GITHUB_TOKEN:-}" ]; then
-        [[ "${GITHUB_TOKEN}" != ghp_replace* ]] || die "GITHUB_TOKEN 仍是示例占位值"
-        printf '%s\n' "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_USERNAME" --password-stdin
-    else
-        echo "  未提供登录凭证或已指定 --no-login，将直接尝试拉取公共镜像"
-    fi
-    docker pull "$RUN_IMAGE"
-fi
-
-echo ""
-echo "[ 3/4 ] 替换旧容器 ..."
-if [ -n "$(docker ps -aq -f "name=^${CONTAINER_NAME}$")" ]; then
-    echo "  停止并删除旧容器 ..."
-    docker stop "$CONTAINER_NAME" >/dev/null 2>&1 || true
-    docker rm "$CONTAINER_NAME" >/dev/null 2>&1 || true
-fi
-
-echo ""
-echo "[ 4/4 ] 启动新容器 ..."
-INSTANCE_URL_ARGS=()
-EFFECTIVE_INSTANCE_URL="${MEMOS_INSTANCE_URL:-}"
-if [ "$LOCAL_ONLY" = true ] && [ -z "$EFFECTIVE_INSTANCE_URL" ]; then
-    EFFECTIVE_INSTANCE_URL="http://localhost:$HOST_PORT"
-fi
-if [ -n "$EFFECTIVE_INSTANCE_URL" ]; then
-    INSTANCE_URL_ARGS=(-e "MEMOS_INSTANCE_URL=$EFFECTIVE_INSTANCE_URL")
-fi
-
-docker run -d \
-    --name "$CONTAINER_NAME" \
-    --user 10001:10001 \
-    --cap-drop ALL \
-    --security-opt no-new-privileges:true \
-    --read-only \
-    --tmpfs /tmp:rw,noexec,nosuid,size=64m \
-    -p "$HOST_ADDR:$HOST_PORT:5230" \
-    -v "$DATA_DIR:/var/opt/memos" \
-    -e MEMOS_MODE=prod \
-    -e MEMOS_PORT=5230 \
-    "${INSTANCE_URL_ARGS[@]}" \
-    --restart unless-stopped \
-    "$RUN_IMAGE"
-
-echo ""
-echo "等待容器启动 ..."
-sleep 3
-
-if docker ps -f "name=^${CONTAINER_NAME}$" --format "{{.Status}}" | grep -q "Up"; then
-    echo ""
-    echo "=========================================="
-    echo "部署成功！"
-    echo "=========================================="
-    docker ps -f "name=$CONTAINER_NAME" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-    echo ""
-
-    if docker logs "$CONTAINER_NAME" 2>&1 | grep -q "readonly database"; then
-        die "检测到数据库只读错误。请将数据目录授权给镜像内的非 root 用户（UID/GID 10001），例如: sudo chown -R 10001:10001 \"$DATA_DIR\""
-    fi
-
-    echo "访问地址:  http://localhost:$HOST_PORT"
-    echo "数据目录:  $DATA_DIR"
-    echo ""
-    echo "常用命令:"
-    echo "  docker logs -f $CONTAINER_NAME     # 查看日志"
-    echo "  docker restart $CONTAINER_NAME      # 重启"
-    echo "  docker stop $CONTAINER_NAME         # 停止"
-    echo "=========================================="
-else
-    echo ""
-    echo "错误: 容器启动失败" >&2
-    echo "查看日志: docker logs $CONTAINER_NAME" >&2
-    docker logs "$CONTAINER_NAME" --tail 20 2>&1 >&2 || true
+if [ "$#" -ne 1 ]; then
+    echo "Usage: ./pull.sh ghcr.io/austinhmh/memos:sha-<40-hex-commit>"
+    echo "   or: ./pull.sh ghcr.io/austinhmh/memos@sha256:<digest>"
     exit 1
 fi
+
+IMAGE_NAME="${MEMOS_BUILD_IMAGE:-ghcr.io/austinhmh/memos}"
+IMAGE_REFERENCE="$1"
+CONTAINER_NAME="memos"
+ROLLBACK_IMAGE="memos:rollback-previous"
+HOST_ADDR="${MEMOS_HOST_ADDR:-0.0.0.0}"
+HOST_PORT="${MEMOS_HOST_PORT:-8081}"
+CONTAINER_PORT="5230"
+HEALTH_ATTEMPTS="${MEMOS_HEALTH_ATTEMPTS:-60}"
+HEALTH_INTERVAL_SECONDS="${MEMOS_HEALTH_INTERVAL_SECONDS:-2}"
+LOCK_DIRECTORY="${MEMOS_DEPLOY_LOCK_DIRECTORY:-/tmp/memos-deploy.lock}"
+
+validate_host_addr "${HOST_ADDR}"
+validate_positive_integer "MEMOS_HOST_PORT" "${HOST_PORT}"
+validate_positive_integer "MEMOS_HEALTH_ATTEMPTS" "${HEALTH_ATTEMPTS}"
+validate_positive_integer "MEMOS_HEALTH_INTERVAL_SECONDS" "${HEALTH_INTERVAL_SECONDS}"
+
+EXPECTED_COMMIT=""
+if [[ "${IMAGE_REFERENCE}" =~ ^${IMAGE_NAME}:sha-([0-9a-f]{40})$ ]]; then
+    EXPECTED_COMMIT="${BASH_REMATCH[1]}"
+elif [[ ! "${IMAGE_REFERENCE}" =~ ^${IMAGE_NAME}@sha256:[0-9a-f]{64}$ ]]; then
+    die "只接受 ${IMAGE_NAME} 的完整 SHA 标签或 digest"
+fi
+
+command -v docker >/dev/null 2>&1 || die "未找到 docker"
+command -v curl >/dev/null 2>&1 || die "未找到 curl"
+
+if ! mkdir "${LOCK_DIRECTORY}" 2>/dev/null; then
+    die "另一个 Memos 部署正在运行: ${LOCK_DIRECTORY}"
+fi
+cleanup_lock() {
+    rmdir "${LOCK_DIRECTORY}" 2>/dev/null || true
+}
+trap cleanup_lock EXIT
+
+CURRENT_IMAGE_ID="$(docker inspect --format '{{.Image}}' "${CONTAINER_NAME}" 2>/dev/null || true)"
+[ -n "${CURRENT_IMAGE_ID}" ] || die "未找到当前 ${CONTAINER_NAME} 容器，无法提供回滚"
+
+CURRENT_DATA_DIRECTORY="$(
+    docker inspect \
+        --format '{{range .Mounts}}{{if eq .Destination "/var/opt/memos"}}{{.Source}}{{end}}{{end}}' \
+        "${CONTAINER_NAME}"
+)"
+DATA_DIRECTORY="${MEMOS_DATA_DIR:-${CURRENT_DATA_DIRECTORY}}"
+validate_data_directory "${DATA_DIRECTORY}"
+[ -d "${DATA_DIRECTORY}" ] || die "数据目录不存在: ${DATA_DIRECTORY}"
+
+if [ -n "${MEMOS_INSTANCE_URL+x}" ]; then
+    EFFECTIVE_INSTANCE_URL="${MEMOS_INSTANCE_URL}"
+else
+    EFFECTIVE_INSTANCE_URL=""
+    while IFS= read -r environment_entry; do
+        case "${environment_entry}" in
+            MEMOS_INSTANCE_URL=*)
+                EFFECTIVE_INSTANCE_URL="${environment_entry#MEMOS_INSTANCE_URL=}"
+                break
+                ;;
+        esac
+    done < <(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "${CONTAINER_NAME}")
+fi
+
+INSTANCE_URL_ARGUMENTS=()
+if [ -n "${EFFECTIVE_INSTANCE_URL}" ]; then
+    INSTANCE_URL_ARGUMENTS=(-e "MEMOS_INSTANCE_URL=${EFFECTIVE_INSTANCE_URL}")
+fi
+
+DOCKER_CONFIG_DIRECTORY="$(mktemp -d)"
+cleanup_docker_config() {
+    rm -rf "${DOCKER_CONFIG_DIRECTORY}"
+}
+trap 'cleanup_docker_config; cleanup_lock' EXIT
+
+GITHUB_USERNAME="${GITHUB_USERNAME:-austinhmh}"
+GITHUB_TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+if [ -n "${GITHUB_TOKEN}" ]; then
+    AUTH_TOKEN="$(printf '%s:%s' "${GITHUB_USERNAME}" "${GITHUB_TOKEN}" | base64 | tr -d '\n')"
+    mkdir -p "${DOCKER_CONFIG_DIRECTORY}"
+    cat > "${DOCKER_CONFIG_DIRECTORY}/config.json" <<EOF
+{
+  "auths": {
+    "ghcr.io": {
+      "auth": "${AUTH_TOKEN}"
+    }
+  }
+}
+EOF
+fi
+
+docker image tag "${CURRENT_IMAGE_ID}" "${ROLLBACK_IMAGE}"
+
+echo "拉取 CI 镜像: ${IMAGE_REFERENCE}"
+DOCKER_CONFIG="${DOCKER_CONFIG_DIRECTORY}" docker pull "${IMAGE_REFERENCE}"
+CANDIDATE_IMAGE_ID="$(docker image inspect --format '{{.Id}}' "${IMAGE_REFERENCE}")"
+
+if [ -n "${EXPECTED_COMMIT}" ]; then
+    IMAGE_REVISION="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "${IMAGE_REFERENCE}" 2>/dev/null || true)"
+    [ "${IMAGE_REVISION}" = "${EXPECTED_COMMIT}" ] || die "镜像 revision ${IMAGE_REVISION:-missing} 与 ${EXPECTED_COMMIT} 不一致"
+fi
+
+replace_running_container() {
+    local target_image="$1"
+
+    if docker inspect "${CONTAINER_NAME}" >/dev/null 2>&1; then
+        docker stop "${CONTAINER_NAME}" >/dev/null
+        docker rm "${CONTAINER_NAME}" >/dev/null
+    fi
+
+    docker run --detach \
+        --name "${CONTAINER_NAME}" \
+        --user root \
+        --cap-drop ALL \
+        --security-opt no-new-privileges:true \
+        --read-only \
+        --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+        --publish "${HOST_ADDR}:${HOST_PORT}:${CONTAINER_PORT}" \
+        --volume "${DATA_DIRECTORY}:/var/opt/memos" \
+        --env MEMOS_MODE=prod \
+        --env "MEMOS_PORT=${CONTAINER_PORT}" \
+        "${INSTANCE_URL_ARGUMENTS[@]}" \
+        --restart unless-stopped \
+        "${target_image}" >/dev/null
+}
+
+wait_for_health() {
+    local attempt
+    for attempt in $(seq 1 "${HEALTH_ATTEMPTS}"); do
+        if curl --fail --silent --show-error --max-time 2 "http://127.0.0.1:${HOST_PORT}/healthz" >/dev/null; then
+            return 0
+        fi
+        sleep "${HEALTH_INTERVAL_SECONDS}"
+    done
+    return 1
+}
+
+verify_running_image() {
+    local expected_image_id="$1"
+    local running_image_id
+    running_image_id="$(docker inspect --format '{{.Image}}' "${CONTAINER_NAME}" 2>/dev/null || true)"
+    [ "${running_image_id}" = "${expected_image_id}" ]
+}
+
+rollback() {
+    echo "候选镜像验证失败，恢复 ${ROLLBACK_IMAGE}" >&2
+    replace_running_container "${CURRENT_IMAGE_ID}" || return 1
+    verify_running_image "${CURRENT_IMAGE_ID}" || return 1
+    if ! wait_for_health; then
+        docker logs "${CONTAINER_NAME}" --tail 100 >&2 || true
+        return 1
+    fi
+    echo "回滚已完成并验证" >&2
+}
+
+DEPLOYMENT_STARTED=false
+DEPLOYMENT_SUCCEEDED=false
+handle_interruption() {
+    trap - INT TERM
+    if [ "${DEPLOYMENT_STARTED}" = true ] && [ "${DEPLOYMENT_SUCCEEDED}" != true ]; then
+        rollback || true
+    fi
+    exit 130
+}
+trap handle_interruption INT TERM
+
+DEPLOYMENT_STARTED=true
+if ! replace_running_container "${CANDIDATE_IMAGE_ID}"; then
+    rollback
+    exit 1
+fi
+if ! verify_running_image "${CANDIDATE_IMAGE_ID}"; then
+    rollback
+    exit 1
+fi
+if ! wait_for_health; then
+    docker logs "${CONTAINER_NAME}" --tail 100 >&2 || true
+    rollback
+    exit 1
+fi
+
+DEPLOYMENT_SUCCEEDED=true
+echo "部署已验证"
+echo "镜像: ${IMAGE_REFERENCE}"
+echo "镜像 ID: ${CANDIDATE_IMAGE_ID}"
+echo "数据目录: ${DATA_DIRECTORY}"
+echo "回滚镜像: ${ROLLBACK_IMAGE}"
