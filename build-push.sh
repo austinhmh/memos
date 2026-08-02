@@ -115,26 +115,6 @@ github_api_get() {
 }
 
 push_current_branch() {
-    local askpass_script
-    askpass_script="$(mktemp)"
-    trap 'rm -f "${askpass_script}"' RETURN
-    chmod 700 "${askpass_script}"
-    cat > "${askpass_script}" <<'EOF'
-#!/usr/bin/env sh
-case "$1" in
-  *Username*) printf '%s\n' 'x-access-token' ;;
-  *Password*) printf '%s\n' "${MEMOS_GIT_PUSH_TOKEN}" ;;
-  *) printf '\n' ;;
-esac
-EOF
-
-    MEMOS_GIT_PUSH_TOKEN="${GITHUB_API_TOKEN}" \
-        GIT_ASKPASS="${askpass_script}" \
-        GIT_TERMINAL_PROMPT=0 \
-        git -c credential.helper= push "${REMOTE_NAME}" "HEAD:refs/heads/${BRANCH_NAME}"
-}
-
-push_current_branch() {
   local github_push_token="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
 
   if [[ -z "${github_push_token}" ]]; then
