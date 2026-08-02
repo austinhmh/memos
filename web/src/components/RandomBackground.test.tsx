@@ -32,13 +32,13 @@ describe("RandomBackground", () => {
       "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => [{ url: "/file/backgrounds/bg/_bg_wallpaper.png", name: "backgrounds/bg", filename: "wallpaper.png" }],
+        json: async () => [{ url: "/file/backgrounds/bg/bg_wallpaper.png", name: "backgrounds/bg", filename: "wallpaper.png" }],
       }),
     );
 
     const { container } = render(<RandomBackground />);
 
-    await waitFor(() => expect(container.querySelector("img")?.getAttribute("src")).toBe("/file/backgrounds/bg/_bg_wallpaper.png"));
+    await waitFor(() => expect(container.querySelector("img")?.getAttribute("src")).toBe("/file/backgrounds/bg/bg_wallpaper.png"));
     expect(document.documentElement.classList.contains("has-bg-image")).toBe(true);
     expect(fetch).toHaveBeenCalledWith("/file/backgrounds", { credentials: "omit" });
     expect(listAttachments).not.toHaveBeenCalled();
@@ -47,7 +47,7 @@ describe("RandomBackground", () => {
   it("does not read private cached backgrounds while anonymous", async () => {
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify([{ url: "/file/attachments/private/_bg_private.png", name: "attachments/private", filename: "private.png" }]),
+      JSON.stringify([{ url: "/file/attachments/private/bg_private.png", name: "attachments/private", filename: "private.png" }]),
     );
     vi.stubGlobal(
       "fetch",
@@ -79,7 +79,7 @@ describe("RandomBackground", () => {
     await waitFor(() => expect(fetch).toHaveBeenCalled());
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify([{ url: "/file/attachments/private/_bg_private.png", name: "attachments/private", filename: "private.png" }]),
+      JSON.stringify([{ url: "/file/attachments/private/bg_private.png", name: "attachments/private", filename: "private.png" }]),
     );
     window.dispatchEvent(new CustomEvent("background-images-changed"));
 
@@ -92,21 +92,21 @@ describe("RandomBackground", () => {
       "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => [{ url: "/file/backgrounds/bg/_bg_wallpaper.png", name: "backgrounds/bg", filename: "wallpaper.png" }],
+        json: async () => [{ url: "/file/backgrounds/bg/bg_wallpaper.png", name: "backgrounds/bg", filename: "wallpaper.png" }],
       }),
     );
     listAttachments.mockResolvedValue({
-      attachments: [{ name: "attachments/user-bg", filename: "_bg_user.png" }],
+      attachments: [{ name: "attachments/user-bg", filename: "bg_user.png" }],
       nextPageToken: "",
       totalSize: 1,
     } as Awaited<ReturnType<typeof attachmentServiceClient.listAttachments>>);
 
     const { container, rerender } = render(<RandomBackground />);
-    await waitFor(() => expect(container.querySelector("img")?.getAttribute("src")).toBe("/file/backgrounds/bg/_bg_wallpaper.png"));
+    await waitFor(() => expect(container.querySelector("img")?.getAttribute("src")).toBe("/file/backgrounds/bg/bg_wallpaper.png"));
 
     rerender(<RandomBackground currentUser={create(UserSchema, { name: "users/1", username: "alice" })} />);
 
     await waitFor(() => expect(listAttachments).toHaveBeenCalledWith({ pageSize: 1000, pageToken: "" }));
-    await waitFor(() => expect(container.querySelector("img")?.getAttribute("src")).toBe("/file/attachments/user-bg/_bg_user.png"));
+    await waitFor(() => expect(container.querySelector("img")?.getAttribute("src")).toBe("/file/attachments/user-bg/bg_user.png"));
   });
 });

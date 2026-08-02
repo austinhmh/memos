@@ -30,14 +30,14 @@ describe("BackgroundSection background image loading", () => {
       vi.fn().mockResolvedValue({
         ok: true,
         json: async () => [
-          { url: "/file/backgrounds/bg/_bg_wallpaper.png", name: "backgrounds/bg", filename: "wallpaper.png" },
+          { url: "/file/backgrounds/bg/bg_wallpaper.png", name: "backgrounds/bg", filename: "wallpaper.png" },
           { url: "/invalid.png", name: "missing-filename" },
         ],
       }),
     );
 
     await expect(fetchPublicBgImagesFromServer()).resolves.toEqual([
-      { url: "/file/backgrounds/bg/_bg_wallpaper.png", name: "backgrounds/bg", filename: "wallpaper.png" },
+      { url: "/file/backgrounds/bg/bg_wallpaper.png", name: "backgrounds/bg", filename: "wallpaper.png" },
     ]);
 
     expect(fetch).toHaveBeenCalledWith("/file/backgrounds", { credentials: "omit" });
@@ -71,7 +71,7 @@ describe("BackgroundSection background image loading", () => {
         create(ListAttachmentsResponseSchema, {
           attachments: [
             create(AttachmentSchema, { name: "attachments/regular", filename: "regular.png" }),
-            create(AttachmentSchema, { name: "attachments/bg-old", filename: "_bg_old image.png" }),
+            create(AttachmentSchema, { name: "attachments/bg-old", filename: "bg_old image.png" }),
           ],
           nextPageToken: "1000",
           totalSize: 2,
@@ -79,7 +79,7 @@ describe("BackgroundSection background image loading", () => {
       )
       .mockResolvedValueOnce(
         create(ListAttachmentsResponseSchema, {
-          attachments: [create(AttachmentSchema, { name: "attachments/bg-new", filename: "_bg_new.png" })],
+          attachments: [create(AttachmentSchema, { name: "attachments/bg-new", filename: "bg_new.png" })],
           nextPageToken: "",
           totalSize: 1,
         }),
@@ -87,12 +87,12 @@ describe("BackgroundSection background image loading", () => {
 
     await expect(fetchBgImagesFromServer()).resolves.toEqual([
       {
-        url: "/file/attachments/bg-old/_bg_old%20image.png",
+        url: "/file/attachments/bg-old/bg_old%20image.png",
         name: "attachments/bg-old",
         filename: "old image.png",
       },
       {
-        url: "/file/attachments/bg-new/_bg_new.png",
+        url: "/file/attachments/bg-new/bg_new.png",
         name: "attachments/bg-new",
         filename: "new.png",
       },
