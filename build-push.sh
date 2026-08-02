@@ -134,6 +134,34 @@ EOF
         git -c credential.helper= push "${REMOTE_NAME}" "HEAD:refs/heads/${BRANCH_NAME}"
 }
 
+push_current_branch() {
+  local github_push_token="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+
+  if [[ -z "${github_push_token}" ]]; then
+    git push "${REMOTE_NAME}" "HEAD:refs/heads/${BRANCH_NAME}"
+    return
+  fi
+
+  local askpass_script=""
+  askpass_script="$(mktemp)"
+  chmod 700 "${askpass_script}"
+  cat > "${askpass_script}" <<'EOF'
+#!/usr/bin/env sh
+case "$1" in
+  *Username*) printf '%s\n' 'x-access-token' ;;
+  *Password*) printf '%s\n' "${MEMOS_GIT_PUSH_TOKEN}" ;;
+  *) printf '\n' ;;
+esac
+EOF
+
+  MEMOS_GIT_PUSH_TOKEN="${github_push_token}" \
+    GIT_ASKPASS="${askpass_script}" \
+    GIT_TERMINAL_PROMPT=0 \
+    git -c credential.helper= push "${REMOTE_NAME}" "HEAD:refs/heads/${BRANCH_NAME}"
+
+  rm -f "${askpass_script}"
+}
+
 find_workflow_run_id() {
     github_api_get \
         "${GITHUB_API_BASE}/repos/${REPOSITORY}/actions/workflows/${WORKFLOW_FILE}/runs" \
