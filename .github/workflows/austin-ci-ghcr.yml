@@ -63,7 +63,11 @@ jobs:
       - name: Run Go tests
         env:
           DRIVER: sqlite
-        run: go test -p "$(nproc)" ./...
+        # Exclude store/test: migration suites build via FromDockerfile with
+        # BUILDPLATFORM and need BuildKit; they are covered by Backend Tests.
+        run: |
+          mapfile -t packages < <(go list ./... | grep -vE '/store/test$')
+          go test -p "$(nproc)" "${packages[@]}"
 
       - name: Upload frontend artifacts
         uses: actions/upload-artifact@v4
