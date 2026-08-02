@@ -40,7 +40,7 @@ func TestPublicBackgroundsExposeOnlyHostStandaloneImages(t *testing.T) {
 	publicBackground, err := testStore.CreateAttachment(ctx, &store.Attachment{
 		UID:       "host-background",
 		CreatorID: host.ID,
-		Filename:  "_bg_wallpaper.png",
+		Filename:  "bg_wallpaper.png",
 		Type:      "image/png",
 		Size:      3,
 		Blob:      []byte("png"),
@@ -58,7 +58,7 @@ func TestPublicBackgroundsExposeOnlyHostStandaloneImages(t *testing.T) {
 	_, err = testStore.CreateAttachment(ctx, &store.Attachment{
 		UID:       "user-background",
 		CreatorID: regularUser.ID,
-		Filename:  "_bg_user.png",
+		Filename:  "bg_user.png",
 		Type:      "image/png",
 		Size:      3,
 		Blob:      []byte("usr"),
@@ -67,7 +67,7 @@ func TestPublicBackgroundsExposeOnlyHostStandaloneImages(t *testing.T) {
 	_, err = testStore.CreateAttachment(ctx, &store.Attachment{
 		UID:       "host-background-text",
 		CreatorID: host.ID,
-		Filename:  "_bg_note.txt",
+		Filename:  "bg_note.txt",
 		Type:      "text/plain",
 		Size:      4,
 		Blob:      []byte("note"),
@@ -76,7 +76,7 @@ func TestPublicBackgroundsExposeOnlyHostStandaloneImages(t *testing.T) {
 	_, err = testStore.CreateAttachment(ctx, &store.Attachment{
 		UID:       "memo-bound-background",
 		CreatorID: host.ID,
-		Filename:  "_bg_private.png",
+		Filename:  "bg_private.png",
 		Type:      "image/png",
 		Size:      3,
 		Blob:      []byte("mem"),
@@ -96,7 +96,7 @@ func TestPublicBackgroundsExposeOnlyHostStandaloneImages(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Equal(t, "public, max-age=300", rec.Header().Get("Cache-Control"))
-	require.Contains(t, rec.Body.String(), "\"url\":\"/file/backgrounds/host-background/_bg_wallpaper.png\"")
+	require.Contains(t, rec.Body.String(), "\"url\":\"/file/backgrounds/host-background/bg_wallpaper.png\"")
 	require.Contains(t, rec.Body.String(), "\"name\":\"backgrounds/host-background\"")
 	require.Contains(t, rec.Body.String(), "\"filename\":\"wallpaper.png\"")
 	require.NotContains(t, rec.Body.String(), "regular.png")
@@ -138,11 +138,11 @@ func TestPublicBackgroundFileRejectsNonPublicBackgrounds(t *testing.T) {
 
 	attachments := []*store.Attachment{
 		{UID: "reject-host-regular", CreatorID: host.ID, Filename: "regular.png", Type: "image/png", Size: 3, Blob: []byte("one")},
-		{UID: "reject-user-bg", CreatorID: regularUser.ID, Filename: "_bg_user.png", Type: "image/png", Size: 3, Blob: []byte("two")},
-		{UID: "reject-host-text", CreatorID: host.ID, Filename: "_bg_note.txt", Type: "text/plain", Size: 5, Blob: []byte("three")},
-		{UID: "reject-host-svg", CreatorID: host.ID, Filename: "_bg_bad.svg", Type: "image/svg+xml", Size: 4, Blob: []byte("four")},
-		{UID: "reject-host-external", CreatorID: host.ID, Filename: "_bg_external.png", Type: "image/png", Size: 0, StorageType: storepb.AttachmentStorageType_EXTERNAL, Reference: "https://example.com/a.png"},
-		{UID: "reject-memo-bg", CreatorID: host.ID, Filename: "_bg_private.png", Type: "image/png", Size: 3, Blob: []byte("six"), MemoID: &privateMemo.ID},
+		{UID: "reject-user-bg", CreatorID: regularUser.ID, Filename: "bg_user.png", Type: "image/png", Size: 3, Blob: []byte("two")},
+		{UID: "reject-host-text", CreatorID: host.ID, Filename: "bg_note.txt", Type: "text/plain", Size: 5, Blob: []byte("three")},
+		{UID: "reject-host-svg", CreatorID: host.ID, Filename: "bg_bad.svg", Type: "image/svg+xml", Size: 4, Blob: []byte("four")},
+		{UID: "reject-host-external", CreatorID: host.ID, Filename: "bg_external.png", Type: "image/png", Size: 0, StorageType: storepb.AttachmentStorageType_EXTERNAL, Reference: "https://example.com/a.png"},
+		{UID: "reject-memo-bg", CreatorID: host.ID, Filename: "bg_private.png", Type: "image/png", Size: 3, Blob: []byte("six"), MemoID: &privateMemo.ID},
 	}
 	for _, attachment := range attachments {
 		_, err = testStore.CreateAttachment(ctx, attachment)
