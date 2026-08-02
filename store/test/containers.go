@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/docker/docker/api/types/build"
 	"github.com/docker/docker/api/types/container"
 	"github.com/pkg/errors"
 	"github.com/testcontainers/testcontainers-go"
@@ -429,7 +430,10 @@ func StartMemosContainer(ctx context.Context, cfg MemosContainerConfig) (testcon
 		} else {
 			req.FromDockerfile = testcontainers.FromDockerfile{
 				Context:    "../../",
-				Dockerfile: "store/test/Dockerfile", // Simple Dockerfile without BuildKit requirements
+				Dockerfile: "store/test/Dockerfile",
+				BuildOptionsModifier: func(opts *build.ImageBuildOptions) {
+					opts.Platform = "linux/amd64"
+				},
 			}
 		}
 	} else {

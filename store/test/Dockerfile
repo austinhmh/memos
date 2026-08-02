@@ -1,10 +1,10 @@
-FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS backend
+# Pin amd64 only — no multi-arch / BuildKit BUILDPLATFORM.
+FROM --platform=linux/amd64 golang:1.25-alpine AS backend
 WORKDIR /backend-build
 COPY go.mod go.sum ./
 RUN GOMAXPROCS=2 GOMEMLIMIT=1024MiB go mod download
 COPY . .
-ARG TARGETOS TARGETARCH
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH GOMAXPROCS=2 GOMEMLIMIT=1024MiB \
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOMAXPROCS=2 GOMEMLIMIT=1024MiB \
     go build \
       -trimpath \
       -ldflags="-s -w -extldflags '-static'" \
@@ -13,7 +13,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH GOMAXPROCS=2 GOMEMLIMIT=1024
       -o memos \
       ./cmd/memos
 
-FROM alpine:3.21
+FROM --platform=linux/amd64 alpine:3.21
 WORKDIR /usr/local/memos
 RUN apk add --no-cache ca-certificates tzdata && \
     addgroup -g 10001 -S nonroot && \
